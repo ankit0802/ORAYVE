@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orayve – Small Details. Big Presence.</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script>tailwind.config={theme:{extend:{colors:{ink:'#1C1B29',brass:'#B8905C',gold:'#D6B98C',bone:'#F3EFE7'}}}}</script>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+html{font-size:15px}body{font-family:'Manrope',sans-serif;background:#F3EFE7;color:#1C1B29}
+.serif{font-family:'Fraunces',serif}
+.ns::-webkit-scrollbar{display:none}.ns{scrollbar-width:none}
+input,select{border:1px solid rgba(28,27,41,.2);border-radius:.5rem;padding:.5rem .75rem;font-size:.75rem;background:#fff}
+@media print{body *{visibility:hidden}#inv,#inv *{visibility:visible}#inv{position:fixed;inset:0;background:#fff;padding:24px}}
+</style>
+</head>
+<body>
+<header class="sticky top-0 z-40 bg-ink text-bone shadow-md">
+  <div class="max-w-[1400px] mx-auto px-4 py-2 flex flex-wrap items-center gap-3 justify-between">
+    <button data-a="home" class="serif text-xl tracking-wide flex items-center gap-2">
+      <svg width="30" height="30" viewBox="0 0 64 64" fill="none"><circle cx="25" cy="32" r="16" stroke="#D6B98C" stroke-width="3.2"/><circle cx="39" cy="32" r="16" stroke="#F3EFE7" stroke-width="3.2"/></svg>Orayve
+    </button>
+    <input id="q" placeholder="Search 260 wallets, watches, shoes, ties, rings..." class="order-last sm:order-none flex-1 min-w-full sm:min-w-0 sm:max-w-md !bg-white/10 !border-brass/40 !rounded-full !px-4 text-bone placeholder-bone/50">
+    <div class="flex items-center gap-2 text-xs font-semibold">
+      <button data-a="onlyw" class="px-3 py-1.5 rounded-full border border-brass/40">♥ <span id="wc">0</span></button>
+      <button data-a="drawer" class="px-3 py-1.5 rounded-full border border-brass/40">Bag <span id="cc">0</span></button>
+      <button data-a="acct" id="ab" class="px-3 py-1.5 rounded-full border border-brass/40">Sign in</button>
+      <button data-a="go" data-x="admin" class="px-3 py-1.5 rounded-full bg-brass/20 text-gold border border-brass/50">Admin</button>
+      <div class="relative"><button data-a="menu" aria-label="More options" class="w-9 h-9 rounded-full border border-brass/40 text-lg leading-none">⋮</button><div id="menu"></div></div>
+    </div>
+  </div>
+</header>
+<div id="main"></div>
+<footer id="ft" class="bg-ink text-bone"></footer>
+<div id="drawer"></div>
+<div id="modal"></div>
+<div id="toast" class="fixed bottom-5 right-5 z-[60]"></div>
+
+<script>
+// ---------- CATALOG (13 categories x 20 = 260 products) ----------
+const PRE='Savile Kensington Sovereign Verona Noir Heritage Regent Oslo Caspian Atelier Meridian Vanguard Imperial Valet Echelon Monolith Solstice Aurelia Celeste Bespoke'.split(' ');
+const SW={L:[['Pitch Black','#1C1B29'],['Cognac Tan','#8B5A2B'],['Espresso','#4A3123']],G:[['Champagne Gold','#D6B98C'],['Rose Gold','#D49B8B'],['Polished Silver','#C0C5CE']],F:[['Ink Navy','#1F2D42'],['Burgundy','#5E2129'],['Emerald','#1E4D3B']]};
+const CAT=[
+['Wallets','42023120','WLT',899,'Leather Wallet',['Bifold','Slim Cardholder','Zip-Around','RFID Minimalist'],'L','1627123424574-724758594e93 1556742049-0cfed4f6a45d 1606503825008-909a67e63c3d 1591561954557-26941169b49e'],
+["Men's Belts",'42033000','MBL',1199,'Leather Belt',['Formal Buckle','Reversible','Braided','Ratchet'],'L','1624222247344-550fb60583dc 1553062407-98eeb64c6a62 1590874103328-eac38a683ce7'],
+['Bags & Backpacks','42029200','BAG',2499,'Bag',['Commuter Backpack','Laptop Briefcase','Weekender Duffle','Messenger'],'L','1553062407-98eeb64c6a62 1548036328-c9fa89d128fa 1622560480605-d83c853bc5c3 1581605405669-fcdf81165afa'],
+['Handbags','42022290','HBG',2199,'Handbag',['Structured Tote','Top-Handle Sling','Evening Clutch','Crossbody'],'F','1584917865442-de89df76afd3 1590874103328-eac38a683ce7 1566150905458-1bf1fc113f0d'],
+['Rings','71171990','RNG',549,'Ring',['Minimalist Band','Signet','Stackable','Solitaire'],'G','1605100804763-247f67b3557e 1603561591411-07134e71a2a9 1599643478518-a784e5dc4c8f'],
+['Chains & Necklaces','71171910','CHN',799,'Chain',['Layered Link','Cuban Curb','Rope Chain','Pendant'],'G','1599643477877-530eb83abc8e 1611591437281-460bfbe1220a 1515562141207-7a88fb7ce338'],
+['Shoes','64039990','SHO',3299,'Shoe',['Oxford Formal','Penny Loafer','Chelsea Boot','Minimal Sneaker'],'L','1614252235316-8c857d38b5f4 1549298916-b41d501d3772 1560769629-975ec94e6a86 1525966222134-fcfa99b8ae77'],
+['Sandals','64039920','SND',1499,'Sandal',['Strappy Leather','Fisherman','Kolhapuri','Buckled Slide'],'L','1603487742131-4160ec999306 1562273138-f46be4ebdf33 1543163521-1bf539c55dd2'],
+['Ladies Belts','42033000','LBL',849,'Waist Belt',['Skinny Brass','Waist Cinch','Chain Link','Corset'],'G','1553062407-98eeb64c6a62 1624222247344-550fb60583dc 1584917865442-de89df76afd3'],
+['Ties','62151000','TIE',799,'Silk Tie',['Classic 8cm','Slim 6cm','Knitted','Jacquard Paisley'],'F','1589756823695-278bc923f962 1598033129183-c4f50c736f10 1507679799987-c73779587ccf'],
+['Socks','61159500','SCK',399,'Socks',['Ribbed Dress','No-Show','Argyle','Cushioned'],'F','1586350977771-b3b0abd50c82 1582966772680-860e372bb558'],
+['Ladies Wrist Watches','91021100','LWT',2899,'Ladies Watch',['Petite Mesh','Rectangular Tank','Bangle Dress','Minimalist Leather'],'G','1524805444758-089113d48a6d 1508685096489-7aacd43bd3b1 1539874754764-5a96559165b0'],
+['Gents Wrist Watches','91021100','GWT',3499,'Gents Watch',['Chronograph','Automatic Diver','Dress Leather','Field Mechanical'],'F','1523275335684-37898b6baf30 1522312346375-d1a52e2b99b3 1614164185128-e4ec99c436d7 1587836374828-4dbafa94cf0e']
+];
+const P=[];let n=0;
+CAT.forEach(([cat,hsn,sk,base,noun,sty,sw,ph],ci)=>{ph=ph.split(' ');
+ for(let i=0;i<20;i++){n++;const price=base+(i%6)*150,d=20+(i*7)%21,mrp=Math.round(price/(1-d/100)),id='p'+n;
+  P.push({id,title:`${PRE[i]} ${sty[i%4]} ${noun}`,cat,design:sty[i%4],hsn,rate:+(4.4+((ci+i)%7)*.1).toFixed(1),rev:24+(n*17)%210,views:450+(n*131)%2100,sold:i%5?35+(n*13)%140:12+i%8,coupon:i%6!==0,
+   v:SW[sw].map(([c,h],k)=>({id:id+'v'+k,sku:`ORV-${sk}-${String(i+1).padStart(2,'0')}-${k+1}`,color:c,hex:h,photo:ph[(i+k)%ph.length],mrp:mrp+k*50,d,price:price+k*50,stock:(n+k*3)%14?18+(n*5+k*7)%48:6}))});}});
+const COUP=[{code:'WELCOME15',type:'P',val:15,max:500,min:500,on:true},{code:'ORAYVE200',type:'F',val:200,max:200,min:999,on:true}];
+const STAT=['ORDER PLACED','IN TRANSIT','OUT FOR DELIVERY','DELIVERED'];
+const ADMIN_PASS='orayve@2026'; // demo only – client-side, NOT secure
+const PAGE=24;
+
+// ---------- STATE ----------
+const $=s=>document.querySelector(s),inr=n=>'₹'+Number(n).toLocaleString('en-IN');
+const ld=(k,d)=>{try{return JSON.parse(localStorage.getItem('orv_'+k))??d}catch{return d}};
+const S={view:'store',q:'',cat:'All Categories',color:'All',sort:'featured',page:1,av:{},onlyW:false,drawer:false,
+ users:ld('users',[]),user:ld('user',null),auth:null,after:0,pf:null,cf:null,uf:null,kf:null,menu:false,info:false,pimgs:[],rvAll:false,cart:ld('cart',[]),wish:ld('wish',[]),orders:ld('orders',[]),addrs:ld('addrs',[]),coupon:'',step:1,addr:null,pay:'UPI',last:null,inv:null,adm:false,atab:'analytics',aq:''};
+const sv=()=>{try{['cart','wish','orders','addrs','users'].forEach(k=>localStorage.setItem('orv_'+k,JSON.stringify(S[k])));localStorage.setItem('orv_user',JSON.stringify(S.user))}catch{}};
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const svp=()=>{try{localStorage.setItem('orv_P',JSON.stringify(P));localStorage.setItem('orv_coupons',JSON.stringify(COUP));localStorage.setItem('orv_cats',JSON.stringify(CL))}catch{toast('Browser storage is full — remove some images or use smaller ones','e')}};
+let CL=ld('cats',null)||CAT.map(c=>({name:c[0],hsn:c[1]}));
+const CATS=()=>['All Categories',...CL.map(c=>c.name)];
+const SP=ld('P',null);if(SP)P.splice(0,P.length,...SP);
+const SC=ld('coupons',null);if(SC)COUP.splice(0,COUP.length,...SC);
+{const cu=S.user&&S.users.find(u=>u.mobile===S.user.mobile);S.user=cu&&!cu.banned?cu:null}
+const FB="data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 3"><rect width="4" height="3" fill="#2E2B26"/><circle cx="1.8" cy="1.5" r=".6" fill="none" stroke="#D6B98C" stroke-width=".08"/><circle cx="2.2" cy="1.5" r=".6" fill="none" stroke="#F3EFE7" stroke-width=".08"/></svg>');
+const img=v=>`<img loading="lazy" src="${!v.photo?FB:/^(http|data:)/.test(v.photo)?v.photo:'https://images.unsplash.com/photo-'+v.photo+'?auto=format&fit=crop&w=600&q=80'}" onerror="this.onerror=null;this.src=FB" class="w-full h-full object-cover" alt="">`;
+const toast=(m,e)=>{$('#toast').innerHTML=`<div class="px-4 py-3 rounded-xl shadow-xl text-xs font-bold ${e?'bg-rose-700 text-white':'bg-ink text-gold border border-brass/50'}">${m}</div>`;clearTimeout(toast.t);toast.t=setTimeout(()=>$('#toast').innerHTML='',2800)};
+const av=p=>p.v[S.av[p.id]||0];
+function cd(){const items=S.cart.map(c=>{const p=P.find(x=>x.id===c.pid);if(!p)return null;return{p,v:p.v.find(v=>v.id===c.vid)||p.v[0],q:c.q}}).filter(Boolean);
+ const sub=items.reduce((s,i)=>s+i.v.price*i.q,0),el=items.reduce((s,i)=>i.p.coupon?s+i.v.price*i.q:s,0);let disc=0;
+ const c=COUP.find(c=>c.code===S.coupon&&c.on);if(c&&el>=c.min)disc=c.type==='P'?Math.min(Math.round(el*c.val/100),c.max):Math.min(c.val,el);
+ return{items,sub,disc,total:sub-disc,count:items.reduce((s,i)=>s+i.q,0)}}
+function hdr(){$('#ab').textContent=S.user?'👤 '+S.user.name.split(' ')[0]:'Sign in / Register';$('#wc').textContent=S.wish.length;$('#cc').textContent=cd().count}
+
+// ---------- VIEWS ----------
+function store(){
+ const scope=S.cat==='All Categories'?P:P.filter(p=>p.cat===S.cat),colors=['All',...new Set(scope.flatMap(p=>p.v.map(v=>v.color)))];
+ const q=S.q.trim().toLowerCase();
+ let L=P.filter(p=>(S.cat==='All Categories'||p.cat===S.cat)&&(!q||(p.title+p.cat+p.design).toLowerCase().includes(q))&&(S.color==='All'||p.v.some(v=>v.color===S.color))&&(!S.onlyW||S.wish.includes(p.id)));
+ if(S.sort==='rating')L=[...L].sort((a,b)=>b.rate-a.rate);
+ if(S.sort==='asc')L=[...L].sort((a,b)=>av(a).price-av(b).price);
+ if(S.sort==='desc')L=[...L].sort((a,b)=>av(b).price-av(a).price);
+ const tp=Math.max(1,Math.ceil(L.length/PAGE)),pg=Math.min(S.page,tp),rows=L.slice((pg-1)*PAGE,pg*PAGE);
+ const cnt=c=>c==='All Categories'?P.length:P.filter(p=>p.cat===c).length;
+ return `<section class="bg-ink text-bone"><div class="max-w-[1400px] mx-auto px-4 py-5">
+  <p class="text-[11px] uppercase tracking-[.28em] text-gold font-bold">Small Details. Big Presence.</p>
+  <h1 class="serif text-xl sm:text-3xl font-medium mt-1 max-w-2xl">260 curated essentials across 13 signature collections.</h1>
+  <p class="text-xs text-bone/75 mt-1.5 max-w-xl">Wallets, belts, bags, watches, footwear, ties, rings and more — each backed by our 7-day return &amp; replacement guarantee.</p>
+  <div id="pills" class="flex gap-2 overflow-x-auto ns pt-3">${CATS().map(c=>`<button data-a="cat" data-x="${esc(c)}" class="shrink-0 px-3 py-1 rounded-full text-[11px] font-medium ${S.cat===c?'bg-brass text-ink font-bold':'bg-white/5 border border-white/15'}">${c} (${cnt(c)})</button>`).join('')}</div></div></section>
+ <section class="max-w-[1400px] mx-auto px-4 py-4">
+  <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-ink/10">
+   <div><h2 class="serif text-lg">${S.onlyW?'Wishlist':S.cat}</h2><p class="text-xs text-ink/60">${L.length?`Showing ${(pg-1)*PAGE+1}–${Math.min(pg*PAGE,L.length)} of ${L.length}`:'0'} products</p></div>
+   <div class="flex gap-2"><select data-c="color">${colors.map(c=>`<option ${c===S.color?'selected':''} value="${c}">${c==='All'?'Color: All':c}</option>`).join('')}</select>
+   <select data-c="sort">${[['featured','Featured'],['rating','Top Rated'],['asc','Price: Low–High'],['desc','Price: High–Low']].map(([k,l])=>`<option value="${k}" ${S.sort===k?'selected':''}>${l}</option>`).join('')}</select></div></div>
+  ${rows.length?`<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-4 mt-4">${rows.map(card).join('')}</div>`:'<p class="py-20 text-center text-ink/60">No products match your search.</p>'}
+  ${tp>1?`<div class="mt-6 flex items-center justify-center gap-3 text-xs font-bold"><button ${pg===1?'disabled':''} data-a="page" data-x="${pg-1}" class="px-4 py-2 rounded-lg border bg-white disabled:opacity-40">‹ Prev</button>Page ${pg} of ${tp}<button ${pg===tp?'disabled':''} data-a="page" data-x="${pg+1}" class="px-4 py-2 rounded-lg border bg-white disabled:opacity-40">Next ›</button></div>`:''}</section>`}
+function card(p){const v=av(p),w=S.wish.includes(p.id),inC=S.cart.some(c=>c.vid===v.id);
+ return `<div class="bg-white rounded-xl border border-ink/10 overflow-hidden shadow-sm hover:shadow-xl transition flex flex-col">
+ <div data-a="open" data-x="${p.id}" class="relative h-44 bg-ink cursor-pointer"><div class="w-full h-full ${v.stock<1?'grayscale':''}">${img(v)}</div>${v.stock<1?'<span class="absolute inset-x-0 bottom-5 mx-auto w-fit px-3 py-1 rounded bg-ink/85 text-bone text-xs font-bold">Out of stock</span>':''}<div class="absolute bottom-0 inset-x-0 h-1" style="background:${v.hex}"></div>
+  <div class="absolute top-3 left-3 flex flex-col gap-1.5"><span class="px-2 py-0.5 rounded bg-brass text-ink text-[10px] font-bold">${v.d}% OFF</span>${p.coupon?'<span class="px-2 py-0.5 rounded bg-ink/85 text-gold text-[10px] font-semibold">Coupon Eligible</span>':''}</div>
+  <div class="absolute top-3 right-3 flex flex-col gap-1.5"><button data-a="wish" data-x="${p.id}" class="w-7 h-7 rounded-full bg-ink/75 text-bone ${w?'!text-gold':''}">${w?'♥':'♡'}</button><button data-a="share" data-x="${p.id}" class="w-7 h-7 rounded-full bg-ink/75 text-bone text-xs">⇪</button></div></div>
+ <div class="p-3 flex-1 flex flex-col"><div class="flex items-center justify-between mb-1.5"><div class="flex gap-1.5">${p.v.map((x,i)=>`<button data-a="sw" data-x="${p.id}" data-y="${i}" title="${x.color}" class="w-4 h-4 rounded-full border border-ink/30 ${x.id===v.id?'ring-2 ring-offset-1 ring-brass':''}" style="background:${x.hex}"></button>`).join('')}</div><span class="text-[11px] text-ink/60">${v.color}</span></div>
+  <p class="text-[10px] uppercase tracking-wider text-brass font-bold">${p.cat} · ${p.design}</p>
+  <h3 data-a="open" data-x="${p.id}" class="serif text-sm mt-0.5 line-clamp-1 cursor-pointer hover:text-brass">${p.title}</h3>
+  <div class="flex justify-between gap-2 mt-1.5 text-xs"><span class="font-semibold">★ ${p.rate} <span class="text-ink/50 font-normal">(${p.rev})</span></span><span class="font-semibold text-right ${sk(v)[1]}">${sk(v)[0]}</span></div>
+  <div class="mt-auto pt-2 flex flex-wrap items-center justify-between gap-1"><div><span class="text-base font-bold">${inr(v.price)}</span> <span class="text-xs line-through text-ink/45">${inr(v.mrp)}</span><p class="text-[10px] text-ink/50">SKU: ${v.sku}</p></div>
+  ${v.stock<1?`<button disabled class="px-3 py-1.5 rounded-lg bg-ink/15 text-ink/50 text-xs font-semibold cursor-not-allowed">Sold out</button>`:inC?`<button data-a="drawer" class="px-3 py-1.5 rounded-lg bg-brass text-ink text-xs font-bold">Go to Cart</button>`:`<button data-a="add" data-x="${p.id}" class="px-3 py-1.5 rounded-lg bg-ink text-bone hover:bg-brass hover:text-ink text-xs font-semibold">Add</button>`}</div></div></div>`}
+
+function checkout(){const c=cd();
+ const steps=['Address','Payment','Confirmed'].map((l,i)=>`<span class="text-xs font-bold ${S.step>=i+1?'':'opacity-40'}">${i+1}. ${l}</span>`).join(' <span class="opacity-30">—</span> ');
+ let body='';
+ if(S.step===3&&S.last){const o=S.last;body=`<div class="max-w-xl mx-auto bg-white rounded-2xl border border-brass/40 p-8 text-center shadow-lg"><p class="text-4xl">✅</p><p class="text-[11px] uppercase tracking-[.25em] text-brass font-bold mt-2">Order Confirmed</p><h2 class="serif text-3xl mt-1">Thank you for choosing Orayve</h2><p class="text-sm mt-2">Order ID: <b>${o.id}</b></p><p class="text-xs text-ink/60 mt-1">Protected by our 7-Day Return &amp; Replacement Policy</p><div class="mt-6 flex justify-center gap-3"><button data-a="invoice" data-x="${o.id}" class="px-5 py-2.5 rounded-xl bg-ink text-bone text-xs font-bold">GST Invoice</button><button data-a="go" data-x="orders" class="px-5 py-2.5 rounded-xl border border-ink/25 text-xs font-bold">Order History</button></div></div>`}
+ else if(!c.items.length)body='<p class="text-center py-20">Your bag is empty.</p>';
+ else if(S.step===1){body=`<div class="grid lg:grid-cols-3 gap-6"><div class="lg:col-span-2 space-y-4"><h2 class="serif text-2xl">Delivery Address</h2>
+  ${S.addrs.filter(a=>a.m===S.user.mobile).map(a=>`<div data-a="addr" data-x="${a.id}" class="p-4 rounded-xl border bg-white cursor-pointer ${S.addr===a.id?'border-brass ring-2 ring-brass/25':'border-ink/15'}"><b class="text-sm">${a.name}</b> <span class="text-xs text-ink/60">${a.phone}</span><p class="text-xs mt-1">${a.street}, ${a.city} — ${a.pin}</p></div>`).join('')}
+  <form data-f="addr" class="p-5 rounded-xl bg-white border border-brass/40 grid sm:grid-cols-2 gap-3"><h3 class="sm:col-span-2 font-semibold text-sm">Add new address</h3>
+   <input required name="name" value="${esc(S.user.name)}" placeholder="Recipient name *"><input required name="phone" placeholder="Phone *" pattern="[0-9+ ]{10,15}">
+   <input required name="street" placeholder="Street / landmark *" class="sm:col-span-2"><input name="city" placeholder="City"><input required name="pin" placeholder="Pincode *" pattern="[0-9]{6}">
+   <button class="sm:col-span-2 px-4 py-2 rounded-lg bg-brass text-ink text-xs font-bold">Save Address</button></form></div>${summary(c,'Continue to Payment','pay1')}</div>`}
+ else body=`<div class="max-w-xl mx-auto bg-white rounded-2xl border border-ink/15 overflow-hidden shadow-lg"><div class="bg-ink text-bone p-5"><p class="text-[10px] uppercase tracking-widest text-gold">Secure Checkout (demo — no real payment)</p><p class="text-xl font-bold">${inr(c.total)}</p></div><div class="p-6 space-y-3">
+  ${[['UPI','UPI (GPay, PhonePe, Paytm)'],['CARD','Credit / Debit Card'],['NET_BANKING','Net Banking']].map(([k,l])=>`<div data-a="paym" data-x="${k}" class="p-4 rounded-xl border cursor-pointer text-sm font-bold ${S.pay===k?'border-brass bg-bone':'border-ink/15'}">${l}</div>`).join('')}
+  <div class="pt-3 flex gap-3"><button data-a="step" data-x="1" class="px-4 py-3 rounded-xl border text-xs font-semibold">Back</button><button data-a="place" class="flex-1 py-2 rounded-xl bg-ink text-bone hover:bg-brass hover:text-ink font-bold text-sm">Place Order · ${inr(c.total)}</button></div></div></div>`;
+ return `<main class="max-w-5xl mx-auto px-4 py-10"><div class="flex justify-center gap-3 mb-8">${steps}</div>${body}</main>`}
+function summary(c,btn,act){return `<div class="bg-white p-5 rounded-xl border border-ink/12 h-fit space-y-3"><h3 class="serif text-lg">Order Summary</h3><div class="text-xs space-y-1 border-b pb-3"><div class="flex justify-between"><span>Subtotal (${c.count})</span><span>${inr(c.sub)}</span></div>${c.disc?`<div class="flex justify-between text-emerald-700 font-semibold"><span>Coupon ${S.coupon}</span><span>-${inr(c.disc)}</span></div>`:''}<div class="flex justify-between"><span>Shipping</span><span class="text-emerald-700 font-semibold">FREE</span></div></div><div class="flex justify-between font-bold"><span>Total</span><span>${inr(c.total)}</span></div><button data-a="${act}" class="w-full py-3 rounded-xl bg-ink text-bone hover:bg-brass hover:text-ink font-semibold text-sm">${btn}</button></div>`}
+
+function orders(){if(!S.user)return '<main class="py-20 text-center"><button data-a="acct" class="px-5 py-2.5 rounded-xl bg-ink text-bone text-sm font-bold">Sign in to view your orders</button></main>';const mine=S.orders.filter(o=>o.mobile===S.user.mobile);return `<main class="max-w-4xl mx-auto px-4 py-10"><div class="bg-white rounded-xl border p-5 mb-6 flex flex-wrap justify-between gap-3 text-sm"><div><b>${esc(S.user.name)}</b> · ${S.user.age} yrs<p class="text-xs text-ink/60">+91 ${S.user.mobile} · ${esc(S.user.email)}</p></div><button data-a="logout" class="text-xs font-bold text-rose-700">Log out</button></div><h1 class="serif text-3xl mb-6">Order History (${mine.length})</h1>${mine.length?mine.map(o=>`<div class="bg-white rounded-xl border p-5 mb-4"><div class="flex flex-wrap justify-between gap-2 pb-3 border-b"><div><b class="text-sm">${o.id}</b> <span class="text-xs text-ink/55 ml-2">${o.at}</span></div><div class="flex items-center gap-3"><b>${inr(o.total)}</b><button data-a="invoice" data-x="${o.id}" class="px-3 py-1.5 rounded-lg bg-bone border border-brass/40 text-xs font-bold">Download Bill</button></div></div>
+ <div class="grid grid-cols-4 gap-2 py-4">${STAT.map((s,i)=>`<div class="text-center"><div class="h-1.5 rounded-full mb-2 ${i<=o.status?'bg-brass':'bg-ink/10'}"></div><p class="text-[10px] font-bold ${i<=o.status?'':'opacity-40'}">${s}</p></div>`).join('')}</div>
+ ${o.items.map(i=>`<div class="flex justify-between text-xs"><span>${i.title} (${i.color}) × ${i.qty}</span><b>${inr(i.price*i.qty)}</b></div>`).join('')}</div>`).join(''):'<p class="py-16 text-center text-ink/60">No orders yet — place one from the storefront.</p>'}</main>`}
+
+function atbl(){const q=S.aq.toLowerCase(),L=P.filter(p=>!q||(p.title+p.cat+p.v[0].sku).toLowerCase().includes(q));
+ return L.slice(0,40).map(p=>`<tr><td class="p-3 font-semibold">${esc(p.title)}</td><td class="p-3">${esc(p.cat)}</td><td class="p-3">${p.v.map(v=>inr(v.price)).join(' / ')}</td><td class="p-3">${p.v.reduce((s,v)=>s+v.stock,0)}</td><td class="p-3 text-right space-x-3"><button data-a="pedit" data-x="${p.id}" class="text-brass font-bold">Edit</button><button data-a="pdel" data-x="${p.id}" class="text-rose-600 font-bold">Delete</button></td></tr>`).join('')+(L.length>40?`<tr><td colspan="5" class="p-3 text-ink/60">Showing 40 of ${L.length} — search to narrow.</td></tr>`:'')}
+function admin(){
+ if(!S.adm)return `<main class="min-h-[70vh] flex items-center justify-center p-4 bg-ink"><form data-f="adm" class="w-full max-w-sm bg-bone rounded-2xl p-7 space-y-3"><h2 class="serif text-xl">Admin Console</h2><input name="p" type="password" placeholder="Admin passcode" class="w-full"><button class="w-full py-2.5 rounded-xl bg-ink text-bone font-bold text-sm">Sign In</button><p class="text-[10px] text-ink/60">Demo passcode: ${ADMIN_PASS}. This gate runs in the browser only and is not real security.</p></form></main>`;
+ const rev=S.orders.reduce((s,o)=>s+o.total,0),low=P.flatMap(p=>p.v.filter(v=>v.stock<=10).map(v=>({p,v})));
+ const tabs=['analytics','orders','products','categories','coupons','users'].map(t=>`<button data-a="atab" data-x="${t}" class="px-4 py-2 rounded-lg text-xs font-bold capitalize ${S.atab===t?'bg-ink text-bone':'bg-white border'}">${t}</button>`).join('');
+ let b='';
+ if(S.atab==='analytics'){const cs={};S.orders.forEach(o=>o.items.forEach(i=>{const c=cs[i.cat]||(cs[i.cat]={u:0,r:0});c.u+=i.qty;c.r+=i.price*i.qty}));
+  const boost=P.filter(p=>p.views>=1200&&p.sold/p.views*100<1.8).sort((a,b)=>a.sold/a.views-b.sold/b.views).slice(0,6);
+  b=`<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">${[['Revenue',inr(rev)],['Orders',S.orders.length],['Live Products',P.length],['Low-stock SKUs',low.length]].map(([l,v])=>`<div class="bg-white p-5 rounded-xl border"><p class="text-xs text-ink/60 font-semibold">${l}</p><p class="text-2xl font-bold mt-1">${v}</p></div>`).join('')}</div>
+  <div class="grid lg:grid-cols-2 gap-6 mt-6"><div class="bg-white p-5 rounded-xl border"><h3 class="serif text-lg mb-2">Sales by category</h3>${Object.keys(cs).length?Object.entries(cs).map(([k,c])=>`<p class="text-xs py-1 flex justify-between"><span>${k} · ${c.u} units</span><b>${inr(c.r)}</b></p>`).join(''):'<p class="text-xs text-ink/60">No orders yet.</p>'}<h3 class="serif text-lg mt-5 mb-2">Products to boost</h3>${boost.map(p=>`<p class="text-xs py-1 flex justify-between"><span>${p.title}</span><span>${p.views} views · ${p.sold} sold</span></p>`).join('')}</div>
+  <div class="bg-white p-5 rounded-xl border"><h3 class="serif text-lg mb-2">Low stock alerts</h3>${low.slice(0,12).map(({p,v})=>`<p class="text-xs py-1 flex justify-between"><span>${p.title} · ${v.color}</span><b class="text-amber-700">${v.stock} left</b></p>`).join('')}</div></div>`}
+ if(S.atab==='orders')b=S.orders.length?S.orders.map(o=>`<div class="bg-white p-4 rounded-xl border mb-3 flex flex-wrap justify-between gap-3"><div><b class="text-sm">${o.id} · ${o.addr.name} (${o.pay})</b><p class="text-xs text-ink/70">${o.items.map(i=>i.title+' ×'+i.qty).join(', ')}</p><b class="text-xs text-brass">${inr(o.total)}</b></div><select data-c="status" data-x="${o.id}" class="!bg-ink !text-bone font-bold">${STAT.map((s,i)=>`<option value="${i}" ${o.status===i?'selected':''}>${s}</option>`).join('')}</select></div>`).join(''):'<p class="text-sm">No orders yet.</p>';
+ if(S.atab==='products'){const f=S.pf,fv=k=>f?.v?.[k]||{};
+ b=`<div class="flex flex-wrap gap-3 mb-4 items-center"><button data-a="pnew" class="px-4 py-2 rounded-lg bg-brass text-ink text-xs font-bold">+ Add product</button><input data-c="asearch" placeholder="Search products / SKU..." value="${esc(S.aq)}" class="flex-1 max-w-md"></div>
+ ${f?`<form data-f="prod" class="bg-white p-5 rounded-xl border border-brass/40 mb-5 space-y-3 text-xs"><h3 class="font-bold text-sm">${f.id?'Edit product':'New product'}</h3>
+ <div class="grid sm:grid-cols-4 gap-3"><input required name="title" placeholder="Title *" value="${esc(f.title||'')}" class="sm:col-span-2"><select name="cat">${CL.map(c=>`<option ${c.name===f.cat?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input name="design" placeholder="Style / design" value="${esc(f.design||'')}"></div>
+ <div class="space-y-2"><p class="font-semibold">Product images <span class="font-normal text-ink/60">(select several at once · up to 8 · the first is the main photo)</span></p><input type="file" id="imgf" accept="image/*" multiple class="block w-full"><div id="pimgs" class="flex flex-wrap gap-2 items-center">${pim()}</div></div>
+ ${[0,1,2].map(k=>{const v=fv(k);return `<div class="grid grid-cols-2 sm:grid-cols-7 gap-2 items-center"><input name="c${k}" placeholder="Colour ${k+1}${k?'':' *'}" value="${esc(v.color||'')}"><input type="color" name="h${k}" value="${v.hex||'#1C1B29'}" class="!p-0 h-9 w-full"><input name="ph${k}" placeholder="Colour photo URL (optional)" value="${/^data:/.test(v.photo||'')?'':esc(v.photo||'')}" class="col-span-2"><input name="m${k}" type="number" placeholder="MRP ₹" value="${v.mrp||''}"><input name="p${k}" type="number" placeholder="Price ₹" value="${v.price||''}"><input name="s${k}" type="number" placeholder="Stock" value="${v.stock??''}"></div>`}).join('')}
+ <label class="flex items-center gap-2"><input type="checkbox" name="coupon" ${f.id&&!f.coupon?'':'checked'}> Coupon eligible</label>
+ <div class="flex gap-2"><button class="px-4 py-2 rounded-lg bg-ink text-bone font-bold">${f.id?'Save changes':'Publish product'}</button><button type="button" data-a="pcancel" class="px-4 py-2 rounded-lg border">Cancel</button></div><p class="text-[10px] text-ink/60">Leave a colour row empty to skip it (up to 3 colours per product).</p></form>`:''}
+ <div class="bg-white rounded-xl border overflow-x-auto"><table class="w-full text-left text-xs"><thead class="bg-ink text-bone"><tr><th class="p-3">Product</th><th class="p-3">Category</th><th class="p-3">Price</th><th class="p-3">Stock</th><th class="p-3 text-right">Actions</th></tr></thead><tbody id="atbl" class="divide-y">${atbl()}</tbody></table></div>`}
+ if(S.atab==='categories'){const f=S.cf,oc=CL.find(c=>c.name===f?.old);
+ b=`<button data-a="cnew" class="px-4 py-2 rounded-lg bg-brass text-ink text-xs font-bold mb-4">+ Add category</button>
+ ${f?`<form data-f="cat" class="bg-white p-5 rounded-xl border border-brass/40 mb-5 flex flex-wrap gap-3 text-xs"><input required name="name" placeholder="Category name *" value="${esc(oc?.name||'')}"><input name="hsn" placeholder="HSN code" value="${esc(oc?.hsn||'')}"><button class="px-4 py-2 rounded-lg bg-ink text-bone font-bold">${oc?'Save':'Create'}</button><button type="button" data-a="ccancel" class="px-4 py-2 rounded-lg border">Cancel</button></form>`:''}
+ <div class="bg-white rounded-xl border divide-y">${CL.map(c=>`<div class="p-4 flex flex-wrap justify-between gap-2 text-sm"><div><b>${esc(c.name)}</b> <span class="text-xs text-ink/60">HSN ${esc(c.hsn)} · ${P.filter(p=>p.cat===c.name).length} products</span></div><div class="space-x-3 text-xs"><button data-a="cedit" data-x="${esc(c.name)}" class="text-brass font-bold">Rename / Edit</button><button data-a="cdel" data-x="${esc(c.name)}" class="text-rose-600 font-bold">Delete</button></div></div>`).join('')}</div>`}
+ if(S.atab==='users'){const f=S.uf,ou=S.users.find(u=>u.mobile===f?.old);
+ b=`<div class="flex flex-wrap gap-3 mb-4 items-center"><button data-a="unew" class="px-4 py-2 rounded-lg bg-brass text-ink text-xs font-bold">+ Add user</button><span class="text-xs text-ink/60">${S.users.length} users · ${S.users.filter(u=>u.banned).length} banned</span></div>
+ ${f?`<form data-f="user" class="bg-white p-5 rounded-xl border border-brass/40 mb-5 grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs items-center"><input required name="name" placeholder="Full name *" value="${esc(ou?.name||'')}"><input required name="age" type="number" min="1" max="120" placeholder="Age *" value="${ou?.age||''}"><input required name="email" type="email" placeholder="Email *" value="${esc(ou?.email||'')}"><input required name="mobile" pattern="[6-9][0-9]{9}" maxlength="10" placeholder="Mobile (10 digits) *" value="${esc(ou?.mobile||'')}"><div class="flex gap-2"><button class="px-4 py-2 rounded-lg bg-ink text-bone font-bold">${ou?'Save':'Create'}</button><button type="button" data-a="ucancel" class="px-4 py-2 rounded-lg border">Cancel</button></div></form>`:''}
+ <div class="bg-white rounded-xl border overflow-x-auto"><table class="w-full text-left text-xs"><thead class="bg-ink text-bone"><tr><th class="p-3">Name</th><th class="p-3">Age</th><th class="p-3">Mobile</th><th class="p-3">Email</th><th class="p-3">Joined</th><th class="p-3">Status</th><th class="p-3 text-right">Actions</th></tr></thead><tbody class="divide-y">${S.users.map(u=>`<tr class="${u.banned?'bg-rose-50':''}"><td class="p-3 font-semibold">${esc(u.name)}</td><td class="p-3">${u.age}</td><td class="p-3">${esc(u.mobile)}</td><td class="p-3">${esc(u.email)}</td><td class="p-3">${u.at||''}</td><td class="p-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${u.banned?'bg-rose-100 text-rose-800':'bg-emerald-100 text-emerald-800'}">${u.banned?'BANNED':'Active'}</span></td><td class="p-3 text-right space-x-3 whitespace-nowrap"><button data-a="uedit" data-x="${esc(u.mobile)}" class="text-brass font-bold">Edit</button><button data-a="uban" data-x="${esc(u.mobile)}" class="font-bold ${u.banned?'text-emerald-700':'text-amber-700'}">${u.banned?'Unban':'Ban'}</button><button data-a="udel" data-x="${esc(u.mobile)}" class="text-rose-600 font-bold">Delete</button></td></tr>`).join('')||'<tr><td class="p-3" colspan="7">No registered users in this browser yet.</td></tr>'}</tbody></table></div>`}
+ if(S.atab==='coupons'){const f=S.kf,oc=COUP.find(c=>c.code===f?.old);
+ b=`<button data-a="knew" class="px-4 py-2 rounded-lg bg-brass text-ink text-xs font-bold mb-4">+ Add coupon</button>
+ ${f?`<form data-f="coup" class="bg-white p-5 rounded-xl border border-brass/40 mb-5 grid grid-cols-2 sm:grid-cols-6 gap-3 text-xs items-center"><input required name="code" placeholder="CODE *" value="${esc(oc?.code||'')}" class="uppercase"><select name="type"><option value="P" ${oc?.type!=='F'?'selected':''}>% off</option><option value="F" ${oc?.type==='F'?'selected':''}>Flat ₹ off</option></select><input required name="val" type="number" min="1" placeholder="Value *" value="${oc?.val||''}"><input name="max" type="number" min="0" placeholder="Max ₹ (for % only)" value="${oc&&oc.type==='P'&&oc.max<1e9?oc.max:''}"><input name="min" type="number" min="0" placeholder="Min order ₹" value="${oc?.min??''}"><label class="flex items-center gap-1"><input type="checkbox" name="on" ${oc&&!oc.on?'':'checked'}> Active</label><div class="col-span-2 sm:col-span-6 flex gap-2"><button class="px-4 py-2 rounded-lg bg-ink text-bone font-bold">${oc?'Save changes':'Create coupon'}</button><button type="button" data-a="kcancel" class="px-4 py-2 rounded-lg border">Cancel</button></div></form>`:''}
+ <div class="grid sm:grid-cols-2 gap-4">${COUP.map((c,i)=>`<div class="bg-white p-4 rounded-xl border"><div class="flex justify-between items-center"><div><b class="text-sm">${esc(c.code)}</b><p class="text-xs text-ink/60">${c.type==='P'?c.val+'% off'+(c.max<1e9?' (max '+inr(c.max)+')':''):inr(c.val)+' off'} · Min ${inr(c.min)}</p></div><button data-a="ctog" data-x="${i}" class="px-3 py-1 rounded-full text-xs font-bold ${c.on?'bg-emerald-100 text-emerald-800':'bg-gray-200'}">${c.on?'Active':'Paused'}</button></div><div class="mt-3 space-x-3 text-xs"><button data-a="kedit" data-x="${esc(c.code)}" class="text-brass font-bold">Edit</button><button data-a="kdel" data-x="${esc(c.code)}" class="text-rose-600 font-bold">Delete</button></div></div>`).join('')||'<p class="text-sm">No coupons yet.</p>'}</div>`}
+ return `<main class="max-w-6xl mx-auto px-4 py-8"><div class="flex flex-wrap items-center justify-between gap-3 mb-6"><h1 class="serif text-3xl">Admin</h1><div class="flex gap-2">${tabs}<button data-a="alogout" class="px-4 py-2 rounded-lg text-xs font-bold text-rose-700">Sign out</button></div></div>${b}</main>`}
+
+function drawer(){if(!S.drawer){$('#drawer').innerHTML='';return}const c=cd();
+ $('#drawer').innerHTML=`<div class="fixed inset-0 z-50 bg-black/50 flex justify-end"><div class="w-full max-w-md bg-bone h-full flex flex-col shadow-2xl"><div class="p-5 bg-ink text-bone flex justify-between"><h2 class="serif text-xl">Your Bag (${c.count})</h2><button data-a="drawer">✕</button></div>
+ <div class="flex-1 overflow-y-auto p-5 space-y-3">${c.items.length?c.items.map(i=>`<div class="bg-white p-3 rounded-xl border flex gap-3"><div class="w-16 h-16 rounded-lg overflow-hidden shrink-0">${img(i.v)}</div><div class="flex-1 min-w-0"><p class="font-semibold text-xs truncate">${i.p.title}</p><p class="text-[11px] text-ink/60">${i.v.color} · ${inr(i.v.price)}</p><div class="flex items-center justify-between mt-2"><div class="flex items-center gap-3 border rounded-lg px-2 text-sm"><button data-a="qty" data-x="${i.p.id}|${i.v.id}" data-y="-1">−</button><b class="text-xs">${i.q}</b><button data-a="qty" data-x="${i.p.id}|${i.v.id}" data-y="1">+</button></div><button data-a="qty" data-x="${i.p.id}|${i.v.id}" data-y="-99" class="text-rose-600 text-xs">Remove</button></div></div></div>`).join('')+`<div class="pt-3 border-t"><p class="text-[11px] font-bold mb-1.5">Coupon (try WELCOME15 or ORAYVE200)</p><div class="flex gap-2"><input id="cin" value="${S.coupon}" placeholder="Coupon code" class="flex-1 uppercase"><button data-a="coupon" class="px-4 rounded-lg bg-ink text-gold text-xs font-bold">Apply</button></div></div>`:'<p class="text-center text-sm py-16 text-ink/60">Your bag is empty.</p>'}</div>
+ ${c.items.length?`<div class="p-5 bg-white border-t space-y-2 text-xs"><div class="flex justify-between"><span>Subtotal</span><span>${inr(c.sub)}</span></div>${c.disc?`<div class="flex justify-between text-emerald-700 font-semibold"><span>Discount (${S.coupon})</span><span>-${inr(c.disc)}</span></div>`:''}<div class="flex justify-between text-base font-bold"><span>Total</span><span>${inr(c.total)}</span></div><button data-a="tocheckout" class="w-full py-3 rounded-xl bg-ink text-bone hover:bg-brass hover:text-ink font-bold text-sm">Proceed to Checkout</button></div>`:''}</div></div>`}
+function menu(){const it=(a,l,x)=>`<button data-a="${a}" ${x?`data-x="${x}"`:''} class="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold">${l}</button>`;
+ $('#menu').innerHTML=S.menu?`<div class="fixed inset-0 z-40" data-a="menu"></div><div class="absolute right-0 top-11 z-50 w-56 bg-white text-ink rounded-xl shadow-2xl border border-ink/10 py-1 overflow-hidden">${S.user?`<div class="px-4 py-2.5 border-b text-xs"><b>${esc(S.user.name)}</b><p class="text-ink/60">+91 ${esc(S.user.mobile)}</p></div>`:''}${it('acct',S.user?'👤 My Account':'👤 Sign in / Register')}${it('go','📦 My Orders','orders')}${it('wl','♥ Wishlist ('+S.wish.length+')')}${it('shares','🔗 Share Orayve')}${it('info','❓ Help &amp; Policies')}${S.user?'<div class="border-t">'+it('logout','⎋ Log out')+'</div>':''}</div>`:''}
+function modal(){if(S.info){const k=S.info,I=INFO[k]||INFO.about,body=k==='help'?`<div class="grid gap-2">${TOP.map(([a,b])=>`<button data-a="info" data-x="${a}" class="text-left px-4 py-3 rounded-xl bg-white border hover:border-brass text-sm font-semibold">${b} →</button>`).join('')}</div>`:I[1].map(t=>`<p>${t}</p>`).join('');
+ $('#modal').innerHTML=`<div class="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4"><div class="bg-bone rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-3 text-sm leading-relaxed"><div class="flex justify-between items-center"><h2 class="serif text-2xl">${k==='help'?'Help &amp; Policies':I[0]}</h2><button data-a="closeinfo">✕</button></div>${body}${k!=='help'?'<div class="pt-2 flex gap-4 text-xs font-bold"><button data-a="info" data-x="help" class="text-brass">← All topics</button><button data-a="info" data-x="contact" class="text-brass">Contact us</button></div>':''}</div></div>`;return}
+ if(S.auth){const L=S.auth==='login',f='class="w-full"';
+ $('#modal').innerHTML=`<div class="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4"><form data-f="${L?'login':'reg'}" class="bg-bone rounded-2xl w-full max-w-sm p-6 space-y-3 max-h-[95vh] overflow-y-auto"><div class="flex justify-between items-center"><h2 class="serif text-2xl">${L?'Welcome back':'Create account'}</h2><button type="button" data-a="closeauth">✕</button></div>
+ <div class="grid grid-cols-2 gap-1 p-1 bg-ink/10 rounded-lg text-xs font-bold"><button type="button" data-a="authtab" data-x="login" class="py-2 rounded-md ${L?'bg-ink text-bone':''}">Login</button><button type="button" data-a="authtab" data-x="reg" class="py-2 rounded-md ${L?'':'bg-ink text-bone'}">Register</button></div>
+ ${L?'':`<input required name="name" placeholder="Full name *" ${f}><input required name="age" type="number" min="1" max="120" placeholder="Age *" ${f}><input required name="email" type="email" placeholder="Email *" ${f}>`}
+ <input required name="mobile" inputmode="numeric" pattern="[6-9][0-9]{9}" maxlength="10" placeholder="Mobile number (10 digits) *" ${f}>
+ <div class="flex gap-2"><input required name="otp" placeholder="OTP" class="flex-1"><button type="button" data-a="otp" class="px-3 rounded-lg bg-ink text-gold text-xs font-bold">Send OTP</button></div>
+ <button class="w-full py-2.5 rounded-xl bg-ink text-bone font-bold text-sm">${L?'Login':'Register'}</button><p class="text-[10px] text-ink/60">Demo OTP is 123456. Real SMS OTP needs a backend service.</p></form></div>`;return}
+ const o=S.inv;if(!o){$('#modal').innerHTML='';return}
+ $('#modal').innerHTML=`<div class="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4"><div class="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"><div class="p-4 border-b flex justify-between bg-bone"><b class="text-xs uppercase">Tax Invoice · ${o.inv}</b><div class="flex gap-2"><button onclick="print()" class="px-3 py-1.5 rounded-lg bg-ink text-bone text-xs font-bold">Print / Save PDF</button><button data-a="closeinv">✕</button></div></div>
+ <div id="inv" class="p-7 text-xs space-y-4"><div class="flex justify-between border-b pb-4"><div><p class="serif text-2xl">Orayve</p><p class="text-brass font-bold text-[10px] uppercase tracking-widest">Small Details. Big Presence.</p><p class="text-ink/60 mt-1">orayve.in · GSTIN: (add your GSTIN)</p></div><div class="text-right"><b class="text-sm">TAX INVOICE</b><p>${o.inv}</p><p>${o.id}</p><p>${o.at}</p></div></div>
+ <div class="flex justify-between"><div><p class="text-[10px] uppercase font-bold text-ink/55">Shipped to</p><b>${o.addr.name}</b><p>${o.addr.street}, ${o.addr.city} - ${o.addr.pin}</p></div><div class="text-right"><p class="text-[10px] uppercase font-bold text-ink/55">Payment</p><p>${o.pay}</p></div></div>
+ <table class="w-full text-left border-y"><thead class="bg-bone"><tr><th class="p-2">Item</th><th class="p-2">HSN</th><th class="p-2 text-right">Price</th><th class="p-2 text-right">Qty</th><th class="p-2 text-right">Total</th></tr></thead><tbody class="divide-y">${o.items.map(i=>`<tr><td class="p-2"><b>${i.title}</b><br><span class="text-[10px] text-ink/60">${i.color} · ${i.sku}</span></td><td class="p-2">${i.hsn}</td><td class="p-2 text-right">${inr(i.price)}</td><td class="p-2 text-right">${i.qty}</td><td class="p-2 text-right font-bold">${inr(i.price*i.qty)}</td></tr>`).join('')}</tbody></table>
+ <div class="ml-auto w-56 space-y-1"><div class="flex justify-between"><span>Subtotal (incl. GST)</span><span>${inr(o.sub)}</span></div>${o.disc?`<div class="flex justify-between text-emerald-700"><span>Discount</span><span>-${inr(o.disc)}</span></div>`:''}<div class="flex justify-between font-bold text-sm border-t pt-1"><span>Grand Total</span><span>${inr(o.total)}</span></div></div>
+ <p class="p-3 rounded-lg bg-bone border border-brass/30 text-[11px]"><b>7-Day Return &amp; Replacement Policy:</b> eligible within 7 days of delivery in original packaging. Country of origin: China.</p></div></div></div>`}
+
+const MAT={Wallets:'Genuine / vegan leather',"Men's Belts":'Leather strap, metal buckle','Bags & Backpacks':'Canvas, nylon or leather',Handbags:'Faux or genuine leather',Rings:'Stainless steel / plated metal','Chains & Necklaces':'Stainless steel / gold-plated metal',Shoes:'Leather upper, durable sole',Sandals:'Leather / suede','Ladies Belts':'Leather or chain, brass finish',Ties:'Silk / woven fabric',Socks:'Cotton / wool blend','Ladies Wrist Watches':'Stainless steel case, mineral glass','Gents Wrist Watches':'Stainless steel case, mineral glass'};
+const MFG={name:'Orayve (orayve.in)',addr:'Add your registered address here',care:'support@orayve.in'};
+// SAMPLE reviews – replace with real customer reviews before going live
+const RV=[['Rohit S.','Pune',5,'Great finish and feels premium for the price. Packaging was lovely.'],['Neha K.','Delhi',4,'Looks just like the photos. Delivery was on time.'],['Amit P.','Mumbai',5,'Bought it as a gift and it was a hit. Recommended.'],['Priya M.','Bengaluru',4,'Good quality, neat build and stitching. Worth it.'],['Sandeep R.','Lucknow',5,'Excellent value. The colour looks rich in person.'],['Ananya D.','Kolkata',4,'Nice design and fits my daily use well.'],['Vikram T.','Jaipur',5,'Better than expected. Will order again.'],['Meera J.','Hyderabad',4,'Elegant and lightweight. Exactly what I needed.']];
+const sk=v=>v.stock<1?['Out of stock','text-rose-700']:v.stock<15?['Order quickly – going out of stock soon','text-amber-700']:['In stock','text-emerald-700'];
+const stars=r=>`<span class="relative inline-block whitespace-nowrap text-brass/25 tracking-wider">★★★★★<span class="absolute left-0 top-0 overflow-hidden text-brass" style="width:${r/5*100}%">★★★★★</span></span>`;
+const gal=p=>{const g=[...new Set([...(p.imgs||[]),...p.v.map(v=>v.photo)].filter(Boolean))];return g.length?g:['']};
+const eta=n=>{const d=new Date();let c=0;while(c<n){d.setDate(d.getDate()+1);if(d.getDay()!==0)c++}return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'})};
+// DEMO delivery rules – replace with a courier pincode-serviceability API (Shiprocket / Delhivery) for real data
+function dl(pin){if(!/^[1-9][0-9]{5}$/.test(pin))return '<p class="text-rose-700 font-semibold">Please enter a valid 6-digit pincode.</p>';
+ if(/^(19|744|9)/.test(pin))return `<p class="text-rose-700 font-semibold">❌ Sorry, we can't deliver to ${pin} right now.</p>`;
+ const n=/^(11|40|41|56|60|50|70|38)/.test(pin)?3:/^[1-6]/.test(pin)?5:7;
+ return `<p class="text-emerald-700 font-semibold">✅ Delivery to ${pin} by <b>${eta(n)}</b></p><p class="text-ink/60">Free delivery · order today · ${n} business days</p>`}
+function product(){const p=P.find(x=>x.id===S.pd);if(!p){S.view='store';return store()}
+ const v=av(p),g=gal(p),gi=Math.min(S.gi||0,g.length-1),inC=S.cart.some(c=>c.vid===v.id),v0=v.price;
+ const ua=S.user?S.addrs.filter(a=>a.m===S.user.mobile):[],ad=ua.find(a=>a.id===S.addr)||ua[0];
+ const near=L=>L.sort((a,b)=>Math.abs(av(a).price-v0)-Math.abs(av(b).price-v0)),ci=CL.findIndex(c=>c.name===p.cat),oc=[1,2].map(i=>CL[(ci+i)%CL.length]?.name).filter(n=>n&&n!==p.cat),
+ all=[...near(P.filter(x=>x.cat===p.cat&&x.id!==p.id)).slice(0,8),...oc.flatMap(n=>near(P.filter(x=>x.cat===n)).slice(0,5))],sim=[all.slice(0,6),all.slice(6,12),all.slice(12,18)].filter(r=>r.length);
+ const k=(parseInt(p.id.slice(1))||0)%8,revs=[...Array(8).keys()].map(i=>RV[(k+i)%8]);
+ const rows=S.tab==='mfg'?[['Imported & marketed by',MFG.name],['Registered address',MFG.addr],['Country of origin','China'],['Generic name',p.cat],['Net quantity','1 unit'],['Customer care',MFG.care]]
+  :[['Category',p.cat],['Style / design',p.design],['Material',MAT[p.cat]||'Premium materials'],['Colours available',p.v.map(x=>x.color).join(', ')],['Selected colour',v.color],['SKU',v.sku],['HSN code',p.hsn],['Returns','7-day return & replacement']];
+ const tb=(t,l)=>`<button data-a="ptab" data-x="${t}" class="py-2 ${(S.tab||'spec')===t?'border-b-2 border-brass text-ink':'text-ink/50'}">${l}</button>`;
+ return `<main class="max-w-[1400px] mx-auto px-4 py-3"><button data-a="back" class="text-xs font-bold mb-2">‹ Back to products</button>
+ <div class="grid md:grid-cols-5 gap-6"><div class="md:col-span-2">
+  <div id="gal" class="relative overflow-hidden rounded-2xl bg-ink aspect-[4/3]"><div id="gs" class="flex h-full transition-transform duration-300 ${v.stock<1?'grayscale':''}" style="transform:translateX(-${gi*100}%)">${g.map(ph=>`<div class="w-full h-full shrink-0">${img({photo:ph})}</div>`).join('')}</div>
+   ${g.length>1?`<button data-a="gal" data-x="-1" class="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-ink/70 text-bone">‹</button><button data-a="gal" data-x="1" class="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-ink/70 text-bone">›</button>`:''}
+   <span class="absolute top-3 left-3 px-2 py-0.5 rounded bg-brass text-ink text-[10px] font-bold">${v.d}% OFF</span>${v.stock<1?'<span class="absolute inset-x-0 bottom-4 mx-auto w-fit px-4 py-1.5 rounded bg-ink/85 text-bone text-xs font-bold">Out of stock</span>':''}</div>
+  <div class="flex gap-2 mt-3 overflow-x-auto ns">${g.map((ph,i)=>`<button data-a="gset" data-x="${i}" class="gt w-16 h-16 rounded-lg overflow-hidden shrink-0 ring-brass ${v.stock<1?'grayscale':''} ${i===gi?'ring-2':''}">${img({photo:ph})}</button>`).join('')}</div></div>
+ <div class="md:col-span-3"><p class="text-[10px] uppercase tracking-wider text-brass font-bold">${esc(p.cat)} · ${esc(p.design)}</p><h1 class="serif text-xl mt-1">${esc(p.title)}</h1>
+  <div class="flex items-center gap-2 mt-2 text-sm">${stars(p.rate)}<b>${p.rate}</b><span class="text-xs text-ink/60">(${p.rev} ratings)</span></div>
+  <div class="mt-3 p-3 rounded-xl bg-white border text-xs space-y-0.5"><div class="flex justify-between text-ink/60"><span>MRP</span><span class="line-through">${inr(v.mrp)}</span></div><div class="flex justify-between text-emerald-700 font-semibold"><span>Discount (${v.d}% off)</span><span>− ${inr(v.mrp-v.price)}</span></div><div class="flex justify-between text-base font-bold border-t pt-1.5"><span>Final price</span><span>${inr(v.price)}</span></div><p class="text-[10px] text-ink/50">Inclusive of all taxes · Free delivery</p></div>
+  <div class="mt-4"><p class="text-xs font-bold mb-2">Colour: <span class="text-brass">${v.color}</span></p><div class="flex gap-2">${p.v.map((x,i)=>`<button data-a="pvar" data-x="${i}" title="${x.color}" class="w-7 h-7 rounded-full border border-ink/30 ${x.id===v.id?'ring-2 ring-offset-2 ring-brass':''}" style="background:${x.hex}"></button>`).join('')}</div>
+   <p class="text-xs mt-2 font-semibold ${sk(v)[1]}">${sk(v)[0]}</p></div>
+  <div class="mt-3 flex gap-2">${v.stock<1?'<button disabled class="flex-1 py-2 rounded-xl bg-ink/15 text-ink/50 font-bold text-sm cursor-not-allowed">Out of stock</button>':inC?'<button data-a="drawer" class="flex-1 py-2 rounded-xl bg-brass text-ink font-bold text-sm">Go to Cart</button>':`<button data-a="add" data-x="${p.id}" class="flex-1 py-2 rounded-xl border-2 border-ink font-bold text-sm hover:bg-ink hover:text-bone">Add to Cart</button>`}${v.stock<1?'':`<button data-a="buy" data-x="${p.id}" class="flex-1 py-2 rounded-xl bg-ink text-bone hover:bg-brass hover:text-ink font-bold text-sm">Buy Now</button>`}</div>
+  <div class="mt-3 p-3 rounded-xl bg-white border text-xs space-y-1"><p class="font-bold text-sm">🚚 Expected delivery</p>${ad?`<p class="text-ink/70">To ${esc(ad.name)}, ${esc(ad.city)} – ${esc(ad.pin)}</p>${dl(ad.pin)}`:`<p class="text-ink/70">${S.user?'Add an address at checkout, or':'Sign in to see delivery to your saved address, or'} check any pincode below.</p>`}</div>
+  <div class="mt-2 p-3 rounded-xl bg-white border"><p class="font-bold text-xs mb-1.5">Check delivery to a pincode</p><form data-f="pin" class="flex gap-2"><input name="pin" value="${esc(S.pin||'')}" maxlength="6" inputmode="numeric" placeholder="Enter 6-digit pincode" class="flex-1"><button class="px-4 rounded-lg bg-ink text-bone text-xs font-bold">Check</button></form>${S.pin!=null?`<div class="mt-3 text-xs space-y-1">${dl(S.pin)}</div>`:''}</div></div></div>
+ <section class="mt-6 bg-white rounded-2xl border overflow-hidden"><div class="grid grid-cols-2 border-b text-xs font-bold text-center">${tb('spec','Product Specification')}${tb('mfg','Manufacturer Details')}</div><table class="w-full text-xs">${rows.map(([a,b])=>`<tr class="border-b last:border-0"><td class="p-2 w-2/5 text-ink/60 font-semibold">${a}</td><td class="p-2">${esc(b)}</td></tr>`).join('')}</table></section>
+ <section class="mt-5 bg-white rounded-2xl border p-4"><h2 class="serif text-xl mb-3">Ratings &amp; Reviews</h2><div class="flex items-center gap-4 pb-4 border-b"><div class="text-3xl font-bold">${p.rate}<span class="text-lg text-ink/50">/5</span></div><div class="text-xl">${stars(p.rate)}<p class="text-xs text-ink/60 mt-1">${p.rev} ratings</p></div></div>
+  ${(S.rvAll?revs:revs.slice(0,3)).map(r=>`<div class="py-3 border-b last:border-0 text-xs"><b>${r[0]}</b> <span class="text-ink/50">· ${r[1]}</span><div class="my-1">${stars(r[2])}</div><p class="text-ink/80">${r[3]}</p></div>`).join('')}<button data-a="rvmore" class="mt-3 text-xs font-bold text-brass hover:underline">${S.rvAll?'Show fewer reviews ▴':'More reviews ('+(revs.length-3)+') ▾'}</button></section>
+ ${sim.length?`<section class="mt-6"><h2 class="serif text-lg mb-0.5">Similar products</h2><p class="text-xs text-ink/60 mb-4">More from ${esc(p.cat)}${oc.length?' and '+oc.map(esc).join(' &amp; '):''}</p>${sim.map(r=>`<div class="hs flex gap-3 overflow-x-auto ns pb-3 lg:grid lg:grid-cols-6 lg:overflow-visible">${r.map(x=>`<div class="w-44 shrink-0 flex lg:w-auto lg:min-w-0">${card(x)}</div>`).join('')}</div>`).join('')}</section>`:''}</main>`}
+const EM=MFG.care,ML=`<a href="mailto:${EM}" class="text-brass underline">${EM}</a>`;
+const TOP=[['about','About us'],['faq','FAQs'],['shipping','Shipping policy'],['returns','Returns & replacement'],['payments','Payments'],['privacy','Privacy policy'],['terms','Terms & conditions'],['contact','Contact us']];
+const INFO={
+about:['About Orayve',['<b>Small Details. Big Presence.</b>','Orayve brings together everyday accessories — wallets, belts, bags and backpacks, handbags, rings, chains, shoes, sandals, ties, socks and watches — chosen for clean design and honest value.','Every piece is hand-inspected before dispatch and delivered in signature Orayve packaging. If something is not right, our 7-day return and replacement promise has you covered.']],
+faq:['Frequently Asked Questions',['<b>How do I track my order?</b><br>Open the menu, choose My Orders, and see the live status of each order.','<b>How do I check delivery to my area?</b><br>Open any product and enter your pincode under Expected delivery.','<b>Can I use a coupon on every item?</b><br>Coupons apply only to items marked Coupon Eligible and above the minimum order value. Apply them in your bag.','<b>How do I get my GST invoice?</b><br>Go to My Orders and tap Download Bill next to the order.','<b>How do I return something?</b><br>See Returns &amp; replacement, then write to '+ML+' with your order ID.']],
+shipping:['Shipping Policy',['Delivery is <b>free</b> on all orders.','Every order is hand-inspected and dispatched after confirmation. The expected delivery date is shown on each product page for your pincode and is an estimate that can change with courier conditions.','A few remote areas may not be serviceable yet. If we cannot deliver to your pincode, you will see this before you order.','Track the progress of your order anytime in My Orders.']],
+returns:['Returns & Replacement',['You can return or exchange an item within <b>7 days of delivery</b>.','The item must be unused and in its original Orayve packaging. Items showing signs of use are not eligible.','To start a request, email '+ML+' with your order ID, and photos if the item arrived damaged or defective. We will guide you through the next steps.']],
+payments:['Payments & Invoices',['We offer UPI, credit and debit cards, and net banking at checkout.','All prices are in Indian Rupees and include GST. A GST invoice for every order is available in My Orders.','One coupon can be applied per order, subject to its minimum order value and eligible items.']],
+privacy:['Privacy Policy',['We collect the details you give us — name, age, email, mobile number and delivery addresses — to create your account, process orders and contact you about them.','We share your name, address and phone number only with delivery partners so they can deliver your order. We do not sell your personal information.','To correct or delete your details, write to '+ML+'.']],
+terms:['Terms & Conditions',['By using this site you agree to these terms. Please keep your account details accurate and secure.','Prices, offers and availability may change without notice. An order is confirmed once you receive an order ID.','Coupons are valid only on eligible items, within their conditions, and may be withdrawn at any time.','We may suspend accounts that misuse the site or its offers.','Returns and replacements follow our Returns &amp; replacement policy. These terms are governed by the laws of India.']],
+contact:['Contact Us',['We are happy to help with orders, returns or any question.','Email: '+ML,'Please include your order ID so we can help you faster.']]
+};
+function foot(){const L=(a,x,t)=>`<button data-a="${a}" data-x="${x}" class="block text-left text-bone/75 hover:text-gold">${t}</button>`,H=t=>`<p class="font-bold uppercase tracking-wider text-gold mb-3">${t}</p>`;
+ $('#ft').innerHTML=S.view==='admin'?'':`<div class="max-w-[1400px] mx-auto px-4 py-6 grid sm:grid-cols-2 lg:grid-cols-4 gap-6 text-xs"><div><p class="serif text-xl">Orayve</p><p class="text-gold text-[10px] uppercase tracking-[.25em] mt-1 font-bold">Small Details. Big Presence.</p><p class="text-bone/70 mt-3 leading-relaxed">Everyday accessories chosen for clean design and honest value, hand-inspected and delivered in signature Orayve packaging.</p><a href="mailto:${EM}" class="inline-block mt-3 text-gold hover:underline">${EM}</a></div>
+ <div>${H('Shop')}<div class="space-y-2">${CL.slice(0,6).map(c=>L('catt',esc(c.name),esc(c.name))).join('')}${L('catt','All Categories','View all →')}</div></div>
+ <div>${H('Customer care')}<div class="space-y-2">${L('go','orders','My orders')}${L('wl','','Wishlist')}${['shipping','returns','payments','faq','contact'].map(k=>L('info',k,TOP.find(t=>t[0]===k)[1])).join('')}</div></div>
+ <div>${H('Company')}<div class="space-y-2">${['about','privacy','terms'].map(k=>L('info',k,TOP.find(t=>t[0]===k)[1])).join('')}${L('acct','',S.user?'My account':'Sign in / Register')}</div></div></div>
+ <div class="border-t border-white/10 py-4 text-center text-[11px] text-bone/60">© ${new Date().getFullYear()} Orayve. All rights reserved. · <button data-a="top" class="hover:text-gold">Back to top ↑</button></div>`}
+const pim=()=>(S.pimgs||[]).map((u,i)=>`<div class="relative w-16 h-16 rounded-lg overflow-hidden border bg-ink"><img src="${u}" class="w-full h-full object-cover" alt="">${i?'':'<span class="absolute bottom-0 inset-x-0 bg-brass text-ink text-[8px] text-center font-bold">MAIN</span>'}<button type="button" data-a="pimgdel" data-x="${i}" class="absolute top-0 right-0 bg-ink/80 text-bone w-5 h-5 text-[10px]">✕</button></div>`).join('')||'<span class="text-ink/50">No images added yet</span>';
+function addImgs(inp){const fs=[...inp.files],room=8-S.pimgs.length;if(room<=0)return toast('Maximum 8 images per product','e');if(fs.length>room)toast('Only '+room+' more image(s) can be added','e');
+ fs.slice(0,room).forEach(f=>{if(!f.type.startsWith('image/'))return;const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const k=Math.min(1,700/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);S.pimgs.push(c.toDataURL('image/jpeg',.7));const e=$('#pimgs');if(e)e.innerHTML=pim()};im.src=r.result};r.readAsDataURL(f)});inp.value=''}
+let PX=0;
+function main(rs){const hs=rs?[]:[...document.querySelectorAll('#main .hs')].map(e=>e.scrollLeft),pl=$('#pills');if(pl)PX=pl.scrollLeft;$('#main').innerHTML=({store,checkout,orders,admin,product})[S.view]();const n=$('#pills');if(n)n.scrollLeft=PX;document.querySelectorAll('#main .hs').forEach((e,i)=>e.scrollLeft=hs[i]||0);hdr();foot()}
+const render=()=>{main();drawer();modal()};
+
+// ---------- ACTIONS ----------
+const A={
+ cat:x=>{S.cat=x;S.color='All';S.page=1;S.view='store';S.onlyW=false;S.q='';$('#q').value='';main()},
+ home:()=>{A.cat('All Categories');scrollTo(0,0)},
+ page:x=>{S.page=+x;main();scrollTo(0,0)},
+ sw:(x,y)=>{S.av[x]=+y;main()},
+ add:x=>{const p=P.find(a=>a.id===x),v=av(p),c=S.cart.find(i=>i.pid===x&&i.vid===v.id);
+  if(v.stock<1)return toast('Out of stock','e');if(c){if(c.q>=v.stock)return toast('Max stock reached','e');c.q++}else S.cart.push({pid:x,vid:v.id,q:1});sv();hdr();main();toast('Added to your Orayve bag')},
+ wish:x=>{const i=S.wish.indexOf(x);i>-1?S.wish.splice(i,1):S.wish.push(x);sv();main();toast(i>-1?'Removed from wishlist':'Saved to wishlist')},
+ onlyw:()=>{S.onlyW=!S.onlyW;S.view='store';S.page=1;main()},
+ share:x=>{const u=location.href.split('#')[0]+'#'+x;navigator.clipboard?.writeText(u).catch(()=>{});toast('Share link copied')},
+ drawer:()=>{S.drawer=!S.drawer;drawer()},
+ qty:(x,y)=>{const[p,v]=x.split('|');const c=S.cart.find(i=>i.pid===p&&i.vid===v);if(!c)return;const pr=P.find(a=>a.id===p),st=pr.v.find(a=>a.id===v).stock;c.q=Math.min(c.q+ +y,st);S.cart=S.cart.filter(i=>i.q>0);sv();hdr();drawer();main()},
+ coupon:()=>{const code=$('#cin').value.trim().toUpperCase(),c=COUP.find(c=>c.code===code&&c.on);if(!c)return toast('Invalid or inactive coupon','e');
+  if(cd().sub<c.min)return toast('Minimum order '+inr(c.min)+' required','e');S.coupon=code;drawer();toast('Coupon '+code+' applied')},
+ tocheckout:()=>{S.drawer=false;if(!S.user){S.auth='login';S.after=1;drawer();modal();return}S.view='checkout';S.step=1;S.addr=S.addrs.find(a=>a.m===S.user.mobile)?.id||null;drawer();main();scrollTo(0,0)},
+ go:x=>{S.view=x;main();scrollTo(0,0)},
+ addr:x=>{S.addr=x;main()},
+ pay1:()=>{if(!S.addr)return toast('Select or add a delivery address','e');S.step=2;main()},
+ step:x=>{S.step=+x;main()},
+ paym:x=>{S.pay=x;main()},
+ place:()=>{const c=cd(),a=S.addrs.find(a=>a.id===S.addr);if(!c.items.length||!a)return;const r=Math.floor(1e5+Math.random()*9e5),y=new Date().getFullYear();
+  const o={mobile:S.user?.mobile,id:`ORD-${y}-${r}`,inv:`INV-${y}-${r}`,at:new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}),status:0,pay:S.pay,coupon:S.coupon,sub:c.sub,disc:c.disc,total:c.total,addr:a,
+   items:c.items.map(i=>({title:i.p.title,cat:i.p.cat,color:i.v.color,sku:i.v.sku,hsn:i.p.hsn,price:i.v.price,qty:i.q}))};
+  c.items.forEach(i=>{i.v.stock=Math.max(0,i.v.stock-i.q);i.p.sold+=i.q});
+  S.orders.unshift(o);svp();S.cart=[];S.coupon='';S.last=o;S.step=3;sv();main();toast('Order '+o.id+' confirmed!')},
+ invoice:x=>{S.inv=S.orders.find(o=>o.id===x);modal()},closeinv:()=>{S.inv=null;modal()},
+ atab:x=>{S.atab=x;main()},alogout:()=>{S.adm=false;S.view='store';main()},
+ ctog:x=>{COUP[+x].on=!COUP[+x].on;svp();main()},
+ acct:()=>{if(S.user)A.go('orders');else{S.auth='login';modal()}},
+ authtab:x=>{S.auth=x;modal()},closeauth:()=>{S.auth=null;S.after=0;modal()},
+ otp:()=>toast('Demo OTP: 123456'),
+ logout:()=>{S.user=null;sv();S.view='store';main();toast('Logged out')},
+ pnew:()=>{S.pf={};S.pimgs=[];main();scrollTo(0,0)},pedit:x=>{S.pf=P.find(p=>p.id===x);S.pimgs=[...(S.pf.imgs||[])];main();scrollTo(0,0)},pcancel:()=>{S.pf=null;main()},
+ pdel:x=>{if(!confirm('Delete this product?'))return;P.splice(P.findIndex(p=>p.id===x),1);S.cart=S.cart.filter(c=>c.pid!==x);S.wish=S.wish.filter(w=>w!==x);sv();svp();main();toast('Product deleted')},
+ cnew:()=>{S.cf={};main()},cedit:x=>{S.cf={old:x};main()},ccancel:()=>{S.cf=null;main()},
+ cdel:x=>{if(P.some(p=>p.cat===x))return toast('Delete or move its products first','e');if(!confirm('Delete category '+x+'?'))return;CL=CL.filter(c=>c.name!==x);if(S.cat===x)S.cat='All Categories';svp();main();toast('Category deleted')},
+ unew:()=>{S.uf={};main()},uedit:x=>{S.uf={old:x};main()},ucancel:()=>{S.uf=null;main()},
+ uban:x=>{const u=S.users.find(u=>u.mobile===x);if(!u)return;const b=!u.banned;
+  if(!confirm(b?`Ban ${u.name} (${u.mobile})?\n\nThey will be signed out and cannot log in or place orders until you unban them.`:`Unban ${u.name} (${u.mobile})?\n\nThey will be able to log in again.`))return;
+  u.banned=b;if(b&&S.user?.mobile===x)S.user=null;sv();hdr();main();toast(b?'User banned':'User unbanned')},
+ udel:x=>{const u=S.users.find(u=>u.mobile===x);if(!u||!confirm(`Permanently delete ${u.name} (${x})?\n\nTheir saved addresses are removed; past orders are kept.`))return;
+  S.users=S.users.filter(a=>a.mobile!==x);S.addrs=S.addrs.filter(a=>a.m!==x);if(S.user?.mobile===x)S.user=null;sv();hdr();main();toast('User deleted')},
+ knew:()=>{S.kf={};main()},kedit:x=>{S.kf={old:x};main()},kcancel:()=>{S.kf=null;main()},
+ kdel:x=>{if(!confirm('Delete coupon '+x+'?'))return;const i=COUP.findIndex(c=>c.code===x);if(i>-1)COUP.splice(i,1);if(S.coupon===x)S.coupon='';svp();main();toast('Coupon deleted')},
+ menu:()=>{S.menu=!S.menu;menu()},
+ wl:()=>{S.onlyW=true;S.view='store';S.page=1;main();scrollTo(0,0)},
+ shares:()=>{const u=location.href.split('#')[0];if(navigator.share)navigator.share({title:'Orayve',text:'Small Details. Big Presence.',url:u}).catch(()=>{});else{navigator.clipboard?.writeText(u).catch(()=>{});toast('Store link copied')}},
+ info:x=>{S.info=x||'help';modal()},
+ catt:x=>{A.cat(x);scrollTo(0,0)},top:()=>scrollTo({top:0,behavior:'smooth'}),
+ rvmore:()=>{S.rvAll=!S.rvAll;main()},
+ pimgdel:x=>{S.pimgs.splice(+x,1);const e=$('#pimgs');if(e)e.innerHTML=pim()},closeinfo:()=>{S.info=false;modal()},
+ open:x=>{if(S.view!=='product')S.ys=scrollY;S.pd=x;S.gi=0;S.tab='spec';S.rvAll=false;S.view='product';main(true);scrollTo(0,0)},
+ back:()=>{S.view='store';main();scrollTo(0,S.ys||0)},
+ gset:i=>{S.gi=+i;const g=$('#gs');if(g)g.style.transform=`translateX(-${S.gi*100}%)`;document.querySelectorAll('.gt').forEach((b,k)=>b.classList.toggle('ring-2',k===S.gi))},
+ gal:d=>{const n=gal(P.find(p=>p.id===S.pd)).length;A.gset((S.gi+ +d+n)%n)},
+ pvar:i=>{const p=P.find(a=>a.id===S.pd);S.av[p.id]=+i;S.gi=Math.max(0,gal(p).indexOf(p.v[+i].photo));main()},
+ ptab:x=>{S.tab=x;main()},
+ buy:x=>{const p=P.find(a=>a.id===x),v=av(p);if(v.stock<1)return toast('Out of stock','e');if(!S.cart.some(c=>c.vid===v.id))S.cart.push({pid:x,vid:v.id,q:1});sv();hdr();A.tocheckout()}
+};
+document.addEventListener('click',e=>{const t=e.target.closest('[data-a]');if(t&&A[t.dataset.a]){if(S.menu&&t.dataset.a!=='menu'){S.menu=false;menu()}A[t.dataset.a](t.dataset.x,t.dataset.y)}});
+document.addEventListener('change',e=>{const t=e.target,c=t.dataset.c;if(t.id==='imgf'){addImgs(t);return}if(!c)return;
+ if(c==='color'){S.color=t.value;S.page=1;main()}
+ if(c==='sort'){S.sort=t.value;S.page=1;main()}
+ if(c==='status'){const o=S.orders.find(o=>o.id===t.dataset.x);o.status=+t.value;sv();toast('Order status updated')}
+ if(c==='aprice'||c==='astock'){const v=P.find(p=>p.id===t.dataset.x).v[0];if(c==='aprice')v.price=+t.value;else v.stock=+t.value;toast('Product updated')}});
+document.addEventListener('input',e=>{const t=e.target;
+ if(t.id==='q'){S.q=t.value;S.page=1;S.view='store';main()}
+ if(t.dataset.c==='asearch'){S.aq=t.value;$('#atbl').innerHTML=atbl()}});
+let TX=null;document.addEventListener('touchstart',e=>{TX=e.target.closest('#gal')?e.touches[0].clientX:null},{passive:true});
+document.addEventListener('touchend',e=>{if(TX==null)return;const dx=e.changedTouches[0].clientX-TX;TX=null;if(Math.abs(dx)>40)A.gal(dx<0?1:-1)});
+document.addEventListener('submit',e=>{const f=e.target.dataset.f;if(!f)return;e.preventDefault();const d=Object.fromEntries(new FormData(e.target));
+ if(f==='addr'){const a={m:S.user.mobile,id:'a'+Date.now(),name:d.name,phone:d.phone,street:d.street,city:d.city||'Pune',pin:d.pin};S.addrs.push(a);S.addr=a.id;sv();main();toast('Address saved')}
+ if(f==='login'||f==='reg'){const m=d.mobile.trim();if(d.otp!=='123456')return toast('Invalid OTP (demo OTP: 123456)','e');const u=S.users.find(u=>u.mobile===m);
+ if(f==='login'){if(!u)return toast('No account found — please register','e');if(u.banned)return toast('This account has been banned. Please contact support.','e');S.user=u}
+ else{if(u)return toast('Mobile already registered — please login','e');if(S.users.some(x=>x.email.toLowerCase()===d.email.trim().toLowerCase()))return toast('Email already in use','e');const nu={name:d.name.trim(),age:+d.age,email:d.email.trim(),mobile:m,at:new Date().toLocaleDateString('en-IN')};S.users.push(nu);S.user=nu}
+ S.auth=null;sv();render();toast('Welcome, '+S.user.name.split(' ')[0]);if(S.after){S.after=0;A.tocheckout()}}
+ if(f==='prod'){const id=S.pf?.id,old=id&&P.find(p=>p.id===id),pid=id||'p'+Date.now();
+  const vs=[0,1,2].map(k=>({k,c:(d['c'+k]||'').trim(),h:d['h'+k],ph:(d['ph'+k]||'').trim(),mrp:+d['m'+k],pr:+d['p'+k],st:+d['s'+k]})).filter(x=>x.c&&x.pr>0);
+  if(!vs.length)return toast('Add at least one colour with a price','e');
+  const v=vs.map(x=>{const mrp=Math.max(x.mrp||x.pr,x.pr),vid=pid+'v'+x.k;return{id:vid,sku:old?.v.find(o=>o.id===vid)?.sku||`ORV-${d.cat.replace(/[^A-Za-z]/g,'').slice(0,3).toUpperCase()}-${Math.floor(100+Math.random()*900)}-${x.k+1}`,color:x.c,hex:x.h,photo:x.ph||(()=>{const pv=old?.v.find(o=>o.id===vid)?.photo;return pv&&(!/^data:/.test(pv)||S.pimgs.includes(pv))?pv:S.pimgs[0]||''})(),mrp,d:Math.round((1-x.pr/mrp)*100),price:x.pr,stock:Math.max(0,x.st||0)}});
+  const np={id:pid,title:d.title.trim(),cat:d.cat,design:(d.design||'').trim()||'Classic',hsn:CL.find(c=>c.name===d.cat)?.hsn||'',rate:old?.rate||4.5,rev:old?.rev||0,views:old?.views||0,sold:old?.sold||0,coupon:!!d.coupon,imgs:[...S.pimgs],v};
+  if(old)P[P.indexOf(old)]=np;else P.unshift(np);S.pf=null;svp();main();toast(old?'Product updated':'Product added')}
+ if(f==='cat'){const nm=d.name.trim(),old=S.cf?.old;if(CL.some(c=>c.name.toLowerCase()===nm.toLowerCase()&&c.name!==old))return toast('Category already exists','e');
+  if(old){const c=CL.find(c=>c.name===old);P.forEach(p=>{if(p.cat===old){p.cat=nm;p.hsn=d.hsn.trim()}});if(S.cat===old)S.cat=nm;c.name=nm;c.hsn=d.hsn.trim()}else CL.push({name:nm,hsn:d.hsn.trim()});
+  S.cf=null;svp();main();toast('Category saved')}
+ if(f==='pin'){S.pin=d.pin.trim();main()}
+ if(f==='user'){const old=S.uf?.old,m=d.mobile.trim(),em=d.email.trim().toLowerCase();
+  if(S.users.some(u=>u.mobile===m&&u.mobile!==old))return toast('Mobile already registered','e');
+  if(S.users.some(u=>u.email.toLowerCase()===em&&u.mobile!==old))return toast('Email already in use','e');
+  if(old){const u=S.users.find(u=>u.mobile===old);Object.assign(u,{name:d.name.trim(),age:+d.age,email:d.email.trim(),mobile:m});
+   if(m!==old){S.orders.forEach(o=>{if(o.mobile===old)o.mobile=m});S.addrs.forEach(a=>{if(a.m===old)a.m=m})}if(S.user?.mobile===old)S.user=u}
+  else S.users.push({name:d.name.trim(),age:+d.age,email:d.email.trim(),mobile:m,at:new Date().toLocaleDateString('en-IN')});
+  S.uf=null;sv();hdr();main();toast('User saved')}
+ if(f==='coup'){const old=S.kf?.old,code=d.code.trim().toUpperCase().replace(/\s+/g,''),val=+d.val;
+  if(!/^[A-Z0-9]{3,20}$/.test(code))return toast('Code must be 3–20 letters/numbers','e');
+  if(COUP.some(c=>c.code===code&&c.code!==old))return toast('Coupon code already exists','e');
+  if(!(val>0)||(d.type==='P'&&val>100))return toast('Invalid discount value','e');
+  const c={code,type:d.type,val,max:d.type==='P'?(+d.max||1e9):val,min:+d.min||0,on:!!d.on};
+  if(old)COUP[COUP.findIndex(x=>x.code===old)]=c;else COUP.push(c);if(S.coupon===old)S.coupon=old===code?code:'';
+  S.kf=null;svp();main();toast('Coupon saved')}
+ if(f==='adm'){if(d.p===ADMIN_PASS){S.adm=true;main();toast('Admin console unlocked')}else toast('Wrong passcode','e')}});
+render();
+</script>
+</body>
+</html>
