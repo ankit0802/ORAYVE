@@ -231,6 +231,21 @@ app.post('/api/auth/register', (req, res) => {
   };
   USERS.push(newUser);
 
+  // Sync to Neon PostgreSQL
+  if (pool) {
+    pool.query(`
+      INSERT INTO public.users (full_name, age, email, mobile_number, role, is_banned)
+      VALUES ($1, $2, $3, $4, 'ROLE_USER', FALSE)
+      ON CONFLICT (mobile_number) DO UPDATE SET full_name = EXCLUDED.full_name;
+    `, [newUser.name, newUser.age, newUser.email, newUser.mobile]).catch(e => console.error('[DB] User insert error:', e.message));
+
+    pool.query(`
+      INSERT INTO auth_schema.users (full_name, age, email, mobile_number, role, is_banned)
+      VALUES ($1, $2, $3, $4, 'ROLE_USER', FALSE)
+      ON CONFLICT (mobile_number) DO UPDATE SET full_name = EXCLUDED.full_name;
+    `, [newUser.name, newUser.age, newUser.email, newUser.mobile]).catch(() => {});
+  }
+
   const token = jwt.sign({ mobile: newUser.mobile, name: newUser.name, role: 'USER' }, JWT_SECRET, { expiresIn: '7d' });
   res.json({ success: true, message: `Account created for ${newUser.name}`, data: { user: newUser, token } });
 });
@@ -250,6 +265,13 @@ app.post('/api/users/addresses', (req, res) => {
     pin
   };
   ADDRESSES.push(newAddr);
+
+  if (pool) {
+    pool.query(`
+      INSERT INTO public.user_addresses (mobile, recipient_name, phone, street_line1, city, pincode)
+      VALUES ($1, $2, $3, $4, $5, $6);
+    `, [mobile, name, phone, street, city || 'Bengaluru', pin]).catch(() => {});
+  }
   res.json({ success: true, message: 'Address saved', data: newAddr });
 });
 
@@ -344,6 +366,25 @@ app.post('/api/checkout/place-order', (req, res) => {
   };
 
   ORDERS.unshift(orderRecord);
+
+  if (pool) {
+    pool.query(`
+      INSERT INTO public.orders (order_number, invoice_number, user_mobile, shipping_address_snapshot, subtotal_amount, discount_amount, final_amount, payment_method, order_status, coupon_code)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9)
+      RETURNING order_id;
+    `, [orderId, invNumber, mobile, JSON.stringify(addr), subtotal, discount, finalTotal, pay, coupon || ''])
+    .then(res => {
+      const oId = res.rows[0]?.order_id;
+      if (oId) {
+        for (const item of processedItems) {
+          pool.query(`
+            INSERT INTO public.order_items (order_id, product_title, category_name, color_name, sku, hsn_code, unit_price, quantity)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+          `, [oId, item.title, item.cat, item.color, item.sku, item.hsn, item.price, item.qty]).catch(() => {});
+        }
+      }
+    }).catch(e => console.error('[DB] Order insert error:', e.message));
+  }
   res.json({ success: true, message: `Order ${orderId} placed successfully!`, data: orderRecord });
 });
 
@@ -631,19 +672,32 @@ app.post('/api/admin/users', (req, res) => {
   if (USERS.some(u => u.mobile === mobile.trim())) return res.status(409).json({ success: false, message: 'Mobile exists' });
   const nu = { name: name.trim(), age: parseInt(age), email: email.trim(), mobile: mobile.trim(), at: new Date().toLocaleDateString('en-IN'), banned: false };
   USERS.push(nu);
+  if (pool) {
+    pool.query(`
+      INSERT INTO public.users (full_name, age, email, mobile_number, role, is_banned)
+      VALUES ($1, $2, $3, $4, 'ROLE_USER', FALSE)
+      ON CONFLICT (mobile_number) DO NOTHING;
+    `, [nu.name, nu.age, nu.email, nu.mobile]).catch(() => {});
+  }
   res.json({ success: true, message: 'User created', data: nu });
 });
 
 app.patch('/api/admin/users/:mobile/ban', (req, res) => {
   const u = USERS.find(u => u.mobile === req.params.mobile);
   if (!u) return res.status(404).json({ success: false, message: 'User not found' });
-  u.banned = !u.banned;
+  u.banned = req.body.banned !== undefined ? !!req.body.banned : !u.banned;
+  if (pool) {
+    pool.query('UPDATE public.users SET is_banned = $1 WHERE mobile_number = $2;', [u.banned, req.params.mobile]).catch(() => {});
+  }
   res.json({ success: true, message: u.banned ? 'User banned' : 'User unbanned', data: u });
 });
 
 app.delete('/api/admin/users/:mobile', (req, res) => {
   USERS = USERS.filter(u => u.mobile !== req.params.mobile);
   ADDRESSES = ADDRESSES.filter(a => a.m !== req.params.mobile);
+  if (pool) {
+    pool.query('DELETE FROM public.users WHERE mobile_number = $1;', [req.params.mobile]).catch(() => {});
+  }
   res.json({ success: true, message: 'User deleted' });
 });
 
