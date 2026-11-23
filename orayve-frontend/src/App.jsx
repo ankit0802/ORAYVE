@@ -1,1447 +1,1249 @@
-import React, { useState, useMemo } from 'react';
-import {
-  Search,
-  Heart,
-  ShoppingBag,
-  User,
-  Lock,
-  X,
-  Plus,
-  Minus,
-  Trash2,
-  Share2,
-  Star,
-  Check,
-  MapPin,
-  CreditCard,
-  Smartphone,
-  Building2,
-  FileText,
-  Printer,
-  Package,
-  Truck,
-  CheckCircle2,
-  TrendingUp,
-  AlertTriangle,
-  BarChart3,
-  Tag,
-  ShieldCheck,
-  LogOut,
-  ArrowRight,
-  ChevronLeft,
-  ChevronRight,
-  Sparkles,
-  SlidersHorizontal,
-  Navigation,
-} from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 
 // ============================================================================
-// 1. CURATED REAL PHOTOGRAPHY & 260-PRODUCT CATALOG GENERATOR (13 x 20)
+// 1. STATIC CATALOG CONSTANTS & REAL PHOTOGRAPHY (13 Categories x 20 = 260 Items)
 // ============================================================================
 
-const CATEGORY_CONFIGS = [
-  {
-    name: 'Wallets',
-    hsn: '42023120',
-    skuPrefix: 'WLT',
-    basePrice: 899,
-    materials: ['Full-Grain Leather', 'Saffiano Leather', 'Vegetable-Tanned Leather', 'Vegan Pebble Leather'],
-    designs: ['Bifold', 'Slim Cardholder', 'Zip-Around', 'RFID Minimalist'],
-    fallbackPhoto: 'https://images.unsplash.com/photo-1627123424574-724758594e93?auto=format&fit=crop&w=600&q=80',
-    photos: [
-      'https://images.unsplash.com/photo-1627123424574-724758594e93?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1606503825008-909a67e63c3d?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1591561954557-26941169b49e?auto=format&fit=crop&w=600&q=80',
-    ],
-    types: [
-      'Atelier Stitched Bifold Wallet', 'Vanguard RFID Slim Cardholder', 'Sovereign Zip-Around Wallet',
-      'Monolith Magnetic Money Clip', 'Heritage Trifold Leather Wallet', 'Noir Carbon-Weave Card Case',
-      'Kensington Long Coat Wallet', 'Aurelia Coin-Pouch Bifold', 'Verona Saddle-Stitch Wallet',
-      'Meridian Travel Passport Wallet', 'Oslo Minimalist 4-Slot Sleeve', 'Savile Textured Checkbook Wallet',
-      'Cognac Burnished Everyday Bifold', 'Imperial Brass-Corner Wallet', 'Solstice Pull-Tab Cardholder',
-      'Regent Dual-Note Executive Wallet', 'Caspian Pebbled Zip Card Case', 'Echelon Snap-Closure Pocket Wallet',
-      'Valet Front-Pocket Slim Wallet', 'Bespoke Monogrammed Billfold',
-    ],
-    swatches: [
-      { name: 'Pitch Black', hex: '#1C1B29' },
-      { name: 'Cognac Tan', hex: '#8B5A2B' },
-      { name: 'Emerald Green', hex: '#1E4D3B' },
-    ],
-  },
-  {
-    name: "Men's Belts",
-    hsn: '42033000',
-    skuPrefix: 'MBL',
-    basePrice: 1199,
-    materials: ['Full-Grain Leather', 'Italian Calfskin', 'Brushed Suede', 'Woven Leather'],
-    designs: ['Formal Buckle', 'Reversible', 'Braided', 'Ratchet Auto-Lock'],
-    fallbackPhoto: 'https://images.unsplash.com/photo-1624222247344-550fb60583dc?auto=format&fit=crop&w=600&q=80',
-    photos: [
-      'https://images.unsplash.com/photo-1624222247344-550fb60583dc?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1590874103328-eac38a683ce7?auto=format&fit=crop&w=600&q=80',
-    ],
-    types: [
-      'Heritage Antique Brass Buckle Belt', 'Savile Reversible Formal Belt', 'Tuscany Hand-Braided Leather Belt',
-      'Monarch Suede Dress Belt', 'Apex Ratchet Micro-Adjust Belt', 'Kensington Stitched Chino Belt',
-      'Noir Matte-Gunmetal Buckle Belt', 'Sovereign Croc-Embossed Belt', 'Verona Double-Keeper Belt',
-      'Oxford Burnished Edge Belt', 'Caspian Casual Canvas-Trim Belt', 'Regent Bridle Leather Belt',
-      'Vanguard Roller-Buckle Belt', 'Meridian Heavyweight Jean Belt', 'Oslo Minimalist Plaque Belt',
-      'Imperial Two-Tone Leather Belt', 'Valet Woven Elasticated Belt', 'Echelon Satin-Nickel Dress Belt',
-      'Atelier Hand-Painted Leather Belt', 'Bespoke Classic 35mm Belt',
-    ],
-    swatches: [
-      { name: 'Espresso Brown', hex: '#4A3123' },
-      { name: 'Pitch Black', hex: '#1C1B29' },
-      { name: 'Saddle Tan', hex: '#9C6B3B' },
-    ],
-  },
-  {
-    name: 'Bags & Backpacks',
-    hsn: '42029200',
-    skuPrefix: 'BAG',
-    basePrice: 2499,
-    materials: ['Waxed Canvas & Leather', 'Full-Grain Leather', 'Ballistic Nylon', 'Textured Vegan Leather'],
-    designs: ['Commuter Backpack', 'Laptop Briefcase', 'Weekender Duffle', 'Messenger'],
-    fallbackPhoto: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=600&q=80',
-    photos: [
-      'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1622560480605-d83c853bc5c3?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1581605405669-fcdf81165afa?auto=format&fit=crop&w=600&q=80',
-    ],
-    types: [
-      'Nomad Waxed Canvas Backpack', 'Executive 16-Inch Leather Briefcase', 'Sovereign Weekender Duffle Bag',
-      'Courier Vintage Leather Messenger', 'Aero Slim Tech Commuter Pack', 'Meridian Roll-Top Travel Pack',
-      'Kensington Structured Portfolio', 'Vanguard Water-Resistant Rucksack', 'Oslo Minimalist Daypack',
-      'Atelier Overnight Holdall', 'Caspian Crossbody Chest Sling', 'Regent Cabin Trolley Sleeve Bag',
-      'Monolith Hard-Shell Laptop Pack', 'Verona Suede-Trim Tote Pack', 'Imperial Gym-to-Office Duffle',
-      'Valet Convertible Brief-Backpack', 'Echelon Camera & Tech Pack', 'Savile Heritage Satchel',
-      'Noir Matte Nylon Travel Pack', 'Bespoke Leather Garment Duffle',
-    ],
-    swatches: [
-      { name: 'Olive Charcoal', hex: '#464C3F' },
-      { name: 'Ink Navy', hex: '#1C1B29' },
-      { name: 'Espresso', hex: '#4A3123' },
-    ],
-  },
-  {
-    name: 'Handbags',
-    hsn: '42022290',
-    skuPrefix: 'HBG',
-    basePrice: 2199,
-    materials: ['Textured Vegan Leather', 'Saffiano Leather', 'Supple Nappa', 'Quilted Leather'],
-    designs: ['Structured Tote', 'Top-Handle Sling', 'Evening Clutch', 'Crossbody'],
-    fallbackPhoto: 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=600&q=80',
-    photos: [
-      'https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1590874103328-eac38a683ce7?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1566150905458-1bf1fc113f0d?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1591561954557-26941169b49e?auto=format&fit=crop&w=600&q=80',
-    ],
-    types: [
-      'Monolith Structured Top-Handle Sling', 'Aurelia Executive Work Tote', 'Celeste Quilted Chain Crossbody',
-      'Sovereign Brass-Clasp Evening Clutch', 'Verona Slouchy Hobo Bag', 'Solstice Mini Bucket Bag',
-      'Kensington Saddle Shoulder Bag', 'Noir Croc-Effect Satchel', 'Oslo Minimalist Baguette Bag',
-      'Regent Dual-Zip Camera Crossbody', 'Atelier Pleated Wristlet Pouch', 'Meridian Reversible Shopper Tote',
-      'Caspian Gold-Hardware Dome Bag', 'Valet Convertible Belt-Sling', 'Imperial Velvet Potli Clutch',
-      'Echelon Structured Trapezoid Bag', 'Savile Woven Leather Shoulder Bag', 'Vanguard Everyday Carryall',
-      'Lumina Pearl-Handle Mini Bag', 'Bespoke Crescent Moon Bag',
-    ],
-    swatches: [
-      { name: 'Midnight Navy', hex: '#1F2D42' },
-      { name: 'Warm Bone', hex: '#E8E0D2' },
-      { name: 'Burgundy Wine', hex: '#5E2129' },
-    ],
-  },
-  {
-    name: 'Rings',
-    hsn: '71171990',
-    skuPrefix: 'RNG',
-    basePrice: 549,
-    materials: ['316L Stainless Steel', '18K Gold-Plated Brass', 'Sterling Silver', 'Brushed Titanium'],
-    designs: ['Minimalist Band', 'Signet', 'Stackable', 'Solitaire'],
-    fallbackPhoto: 'https://images.unsplash.com/photo-1605100804763-247f67b3557e?auto=format&fit=crop&w=600&q=80',
-    photos: [
-      'https://images.unsplash.com/photo-1605100804763-247f67b3557e?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1603561591411-07134e71a2a9?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=600&q=80',
-    ],
-    types: [
-      'Orayve Signature Brushed Band Ring', 'Sovereign Cushion Signet Ring', 'Aurelia Triple Stackable Ring Set',
-      'Celeste Solitaire Zirconia Ring', 'Noir Matte-Black Titanium Band', 'Solstice Twisted Rope Ring',
-      'Verona Domed Croissant Ring', 'Kensington Beveled Edge Band', 'Regent Open Adjustable Cuff Ring',
-      'Caspian Hammered Texture Ring', 'Atelier Couple Promise Band', 'Meridian Geometric Hex Ring',
-      'Oslo Thin Pavé Eternity Band', 'Imperial Emerald-Cut Cocktail Ring', 'Valet Vintage Coin Signet',
-      'Echelon Interlocking Link Ring', 'Savile Engraved Roman Band', 'Vanguard Grooved Center Ring',
-      'Lumina Pearl Accent Midi Ring', 'Bespoke Satin-Finish Thumb Ring',
-    ],
-    swatches: [
-      { name: 'Brushed Brass', hex: '#B8905C' },
-      { name: 'Sterling Silver', hex: '#C0C5CE' },
-      { name: 'Obsidian Ink', hex: '#1C1B29' },
-    ],
-  },
-  {
-    name: 'Chains & Necklaces',
-    hsn: '71171910',
-    skuPrefix: 'CHN',
-    basePrice: 799,
-    materials: ['18K Gold-Plated Steel', '316L Stainless Steel', 'Sterling Silver', 'Rose Gold Plated'],
-    designs: ['Layered Link', 'Cuban Curb', 'Rope Chain', 'Minimalist Pendant'],
-    fallbackPhoto: 'https://images.unsplash.com/photo-1599643477877-530eb83abc8e?auto=format&fit=crop&w=600&q=80',
-    photos: [
-      'https://images.unsplash.com/photo-1599643477877-530eb83abc8e?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1611591437281-460bfbe1220a?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=600&q=80',
-    ],
-    types: [
-      'Solstice Layered Link Necklace', 'Vanguard 5mm Cuban Curb Chain', 'Aurelia Diamond-Cut Rope Chain',
-      'Celeste Compass Medallion Pendant', 'Sovereign Italian Figaro Chain', 'Noir Dog-Tag Bar Pendant',
-      'Verona Herringbone Snake Chain', 'Kensington Box-Link Everyday Chain', 'Regent Pearl Drop Choker',
-      'Caspian Paperclip Toggle Necklace', 'Atelier Minimalist Heart Pendant', 'Meridian Wheat-Link Chain',
-      'Oslo Delicate Tennis Choker', 'Imperial Byzantine Heavy Chain', 'Valet North-Star Coin Necklace',
-      'Echelon Dual-Tone Mariner Chain', 'Savile Polished Franco Chain', 'Lumina Freshwater Pearl Strand',
-      'Monolith Geometric Onyx Pendant', 'Bespoke Adjustable Lariat Chain',
-    ],
-    swatches: [
-      { name: 'Champagne Gold', hex: '#D6B98C' },
-      { name: 'Rose Gold', hex: '#D49B8B' },
-      { name: 'Polished Steel', hex: '#B8BDC4' },
-    ],
-  },
-  {
-    name: 'Shoes',
-    hsn: '64039990',
-    skuPrefix: 'SHO',
-    basePrice: 3299,
-    materials: ['Full-Grain Calfskin', 'Brushed Suede', 'Nappa Leather', 'Patent Leather'],
-    designs: ['Oxford Formal', 'Penny Loafer', 'Chelsea Boot', 'Minimalist Sneaker'],
-    fallbackPhoto: 'https://images.unsplash.com/photo-1614252235316-8c857d38b5f4?auto=format&fit=crop&w=600&q=80',
-    photos: [
-      'https://images.unsplash.com/photo-1614252235316-8c857d38b5f4?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1549298916-b41d501d3772?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1560769629-975ec94e6a86?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1525966222134-fcfa99b8ae77?auto=format&fit=crop&w=600&q=80',
-    ],
-    types: [
-      'Savile Cap-Toe Leather Oxford', 'Heritage Hand-Stitched Penny Loafer', 'Kensington Suede Chelsea Boot',
-      'Noir Minimalist Court Sneaker', 'Sovereign Double Monk-Strap Shoe', 'Verona Burnished Wingtip Brogue',
-      'Oslo Pebble-Grain Driving Moccasin', 'Regent Wholecut Evening Oxford', 'Caspian Lug-Sole Derby Shoe',
-      'Atelier Tassel Velvet Loafer', 'Meridian Chukka Desert Boot', 'Vanguard Knit-Trim Runner',
-      'Imperial Patent Tuxedo Derby', 'Valet Slip-On Espadrille Loafer', 'Echelon High-Top Leather Sneaker',
-      'Monolith Square-Toe Dress Boot', 'Solstice Woven Mule Loafer', 'Aurelia Pointed-Toe Block Heel',
-      'Celeste Slingback Kitten Heel', 'Bespoke Goodyear-Welted Brogue',
-    ],
-    swatches: [
-      { name: 'Espresso Brown', hex: '#4A3123' },
-      { name: 'Pitch Black', hex: '#1C1B29' },
-      { name: 'Warm Bone', hex: '#E8E0D2' },
-    ],
-  },
-  {
-    name: 'Sandals',
-    hsn: '64039920',
-    skuPrefix: 'SND',
-    basePrice: 1499,
-    materials: ['Vegetable-Tanned Leather', 'Soft Suede', 'Cork & Leather', 'Woven Leather'],
-    designs: ['Strappy Leather', 'Fisherman', 'Kolhapuri Craft', 'Buckled Slide'],
-    fallbackPhoto: 'https://images.unsplash.com/photo-1603487742131-4160ec999306?auto=format&fit=crop&w=600&q=80',
-    photos: [
-      'https://images.unsplash.com/photo-1603487742131-4160ec999306?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1562273138-f46be4ebdf33?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1543163521-1bf539c55dd2?auto=format&fit=crop&w=600&q=80',
-    ],
-    types: [
-      'Verona Dual-Buckle Cork Sandal', 'Heritage Handcrafted Kolhapuri', 'Caspian Woven Fisherman Sandal',
-      'Aurelia Strappy Grecian Flat', 'Oslo Contoured Leather Slide', 'Solstice Crisscross Toe-Ring Sandal',
-      'Kensington Cushioned Resort Mule', 'Noir Matte-Leather Recovery Slide', 'Sovereign Ankle-Strap Dress Sandal',
-      'Regent Braided T-Strap Sandal', 'Atelier Brass-Studded Flat Slide', 'Meridian Padded Quilted Slide',
-      'Vanguard Outdoor Trek Leather Sandal', 'Imperial Metallic-Trim Festive Flat', 'Valet Slip-On Suede Clog',
-      'Echelon Slingback Wedge Sandal', 'Savile Minimalist Thong Sandal', 'Lumina Pearl-Embellished Flat',
-      'Monolith Square-Toe Heeled Sandal', 'Bespoke Saddle-Stitch Chappal',
-    ],
-    swatches: [
-      { name: 'Saddle Tan', hex: '#9C6B3B' },
-      { name: 'Pitch Black', hex: '#1C1B29' },
-      { name: 'Warm Bone', hex: '#E8E0D2' },
-    ],
-  },
-  {
-    name: 'Ladies Belts',
-    hsn: '42033000',
-    skuPrefix: 'LBL',
-    basePrice: 849,
-    materials: ['Supple Nappa Leather', '18K Gold-Plated Chain', 'Textured Vegan Leather', 'Velvet & Brass'],
-    designs: ['Skinny Brass Buckle', 'Waist Cinch', 'Chain Belt', 'Corset Leather'],
-    fallbackPhoto: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=600&q=80',
-    photos: [
-      'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1624222247344-550fb60583dc?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=600&q=80',
-    ],
-    types: [
-      'Aurelia Skinny Brass-Buckle Belt', 'Celeste Interlocking-Ring Waist Belt', 'Solstice Gold Chain Link Belt',
-      'Verona Wide Leather Corset Belt', 'Lumina Pearl-Clasp Saree Belt', 'Oslo Minimalist Knot Tie Belt',
-      'Noir Double-O Buckle Jean Belt', 'Sovereign Croc-Embossed Cinch Belt', 'Atelier Sculpted Gold-Bar Belt',
-      'Kensington Reversible Slim Belt', 'Regent Braided Boho Waist Belt', 'Caspian Elasticated Dress Cinch',
-      'Meridian D-Ring Trench Belt', 'Valet Suede Wrap Obi Belt', 'Imperial Crystal-Buckle Evening Belt',
-      'Echelon Asymmetric Buckle Belt', 'Savile Studded Rocker Slim Belt', 'Vanguard Saddle-Stitch Trouser Belt',
-      'Monolith Square-Frame Buckle Belt', 'Bespoke Monogrammed Waist Belt',
-    ],
-    swatches: [
-      { name: 'Antique Brass', hex: '#B8905C' },
-      { name: 'Pitch Black', hex: '#1C1B29' },
-      { name: 'Warm Bone', hex: '#E8E0D2' },
-    ],
-  },
-  {
-    name: 'Ties',
-    hsn: '62151000',
-    skuPrefix: 'TIE',
-    basePrice: 799,
-    materials: ['100% Mulberry Silk', 'Knitted Merino Wool', 'Silk Jacquard', 'Grenadine Silk'],
-    designs: ['Classic 8cm', 'Slim 6cm', 'Knitted Square-End', 'Jacquard Paisley'],
-    fallbackPhoto: 'https://images.unsplash.com/photo-1589756823695-278bc923f962?auto=format&fit=crop&w=600&q=80',
-    photos: [
-      'https://images.unsplash.com/photo-1589756823695-278bc923f962?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1598033129183-c4f50c736f10?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=600&q=80',
-    ],
-    types: [
-      'Savile Midnight Silk Jacquard Tie', 'Kensington Knitted Merino Wool Tie', 'Noir Satin Slim Formal Tie',
-      'Sovereign Royal Paisley Silk Tie', 'Heritage Textured Grenadine Tie', 'Regent Regimental Stripe Tie',
-      'Oslo Micro-Dot Business Tie', 'Verona Herringbone Cashmere-Blend Tie', 'Atelier Seven-Fold Luxury Tie',
-      'Caspian Geometric Medallion Tie', 'Meridian Matte Linen Summer Tie', 'Vanguard Velvet Evening Bow Tie',
-      'Imperial Gold-Thread Wedding Tie', 'Valet Houndstooth Woven Tie', 'Echelon Twill Solid Boardroom Tie',
-      'Monolith Charcoal Pinstripe Tie', 'Solstice Floral Botanical Silk Tie', 'Aurelia Champagne Satin Tie',
-      'Celeste Polka-Dot Heritage Tie', 'Bespoke Tie & Pocket Square Set',
-    ],
-    swatches: [
-      { name: 'Ink Navy', hex: '#1C1B29' },
-      { name: 'Burgundy Wine', hex: '#5E2129' },
-      { name: 'Emerald Green', hex: '#1E4D3B' },
-    ],
-  },
-  {
-    name: 'Socks',
-    hsn: '61159500',
-    skuPrefix: 'SCK',
-    basePrice: 399,
-    materials: ['Combed Egyptian Cotton', 'Merino Wool', 'Bamboo Fiber', 'Mercerized Cotton'],
-    designs: ['Ribbed Dress Crew', 'No-Show Loafer', 'Heritage Argyle', 'Cushioned Athletic'],
-    fallbackPhoto: 'https://images.unsplash.com/photo-1586350977771-b3b0abd50c82?auto=format&fit=crop&w=600&q=80',
-    photos: [
-      'https://images.unsplash.com/photo-1586350977771-b3b0abd50c82?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1582966772680-860e372bb558?auto=format&fit=crop&w=600&q=80',
-    ],
-    types: [
-      'Savile Ribbed Combed Cotton Dress Socks', 'Oslo Invisible No-Show Loafer Socks', 'Kensington Merino Wool Thermal Crew',
-      'Heritage Classic Argyle Dress Socks', 'Atelier Bamboo Anti-Odor Executive Socks', 'Noir Mercerized Over-The-Calf Socks',
-      'Verona Pinstripe Boardroom Socks', 'Caspian Micro-Dot Gift Box (Pack of 3)', 'Regent Herringbone Formal Socks',
-      'Meridian Cushioned Arch-Support Crew', 'Vanguard Breathable Mesh Ankle Socks', 'Sovereign Cashmere-Blend Lounge Socks',
-      'Valet Houndstooth Patterned Socks', 'Echelon Seamless-Toe Formal Socks', 'Monolith Solid Essential Pack (3 Pairs)',
-      'Solstice Waffle-Knit Boot Socks', 'Aurelia Sheer-Ribbed Ankle Socks', 'Celeste Pastel Combed Cotton Crew',
-      'Imperial Silk-Blend Tuxedo Socks', 'Bespoke Monogrammed Gift Socks',
-    ],
-    swatches: [
-      { name: 'Ink Navy', hex: '#1C1B29' },
-      { name: 'Charcoal Grey', hex: '#4A4A4F' },
-      { name: 'Warm Bone', hex: '#E8E0D2' },
-    ],
-  },
-  {
-    name: 'Ladies Wrist Watches',
-    hsn: '91021100',
-    skuPrefix: 'LWT',
-    basePrice: 2899,
-    materials: ['316L Stainless Steel', '18K Gold-Plated Mesh', 'Mother-of-Pearl & Steel', 'Italian Leather Strap'],
-    designs: ['Petite Mesh', 'Rectangular Tank', 'Bangle Dress', 'Minimalist Leather'],
-    fallbackPhoto: 'https://images.unsplash.com/photo-1524805444758-089113d48a6d?auto=format&fit=crop&w=600&q=80',
-    photos: [
-      'https://images.unsplash.com/photo-1524805444758-089113d48a6d?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1539874754764-5a96559165b0?auto=format&fit=crop&w=600&q=80',
-    ],
-    types: [
-      'Aurelia Petite Gold Milanese Mesh Watch', 'Celeste Mother-of-Pearl Dial Watch', 'Solstice Rose-Gold Bangle Watch',
-      'Verona Rectangular Heritage Tank Watch', 'Lumina Crystal-Bezel Dress Watch', 'Oslo Ultra-Thin Leather Strap Watch',
-      'Noir Sunburst Emerald-Dial Watch', 'Sovereign Two-Tone Jubilee Watch', 'Atelier Roman-Numeral Classic Watch',
-      'Kensington Oval Vintage Cocktail Watch', 'Regent Ceramic White Minimalist Watch', 'Caspian Moonphase Petite Watch',
-      'Meridian Square Gold-Link Watch', 'Valet Interchangeable-Strap Watch Set', 'Imperial Guilloché Dial Dress Watch',
-      'Echelon Starlight Aventurine Watch', 'Savile Cushion-Case Leather Watch', 'Vanguard Water-Resistant Sport Chic',
-      'Monolith Matte-Black Mesh Watch', 'Bespoke Dual-Time Travel Watch',
-    ],
-    swatches: [
-      { name: 'Champagne Gold', hex: '#D6B98C' },
-      { name: 'Rose Gold', hex: '#D49B8B' },
-      { name: 'Polished Silver', hex: '#C0C5CE' },
-    ],
-  },
-  {
-    name: 'Gents Wrist Watches',
-    hsn: '91021100',
-    skuPrefix: 'GWT',
-    basePrice: 3499,
-    materials: ['316L Stainless Steel', 'Sapphire Glass & Leather', 'Brushed Titanium', 'Ceramic Bezel & Steel'],
-    designs: ['Chronograph', 'Automatic Diver', 'Dress Leather', 'Field Mechanical'],
-    fallbackPhoto: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=80',
-    photos: [
-      'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1522312346375-d1a52e2b99b3?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1614164185128-e4ec99c436d7?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1587836374828-4dbafa94cf0e?auto=format&fit=crop&w=600&q=80',
-    ],
-    types: [
-      'Chrono 01 Brass & Leather Watch', 'Sovereign 200M Automatic Diver', 'Savile Ultra-Slim Dress Leather Watch',
-      'Kensington Steel Sunburst Blue-Dial', 'Vanguard Tactical Field Watch', 'Noir Stealth Matte Chronograph',
-      'Heritage Open-Heart Skeleton Watch', 'Meridian GMT Dual-Time Aviator', 'Oslo Bauhaus Minimalist Date Watch',
-      'Caspian Racing Tachymeter Chrono', 'Regent Moonphase Calendar Watch', 'Atelier Titanium Lightweight Watch',
-      'Verona Cushion-Case Vintage Diver', 'Imperial Gold-Case Tuxedo Watch', 'Valet Panda-Dial Heritage Chrono',
-      'Echelon Integrated-Bracelet Sport Watch', 'Monolith Square-Case Automatic', 'Solstice Pilot Big-Crown Watch',
-      'Aurelia Green-Dial Jubilee Watch', 'Bespoke Collector Edition Automatic',
-    ],
-    swatches: [
-      { name: 'Brass & Black', hex: '#B8905C' },
-      { name: 'Steel & Navy', hex: '#2B4570' },
-      { name: 'Obsidian Matte', hex: '#1C1B29' },
-    ],
-  },
-];
+const PRE = 'Savile Kensington Sovereign Verona Noir Heritage Regent Oslo Caspian Atelier Meridian Vanguard Imperial Valet Echelon Monolith Solstice Aurelia Celeste Bespoke'.split(' ');
 
-// Programmatically build 260 distinct, deterministic products (13 categories x 20 types)
-function generateCatalog() {
-  const catalog = [];
-  let counter = 1;
-
-  CATEGORY_CONFIGS.forEach((cat, catIdx) => {
-    cat.types.forEach((title, typeIdx) => {
-      const id = `p_${counter}`;
-      const materialType = cat.materials[typeIdx % cat.materials.length];
-      const designStyle = cat.designs[typeIdx % cat.designs.length];
-      const basePhoto = cat.photos[typeIdx % cat.photos.length];
-      const priceStep = (typeIdx % 6) * 150;
-      const salePrice = cat.basePrice + priceStep;
-      const discountPercent = 20 + ((typeIdx * 7) % 21); // 20% to 40%
-      const mrp = Math.round(salePrice / (1 - discountPercent / 100));
-      const rating = Number((4.4 + ((catIdx + typeIdx) % 7) * 0.1).toFixed(1));
-      const reviewCount = 24 + ((counter * 17) % 210);
-      const viewCount = 450 + ((counter * 131) % 2100);
-      const unitsSold = typeIdx % 5 === 0 ? 12 + (typeIdx % 8) : 35 + ((counter * 13) % 140);
-
-      const variants = cat.swatches.map((sw, sIdx) => ({
-        id: `${id}_v${sIdx + 1}`,
-        sku: `ORV-${cat.skuPrefix}-${String(typeIdx + 1).padStart(2, '0')}-${sIdx + 1}`,
-        colorName: sw.name,
-        colorHex: sw.hex,
-        photoUrl: cat.photos[(typeIdx + sIdx) % cat.photos.length],
-        mrp: mrp + sIdx * 50,
-        discountPercent,
-        salePrice: salePrice + sIdx * 50,
-        stock: (counter + sIdx * 3) % 14 === 0 ? 6 : 18 + ((counter * 5 + sIdx * 7) % 48),
-      }));
-
-      catalog.push({
-        id,
-        title,
-        category: cat.name,
-        materialType,
-        designStyle,
-        hsnCode: cat.hsn,
-        countryOfOrigin: 'China',
-        returnPolicyDays: 7,
-        isCouponApplicable: typeIdx % 6 !== 0,
-        rating: Math.min(5.0, rating),
-        reviewCount,
-        viewCount,
-        unitsSold,
-        fallbackPhoto: cat.fallbackPhoto,
-        description: `Crafted in ${materialType.toLowerCase()} with a ${designStyle.toLowerCase()} silhouette. Hand-inspected prior to dispatch in signature Orayve Ink & Brass packaging.`,
-        variants,
-      });
-
-      counter += 1;
-    });
-  });
-
-  return catalog;
-}
-
-const INITIAL_PRODUCTS = generateCatalog(); // Exactly 260 products
-const CATEGORY_NAMES = ['All Categories', ...CATEGORY_CONFIGS.map((c) => c.name)];
-const ORDER_STATUSES = ['ORDER_PLACED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED'];
-
-const INITIAL_COUPONS = [
-  { id: 'c1', code: 'WELCOME15', type: 'PERCENTAGE', value: 15, maxDiscount: 500, minOrder: 500, active: true },
-  { id: 'c2', code: 'ORAYVE200', type: 'FLAT', value: 200, maxDiscount: 200, minOrder: 999, active: true },
-];
-
-const INITIAL_ADDRESSES = [
-  {
-    id: 'addr1',
-    label: 'Home',
-    recipientName: 'Ankit Prajapati',
-    phone: '+91 9876543210',
-    street: 'Flat 402, Crest Residency, Laxmi Chowk',
-    city: 'Pune',
-    state: 'Maharashtra',
-    pincode: '411057',
-    lat: 18.5913,
-    lng: 73.7389,
-    isDefault: true,
-  },
-  {
-    id: 'addr2',
-    label: 'Office',
-    recipientName: 'Ankit Prajapati',
-    phone: '+91 9876543210',
-    street: 'Tower B, Hinjewadi Phase 2 IT Park',
-    city: 'Pune',
-    state: 'Maharashtra',
-    pincode: '411057',
-    lat: 18.5904,
-    lng: 73.7073,
-    isDefault: false,
-  },
-];
-
-const INITIAL_ORDERS = [
-  {
-    orderId: 'ORD-2026-841029',
-    invoiceNumber: 'INV-2026-841029',
-    createdAt: '16 Nov 2026, 2:22 pm',
-    customerName: 'Ankit Prajapati',
-    customerEmail: 'ankit@example.com',
-    customerPhone: '+91 9876543210',
-    status: 'IN_TRANSIT',
-    paymentMethod: 'UPI',
-    couponCode: 'WELCOME15',
-    subtotal: 3098,
-    discount: 465,
-    total: 2633,
-    address: INITIAL_ADDRESSES[0],
-    items: [
-      {
-        productId: INITIAL_PRODUCTS[0].id,
-        title: INITIAL_PRODUCTS[0].title,
-        category: INITIAL_PRODUCTS[0].category,
-        colorName: INITIAL_PRODUCTS[0].variants[0].colorName,
-        sku: INITIAL_PRODUCTS[0].variants[0].sku,
-        hsnCode: INITIAL_PRODUCTS[0].hsnCode,
-        mrp: INITIAL_PRODUCTS[0].variants[0].mrp,
-        salePrice: INITIAL_PRODUCTS[0].variants[0].salePrice,
-        qty: 1,
-      },
-      {
-        productId: INITIAL_PRODUCTS[60].id,
-        title: INITIAL_PRODUCTS[60].title,
-        category: INITIAL_PRODUCTS[60].category,
-        colorName: INITIAL_PRODUCTS[60].variants[0].colorName,
-        sku: INITIAL_PRODUCTS[60].variants[0].sku,
-        hsnCode: INITIAL_PRODUCTS[60].hsnCode,
-        mrp: INITIAL_PRODUCTS[60].variants[0].mrp,
-        salePrice: INITIAL_PRODUCTS[60].variants[0].salePrice,
-        qty: 1,
-      },
-    ],
-  },
-  {
-    orderId: 'ORD-2026-792411',
-    invoiceNumber: 'INV-2026-792411',
-    createdAt: '08 Nov 2026, 7:05 pm',
-    customerName: 'Ankit Prajapati',
-    customerEmail: 'ankit@example.com',
-    customerPhone: '+91 9876543210',
-    status: 'DELIVERED',
-    paymentMethod: 'CARD',
-    couponCode: null,
-    subtotal: 3499,
-    discount: 0,
-    total: 3499,
-    address: INITIAL_ADDRESSES[1],
-    items: [
-      {
-        productId: INITIAL_PRODUCTS[240].id,
-        title: INITIAL_PRODUCTS[240].title,
-        category: INITIAL_PRODUCTS[240].category,
-        colorName: INITIAL_PRODUCTS[240].variants[0].colorName,
-        sku: INITIAL_PRODUCTS[240].variants[0].sku,
-        hsnCode: INITIAL_PRODUCTS[240].hsnCode,
-        mrp: INITIAL_PRODUCTS[240].variants[0].mrp,
-        salePrice: INITIAL_PRODUCTS[240].variants[0].salePrice,
-        qty: 1,
-      },
-    ],
-  },
-];
-
-// ============================================================================
-// 2. BRAND LOGO & REAL PHOTO COMPONENT WITH RELIABLE FALLBACK
-// ============================================================================
-
-const OrayveLogo = ({ dark = true, size = 'md' }) => {
-  const iconSize = size === 'lg' ? 38 : size === 'sm' ? 24 : 30;
-  const textClass = size === 'lg' ? 'text-3xl' : size === 'sm' ? 'text-lg' : 'text-2xl';
-  return (
-    <div className="inline-flex items-center gap-2.5 select-none">
-      <svg width={iconSize} height={iconSize} viewBox="0 0 64 64" fill="none" aria-hidden="true">
-        <circle cx="25" cy="32" r="16" stroke={dark ? '#D6B98C' : '#1C1B29'} strokeWidth="3.2" />
-        <circle cx="39" cy="32" r="16" stroke={dark ? '#F3EFE7' : '#B8905C'} strokeWidth="3.2" />
-      </svg>
-      <span className={`font-serif-brand font-medium tracking-wide ${textClass} ${dark ? 'text-[#F3EFE7]' : 'text-[#1C1B29]'}`}>
-        Orayve
-      </span>
-    </div>
-  );
+const SW = {
+  L: [['Pitch Black', '#1C1B29'], ['Cognac Tan', '#8B5A2B'], ['Espresso', '#4A3123']],
+  G: [['Champagne Gold', '#D6B98C'], ['Rose Gold', '#D49B8B'], ['Polished Silver', '#C0C5CE']],
+  F: [['Ink Navy', '#1F2D42'], ['Burgundy', '#5E2129'], ['Emerald', '#1E4D3B']]
 };
 
-const ProductPhoto = ({ src, fallback, alt, colorHex, className = '' }) => (
-  <div className={`relative w-full h-full overflow-hidden bg-[#1C1B29] ${className}`}>
-    <img
-      src={src}
-      alt={alt}
-      loading="lazy"
-      onError={(e) => {
-        if (e.currentTarget.src !== fallback) {
-          e.currentTarget.src = fallback;
-        }
-      }}
-      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-    />
-    {/* Subtle bottom vignette & variant color indicator bar */}
-    <div
-      className="absolute inset-0 pointer-events-none transition-colors duration-300"
-      style={{
-        background: `linear-gradient(to top, rgba(28,27,41,0.42) 0%, transparent 45%)`,
-      }}
-    />
-    <div
-      className="absolute bottom-0 left-0 right-0 h-1 transition-colors duration-300"
-      style={{ backgroundColor: colorHex }}
-    />
-  </div>
-);
+const CAT_DATA = [
+  ['Wallets', '42023120', 'WLT', 899, 'Leather Wallet', ['Bifold', 'Slim Cardholder', 'Zip-Around', 'RFID Minimalist'], 'L', '1627123424574-724758594e93 1556742049-0cfed4f6a45d 1606503825008-909a67e63c3d 1591561954557-26941169b49e'],
+  ["Men's Belts", '42033000', 'MBL', 1199, 'Leather Belt', ['Formal Buckle', 'Reversible', 'Braided', 'Ratchet'], 'L', '1624222247344-550fb60583dc 1553062407-98eeb64c6a62 1590874103328-eac38a683ce7'],
+  ['Bags & Backpacks', '42029200', 'BAG', 2499, 'Bag', ['Commuter Backpack', 'Laptop Briefcase', 'Weekender Duffle', 'Messenger'], 'L', '1553062407-98eeb64c6a62 1548036328-c9fa89d128fa 1622560480605-d83c853bc5c3 1581605405669-fcdf81165afa'],
+  ['Handbags', '42022290', 'HBG', 2199, 'Handbag', ['Structured Tote', 'Top-Handle Sling', 'Evening Clutch', 'Crossbody'], 'F', '1584917865442-de89df76afd3 1590874103328-eac38a683ce7 1566150905458-1bf1fc113f0d'],
+  ['Rings', '71171990', 'RNG', 549, 'Ring', ['Minimalist Band', 'Signet', 'Stackable', 'Solitaire'], 'G', '1605100804763-247f67b3557e 1603561591411-07134e71a2a9 1599643478518-a784e5dc4c8f'],
+  ['Chains & Necklaces', '71171910', 'CHN', 799, 'Chain', ['Layered Link', 'Cuban Curb', 'Rope Chain', 'Pendant'], 'G', '1599643477877-530eb83abc8e 1611591437281-460bfbe1220a 1515562141207-7a88fb7ce338'],
+  ['Shoes', '64039990', 'SHO', 3299, 'Shoe', ['Oxford Formal', 'Penny Loafer', 'Chelsea Boot', 'Minimal Sneaker'], 'L', '1614252235316-8c857d38b5f4 1549298916-b41d501d3772 1560769629-975ec94e6a86 1525966222134-fcfa99b8ae77'],
+  ['Sandals', '64039920', 'SND', 1499, 'Sandal', ['Strappy Leather', 'Fisherman', 'Kolhapuri', 'Buckled Slide'], 'L', '1603487742131-4160ec999306 1562273138-f46be4ebdf33 1543163521-1bf539c55dd2'],
+  ['Ladies Belts', '42033000', 'LBL', 849, 'Waist Belt', ['Skinny Brass', 'Waist Cinch', 'Chain Link', 'Corset'], 'G', '1553062407-98eeb64c6a62 1624222247344-550fb60583dc 1584917865442-de89df76afd3'],
+  ['Ties', '62151000', 'TIE', 799, 'Silk Tie', ['Classic 8cm', 'Slim 6cm', 'Knitted', 'Jacquard Paisley'], 'F', '1589756823695-278bc923f962 1598033129183-c4f50c736f10 1507679799987-c73779587ccf'],
+  ['Socks', '61159500', 'SCK', 399, 'Socks', ['Ribbed Dress', 'No-Show', 'Argyle', 'Cushioned'], 'F', '1586350977771-b3b0abd50c82 1582966772680-860e372bb558'],
+  ['Ladies Wrist Watches', '91021100', 'LWT', 2899, 'Ladies Watch', ['Petite Mesh', 'Rectangular Tank', 'Bangle Dress', 'Minimalist Leather'], 'G', '1524805444758-089113d48a6d 1508685096489-7aacd43bd3b1 1539874754764-5a96559165b0'],
+  ['Gents Wrist Watches', '91021100', 'GWT', 3499, 'Gents Watch', ['Chronograph', 'Automatic Diver', 'Dress Leather', 'Field Mechanical'], 'F', '1523275335684-37898b6baf30 1522312346375-d1a52e2b99b3 1614164185128-e4ec99c436d7 1587836374828-4dbafa94cf0e']
+];
+
+function generateInitialProducts() {
+  const list = [];
+  let n = 0;
+  CAT_DATA.forEach(([cat, hsn, sk, base, noun, sty, sw, ph], ci) => {
+    const photos = ph.split(' ');
+    for (let i = 0; i < 20; i++) {
+      n++;
+      const price = base + (i % 6) * 150;
+      const d = 20 + ((i * 7) % 21);
+      const mrp = Math.round(price / (1 - d / 100));
+      const id = 'p' + n;
+      list.push({
+        id,
+        title: `${PRE[i]} ${sty[i % 4]} ${noun}`,
+        cat,
+        design: sty[i % 4],
+        hsn,
+        rate: +(4.4 + ((ci + i) % 7) * 0.1).toFixed(1),
+        rev: 24 + ((n * 17) % 210),
+        views: 450 + ((n * 131) % 2100),
+        sold: i % 5 ? 35 + ((n * 13) % 140) : 12 + (i % 8),
+        coupon: i % 6 !== 0,
+        imgs: [],
+        v: SW[sw].map(([c, h], k) => ({
+          id: id + 'v' + k,
+          sku: `ORV-${sk}-${String(i + 1).padStart(2, '0')}-${k + 1}`,
+          color: c,
+          hex: h,
+          photo: photos[(i + k) % photos.length],
+          mrp: mrp + k * 50,
+          d,
+          price: price + k * 50,
+          stock: (n + k * 3) % 14 ? 18 + ((n * 5 + k * 7) % 48) : 6
+        }))
+      });
+    }
+  });
+  return list;
+}
+
+const DEFAULT_COUPONS = [
+  { code: 'WELCOME15', type: 'P', val: 15, max: 500, min: 500, on: true },
+  { code: 'ORAYVE200', type: 'F', val: 200, max: 200, min: 999, on: true }
+];
+
+const OFFERS = {
+  'Wallets': ['Buy 2, Get 10% Extra', '🔥 Bestseller'],
+  "Men's Belts": ['Combo: Belt + Wallet −15%', '🎁 Gift Combo'],
+  'Bags & Backpacks': ['Free Shipping + Extra ₹200', '🚚 Free Delivery'],
+  'Handbags': ['Festive Edit · Limited Stock', '✨ Festive'],
+  'Rings': ['Buy 1 Get 1 at 50%', '💍 BOGO'],
+  'Chains & Necklaces': ['Layer Up · Extra 10% Off', '✨ Trending'],
+  'Shoes': ['Footwear Fest · Flat ₹300 Off', '👟 Mega Deal'],
+  'Sandals': ['Summer Steals · From ₹1,499', '☀️ Hot Pick'],
+  'Ladies Belts': ['Style Under ₹999', '💛 Value'],
+  'Ties': ['3 Ties for ₹1,999', '🎯 Bundle'],
+  'Socks': ['Pack of 3 · Save 25%', '🧦 Pack Deal'],
+  'Ladies Wrist Watches': ['Gifting Special · Free Gift Box', '🎁 Gift Ready'],
+  'Gents Wrist Watches': ['Chronograph Sale · Top Rated', '⌚ Top Rated']
+};
+
+const STAT = ['ORDER PLACED', 'IN TRANSIT', 'OUT FOR DELIVERY', 'DELIVERED'];
+const ADMIN_PASS = 'orayve@2026';
+const PAGE_SIZE = 24;
+
+const MAT = {
+  Wallets: 'Genuine / vegan leather',
+  "Men's Belts": 'Leather strap, metal buckle',
+  'Bags & Backpacks': 'Canvas, nylon or leather',
+  Handbags: 'Faux or genuine leather',
+  Rings: 'Stainless steel / plated metal',
+  'Chains & Necklaces': 'Stainless steel / gold-plated metal',
+  Shoes: 'Leather upper, durable sole',
+  Sandals: 'Leather / suede',
+  'Ladies Belts': 'Leather or chain, brass finish',
+  Ties: 'Silk / woven fabric',
+  Socks: 'Cotton / wool blend',
+  'Ladies Wrist Watches': 'Stainless steel case, mineral glass',
+  'Gents Wrist Watches': 'Stainless steel case, mineral glass'
+};
+
+const MFG = {
+  name: 'Orayve (orayve.in)',
+  addr: 'Prestige Trade Tower, Palace Rd, Bengaluru, KA 560001',
+  care: 'support@orayve.in'
+};
+
+const REVIEWS = [
+  ['Rohit S.', 'Pune', 5, 'Great finish and feels premium for the price. Packaging was lovely.'],
+  ['Neha K.', 'Delhi', 4, 'Looks just like the photos. Delivery was on time.'],
+  ['Amit P.', 'Mumbai', 5, 'Bought it as a gift and it was a hit. Recommended.'],
+  ['Priya M.', 'Bengaluru', 4, 'Good quality, neat build and stitching. Worth it.'],
+  ['Sandeep R.', 'Lucknow', 5, 'Excellent value. The colour looks rich in person.'],
+  ['Ananya D.', 'Kolkata', 4, 'Nice design and fits my daily use well.'],
+  ['Vikram T.', 'Jaipur', 5, 'Better than expected. Will order again.'],
+  ['Meera J.', 'Hyderabad', 4, 'Elegant and lightweight. Exactly what I needed.']
+];
+
+const TOPICS = [
+  ['about', 'About us'],
+  ['faq', 'FAQs'],
+  ['shipping', 'Shipping policy'],
+  ['returns', 'Returns & replacement'],
+  ['payments', 'Payments'],
+  ['privacy', 'Privacy policy'],
+  ['terms', 'Terms & conditions'],
+  ['contact', 'Contact us']
+];
+
+const INFO = {
+  about: ['About Orayve', [
+    '<b>Small Details. Big Presence.</b>',
+    'Orayve brings together everyday accessories — wallets, belts, bags and backpacks, handbags, rings, chains, shoes, sandals, ties, socks and watches — chosen for clean design and honest value.',
+    'Every piece is hand-inspected before dispatch and delivered in signature Orayve packaging. If something is not right, our 7-day return and replacement promise has you covered.'
+  ]],
+  faq: ['Frequently Asked Questions', [
+    '<b>How do I track my order?</b><br>Open the menu, choose My Orders, and see the live status of each order.',
+    '<b>How do I check delivery to my area?</b><br>Open any product and enter your pincode under Expected delivery.',
+    '<b>Can I use a coupon on every item?</b><br>Coupons apply only to items marked Coupon Eligible and above the minimum order value. Apply them in your bag.',
+    '<b>How do I get my GST invoice?</b><br>Go to My Orders and tap Download Bill next to the order.',
+    '<b>How do I return something?</b><br>See Returns & replacement, then write to support@orayve.in with your order ID.'
+  ]],
+  shipping: ['Shipping Policy', [
+    'Delivery is <b>free</b> on all orders.',
+    'Every order is hand-inspected and dispatched after confirmation. The expected delivery date is shown on each product page for your pincode and is an estimate that can change with courier conditions.',
+    'A few remote areas may not be serviceable yet. If we cannot deliver to your pincode, you will see this before you order.',
+    'Track the progress of your order anytime in My Orders.'
+  ]],
+  returns: ['Returns & Replacement', [
+    'You can return or exchange an item within <b>7 days of delivery</b>.',
+    'The item must be unused and in its original Orayve packaging. Items showing signs of use are not eligible.',
+    'To start a request, email support@orayve.in with your order ID, and photos if the item arrived damaged or defective.'
+  ]],
+  payments: ['Payments & Invoices', [
+    'We offer UPI, credit and debit cards, and net banking at checkout.',
+    'All prices are in Indian Rupees and include GST. A GST invoice for every order is available in My Orders.',
+    'One coupon can be applied per order, subject to its minimum order value and eligible items.'
+  ]],
+  privacy: ['Privacy Policy', [
+    'We collect details — name, age, email, mobile number and delivery addresses — to create your account, process orders and contact you about them.',
+    'We share your address and phone number only with delivery partners so they can deliver your order. We do not sell your personal data.',
+    'To correct or delete your details, write to support@orayve.in.'
+  ]],
+  terms: ['Terms & Conditions', [
+    'By using this site you agree to these terms. Please keep your account details accurate and secure.',
+    'Prices, offers and availability may change without notice. An order is confirmed once you receive an order ID.',
+    'Coupons are valid only on eligible items, within their conditions, and may be withdrawn at any time.',
+    'We may suspend accounts that misuse the site or its offers. Returns follow our 7-day policy. Governed by the laws of India.'
+  ]],
+  contact: ['Contact Us', [
+    'We are happy to help with orders, returns or any question.',
+    'Email: <a href="mailto:support@orayve.in" class="text-brass underline">support@orayve.in</a>',
+    'Please include your order ID so we can help you faster.'
+  ]]
+};
+
+const inr = n => '₹' + Number(n).toLocaleString('en-IN');
+const FB = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 3"><rect width="4" height="3" fill="#2E2B26"/><circle cx="1.8" cy="1.5" r=".6" fill="none" stroke="#D6B98C" stroke-width=".08"/><circle cx="2.2" cy="1.5" r=".6" fill="none" stroke="#F3EFE7" stroke-width=".08"/></svg>');
+
+function imgUrl(v) {
+  if (!v || !v.photo) return FB;
+  if (/^(http|data:)/.test(v.photo)) return v.photo;
+  return 'https://images.unsplash.com/photo-' + v.photo + '?auto=format&fit=crop&w=600&q=80';
+}
+
+function calcEta(days) {
+  const d = new Date();
+  let count = 0;
+  while (count < days) {
+    d.setDate(d.getDate() + 1);
+    if (d.getDay() !== 0) count++;
+  }
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+function checkPincodeRule(pin) {
+  if (!/^[1-9][0-9]{5}$/.test(pin)) {
+    return { ok: false, msg: 'Please enter a valid 6-digit pincode.' };
+  }
+  if (/^(19|744|9)/.test(pin)) {
+    return { ok: false, msg: `❌ Sorry, we can't deliver to ${pin} right now.` };
+  }
+  const days = /^(11|40|41|56|60|50|70|38)/.test(pin) ? 3 : /^[1-6]/.test(pin) ? 5 : 7;
+  return {
+    ok: true,
+    days,
+    eta: calcEta(days),
+    msg: `✅ Delivery to ${pin} by ${calcEta(days)} (Free delivery · ${days} business days)`
+  };
+}
 
 // ============================================================================
-// 3. MAIN APPLICATION
+// MAIN COMPONENT
 // ============================================================================
 
 export default function App() {
-  const [view, setView] = useState('store'); // 'store' | 'profile' | 'checkout' | 'admin'
-  const [products, setProducts] = useState(INITIAL_PRODUCTS);
-  const [coupons, setCoupons] = useState(INITIAL_COUPONS);
-  const [orders, setOrders] = useState(INITIAL_ORDERS);
-  const [addresses, setAddresses] = useState(INITIAL_ADDRESSES);
+  // Navigation & Views
+  const [view, setView] = useState('store'); // 'store', 'product', 'cart', 'checkout', 'orders', 'admin'
+  const [navHistory, setNavHistory] = useState([]);
 
-  // User & Admin Auth
-  const [user, setUser] = useState({
-    name: 'Ankit Prajapati',
-    email: 'ankit@example.com',
-    phone: '+91 9876543210',
+  // Data Collections
+  const [products, setProducts] = useState(() => {
+    try {
+      const local = localStorage.getItem('orv_P');
+      if (local) return JSON.parse(local);
+    } catch {}
+    return generateInitialProducts();
   });
-  const [adminSession, setAdminSession] = useState(null);
 
-  // Discovery, Filters & Pagination (24 per page for snappy 260-item browsing)
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All Categories');
-  const [sortBy, setSortBy] = useState('featured'); // 'featured' | 'rating' | 'price_asc' | 'price_desc'
-  const [filterColor, setFilterColor] = useState('All');
-  const [filterMaterial, setFilterMaterial] = useState('All');
-  const [filterDesign, setFilterDesign] = useState('All');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [showFiltersMobile, setShowFiltersMobile] = useState(false);
-  const PAGE_SIZE = 24;
+  const [categories, setCategories] = useState(() => {
+    try {
+      const local = localStorage.getItem('orv_cats');
+      if (local) return JSON.parse(local);
+    } catch {}
+    return CAT_DATA.map(c => ({ name: c[0], hsn: c[1] }));
+  });
 
-  // In-page active variant per product
-  const [activeVariantMap, setActiveVariantMap] = useState({});
+  const [coupons, setCoupons] = useState(() => {
+    try {
+      const local = localStorage.getItem('orv_coupons');
+      if (local) return JSON.parse(local);
+    } catch {}
+    return DEFAULT_COUPONS;
+  });
 
-  // Cart & Wishlist
-  const [cart, setCart] = useState([
-    { productId: INITIAL_PRODUCTS[0].id, variantId: INITIAL_PRODUCTS[0].variants[0].id, qty: 1 },
-  ]);
-  const [wishlist, setWishlist] = useState([INITIAL_PRODUCTS[0].id, INITIAL_PRODUCTS[240].id]);
-  const [appliedCouponCode, setAppliedCouponCode] = useState('');
+  // User & Sessions
+  const [users, setUsers] = useState(() => {
+    try {
+      const local = localStorage.getItem('orv_users');
+      if (local) return JSON.parse(local);
+    } catch {}
+    return [];
+  });
+
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const local = localStorage.getItem('orv_user');
+      if (local) return JSON.parse(local);
+    } catch {}
+    return null;
+  });
+
+  const [addresses, setAddresses] = useState(() => {
+    try {
+      const local = localStorage.getItem('orv_addrs');
+      if (local) return JSON.parse(local);
+    } catch {}
+    return [];
+  });
+
+  const [orders, setOrders] = useState(() => {
+    try {
+      const local = localStorage.getItem('orv_orders');
+      if (local) return JSON.parse(local);
+    } catch {}
+    return [];
+  });
+
+  // Shopping State
+  const [cart, setCart] = useState(() => {
+    try {
+      const local = localStorage.getItem('orv_cart');
+      if (local) return JSON.parse(local);
+    } catch {}
+    return [];
+  });
+
+  const [wishlist, setWishlist] = useState(() => {
+    try {
+      const local = localStorage.getItem('orv_wish');
+      if (local) return JSON.parse(local);
+    } catch {}
+    return [];
+  });
+
+  const [appliedCoupon, setAppliedCoupon] = useState('');
   const [couponInput, setCouponInput] = useState('');
 
-  // Drawers & Modals
-  const [cartOpen, setCartOpen] = useState(false);
-  const [wishlistOpen, setWishlistOpen] = useState(false);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [detailProductId, setDetailProductId] = useState(null);
-  const [invoiceOrder, setInvoiceOrder] = useState(null);
-  const [toast, setToast] = useState(null);
+  // Storefront Filtering
+  const [selectedCat, setSelectedCat] = useState('All Categories');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedColor, setSelectedColor] = useState('All');
+  const [sortBy, setSortBy] = useState('featured');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [onlyWishlist, setOnlyWishlist] = useState(false);
+  const [activeVariants, setActiveVariants] = useState({});
+
+  // Product Detail State
+  const [detailProduct, setDetailProduct] = useState(null);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+  const [detailTab, setDetailTab] = useState('spec'); // 'spec' | 'mfg'
+  const [showAllReviews, setShowAllReviews] = useState(false);
+  const [pincodeInput, setPincodeInput] = useState('');
+  const [pincodeResult, setPincodeResult] = useState(null);
 
   // Checkout State
   const [checkoutStep, setCheckoutStep] = useState(1);
-  const [selectedAddressId, setSelectedAddressId] = useState(INITIAL_ADDRESSES[0].id);
+  const [selectedAddrId, setSelectedAddrId] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('UPI');
-  const [latestOrder, setLatestOrder] = useState(null);
-  const [newAddrForm, setNewAddrForm] = useState({
-    show: false,
-    label: 'Home',
-    recipientName: '',
-    phone: '',
-    street: '',
-    city: '',
-    state: '',
-    pincode: '',
-    lat: null,
-    lng: null,
-  });
+  const [lastPlacedOrder, setLastPlacedOrder] = useState(null);
 
-  // User Auth Modal State
-  const [authTab, setAuthTab] = useState('mobile');
-  const [authIdentifier, setAuthIdentifier] = useState('+91 9876543210');
-  const [authOtpSent, setAuthOtpSent] = useState(false);
-  const [authOtp, setAuthOtp] = useState('');
-  const [authName, setAuthName] = useState('Ankit Prajapati');
+  // Modals & Popovers
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [authModal, setAuthModal] = useState(null); // 'login' | 'reg' | null
+  const [authAfterRedirect, setAuthAfterRedirect] = useState(false);
+  const [infoTopic, setInfoTopic] = useState(null);
+  const [invoiceModalOrder, setInvoiceModalOrder] = useState(null);
+  const [toastMsg, setToastMsg] = useState(null);
 
-  // Admin Gate & Portal State
-  const [adminGateTab, setAdminGateTab] = useState('login');
-  const [adminLoginId, setAdminLoginId] = useState('ADM-2026-0001');
-  const [adminLoginPass, setAdminLoginPass] = useState('');
-  const [kycSubmitted, setKycSubmitted] = useState(false);
-  const [kycForm, setKycForm] = useState({
-    fullName: '',
-    companyEmail: '',
-    mobile: '',
-    address: '',
-    govIdNumber: '',
-    panNumber: '',
-    otp: '',
-  });
-  const [adminSection, setAdminSection] = useState('analytics');
-  const [adminProductSearch, setAdminProductSearch] = useState('');
+  // Admin State
+  const [adminLoggedIn, setAdminLoggedIn] = useState(false);
+  const [adminPassInput, setAdminPassInput] = useState('');
+  const [adminTab, setAdminTab] = useState('analytics'); // 'analytics', 'orders', 'products', 'categories', 'users', 'coupons'
+  const [adminSearch, setAdminSearch] = useState('');
   const [editingProduct, setEditingProduct] = useState(null);
-  const [productForm, setProductForm] = useState({
-    title: '',
-    category: 'Wallets',
-    materialType: 'Full-Grain Leather',
-    designStyle: 'Minimalist',
-    isCouponApplicable: true,
-    colorName: 'Pitch Black',
-    colorHex: '#1C1B29',
-    mrp: 1499,
-    salePrice: 1099,
-    stock: 25,
-  });
-  const [newCouponForm, setNewCouponForm] = useState({
-    code: '',
-    type: 'PERCENTAGE',
-    value: 10,
-    maxDiscount: 300,
-    minOrder: 500,
-  });
+  const [productImgs, setProductImgs] = useState([]);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [editingUser, setEditingUser] = useState(null);
+  const [editingCoupon, setEditingCoupon] = useState(null);
 
-  const showToast = (message, tone = 'dark') => {
-    setToast({ message, tone });
-    setTimeout(() => setToast(null), 3000);
+  // Offer Carousel Drag & Scroll Ref
+  const carouselRef = useRef(null);
+
+  // Toast Helper
+  const showToast = (msg, isError = false) => {
+    setToastMsg({ text: msg, isError });
+    setTimeout(() => setToastMsg(null), 2800);
   };
 
-  const getActiveVariant = (product) => {
-    const vid = activeVariantMap[product.id];
-    return product.variants.find((v) => v.id === vid) || product.variants[0];
-  };
+  // Sync to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('orv_cart', JSON.stringify(cart));
+      localStorage.setItem('orv_wish', JSON.stringify(wishlist));
+      localStorage.setItem('orv_orders', JSON.stringify(orders));
+      localStorage.setItem('orv_addrs', JSON.stringify(addresses));
+      localStorage.setItem('orv_users', JSON.stringify(users));
+      localStorage.setItem('orv_user', JSON.stringify(currentUser));
+      localStorage.setItem('orv_P', JSON.stringify(products));
+      localStorage.setItem('orv_cats', JSON.stringify(categories));
+      localStorage.setItem('orv_coupons', JSON.stringify(coupons));
+    } catch {}
+  }, [cart, wishlist, orders, addresses, users, currentUser, products, categories, coupons]);
 
-  // Category Counts
-  const categoryCounts = useMemo(() => {
-    const counts = { 'All Categories': products.length };
-    products.forEach((p) => {
-      counts[p.category] = (counts[p.category] || 0) + 1;
-    });
-    return counts;
-  }, [products]);
-
-  // Faceted Filter Options
-  const filterOptions = useMemo(() => {
-    const colors = new Set();
-    const materials = new Set();
-    const designs = new Set();
-    const scope =
-      selectedCategory === 'All Categories'
-        ? products
-        : products.filter((p) => p.category === selectedCategory);
-
-    scope.forEach((p) => {
-      materials.add(p.materialType);
-      designs.add(p.designStyle);
-      p.variants.forEach((v) => colors.add(v.colorName));
-    });
-    return {
-      colors: ['All', ...Array.from(colors)],
-      materials: ['All', ...Array.from(materials)],
-      designs: ['All', ...Array.from(designs)],
-    };
-  }, [products, selectedCategory]);
-
-  // Filtered & Sorted Products
-  const filteredProducts = useMemo(() => {
-    let list = products.filter((p) => {
-      const q = searchQuery.trim().toLowerCase();
-      const matchesSearch =
-        !q ||
-        p.title.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q) ||
-        p.materialType.toLowerCase().includes(q) ||
-        p.designStyle.toLowerCase().includes(q);
-      const matchesCat = selectedCategory === 'All Categories' || p.category === selectedCategory;
-      const matchesMat = filterMaterial === 'All' || p.materialType === filterMaterial;
-      const matchesDesign = filterDesign === 'All' || p.designStyle === filterDesign;
-      const matchesColor =
-        filterColor === 'All' || p.variants.some((v) => v.colorName === filterColor);
-      return matchesSearch && matchesCat && matchesMat && matchesDesign && matchesColor;
-    });
-
-    if (sortBy === 'rating') {
-      list = [...list].sort((a, b) => b.rating - a.rating);
-    } else if (sortBy === 'price_asc') {
-      list = [...list].sort((a, b) => getActiveVariant(a).salePrice - getActiveVariant(b).salePrice);
-    } else if (sortBy === 'price_desc') {
-      list = [...list].sort((a, b) => getActiveVariant(b).salePrice - getActiveVariant(a).salePrice);
-    }
-    return list;
-  }, [products, searchQuery, selectedCategory, filterMaterial, filterDesign, filterColor, sortBy, activeVariantMap]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
-  const safePage = Math.min(currentPage, totalPages);
-  const paginatedProducts = filteredProducts.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-
-  // Cart Calculations
-  const cartDetails = useMemo(() => {
-    const items = cart
-      .map((ci) => {
-        const product = products.find((p) => p.id === ci.productId);
-        if (!product) return null;
-        const variant = product.variants.find((v) => v.id === ci.variantId) || product.variants[0];
-        return { ...ci, product, variant };
+  // Synchronize with live backend if available
+  useEffect(() => {
+    fetch('/api/catalog/categories')
+      .then(r => r.json())
+      .then(res => {
+        if (res.success && res.data) setCategories(res.data);
       })
-      .filter(Boolean);
+      .catch(() => {});
 
-    const subtotal = items.reduce((sum, item) => sum + item.variant.salePrice * item.qty, 0);
-    const eligibleSubtotal = items.reduce(
-      (sum, item) => (item.product.isCouponApplicable ? sum + item.variant.salePrice * item.qty : sum),
-      0
-    );
+    fetch('/api/coupons')
+      .then(r => r.json())
+      .then(res => {
+        if (res.success && res.data) setCoupons(res.data);
+      })
+      .catch(() => {});
+  }, []);
 
-    let discount = 0;
-    const activeCoupon = coupons.find((c) => c.code === appliedCouponCode && c.active);
-    if (activeCoupon && eligibleSubtotal >= activeCoupon.minOrder) {
-      discount =
-        activeCoupon.type === 'PERCENTAGE'
-          ? Math.min(Math.round((eligibleSubtotal * activeCoupon.value) / 100), activeCoupon.maxDiscount)
-          : Math.min(activeCoupon.value, eligibleSubtotal);
+  // Variant selector helper
+  const getActiveVariant = p => {
+    if (!p || !p.v || !p.v.length) return { price: 0, mrp: 0, stock: 0, color: 'Classic', hex: '#1C1B29', photo: '' };
+    const idx = activeVariants[p.id] || 0;
+    return p.v[idx] || p.v[0];
+  };
+
+  // Cart Calculation
+  const cartSummary = useMemo(() => {
+    const items = cart.map(c => {
+      const p = products.find(x => x.id === c.pid);
+      if (!p) return null;
+      const v = p.v.find(x => x.id === c.vid) || p.v[0];
+      return { p, v, q: c.q };
+    }).filter(Boolean);
+
+    const sub = items.reduce((s, i) => s + i.v.price * i.q, 0);
+    const eligibleSub = items.reduce((s, i) => i.p.coupon ? s + i.v.price * i.q : s, 0);
+    let disc = 0;
+
+    const cp = coupons.find(c => c.code === appliedCoupon && c.on);
+    if (cp && eligibleSub >= cp.min) {
+      disc = cp.type === 'P'
+        ? Math.min(Math.round(eligibleSub * cp.val / 100), cp.max)
+        : Math.min(cp.val, eligibleSub);
     }
 
     return {
       items,
-      subtotal,
-      discount,
-      total: Math.max(0, subtotal - discount),
-      count: items.reduce((sum, item) => sum + item.qty, 0),
+      sub,
+      disc,
+      total: Math.max(0, sub - disc),
+      count: items.reduce((s, i) => s + i.q, 0)
     };
-  }, [cart, products, coupons, appliedCouponCode]);
+  }, [cart, products, appliedCoupon, coupons]);
 
-  const addToCart = (productId, variantId) => {
-    setCart((prev) => {
-      const idx = prev.findIndex((i) => i.productId === productId && i.variantId === variantId);
-      if (idx > -1) {
-        const next = [...prev];
-        next[idx] = { ...next[idx], qty: next[idx].qty + 1 };
-        return next;
+  // Carousel interactive loop (auto left->right, pause on hover, wheel, drag)
+  useEffect(() => {
+    const el = carouselRef.current;
+    if (!el) return;
+
+    let isHover = false;
+    let isDrag = false;
+    let startX = 0;
+    let startScroll = 0;
+    let animId = null;
+    let lastTime = 0;
+
+    const half = () => {
+      const kids = el.firstElementChild?.children;
+      return kids && kids.length > 1 ? kids[kids.length / 2].offsetLeft - kids[0].offsetLeft : 0;
+    };
+
+    const wrap = () => {
+      const h = half();
+      if (!h) return;
+      if (el.scrollLeft <= 0) el.scrollLeft += h;
+      else if (el.scrollLeft >= h * 2 - el.clientWidth) el.scrollLeft -= h;
+    };
+
+    const onMouseOver = () => { isHover = true; };
+    const onMouseOut = (e) => {
+      if (!el.contains(e.relatedTarget)) {
+        isHover = false;
+        isDrag = false;
+        el.classList.remove('drag');
       }
-      return [...prev, { productId, variantId, qty: 1 }];
-    });
+    };
+    const onMouseDown = (e) => {
+      isDrag = true;
+      startX = e.clientX;
+      startScroll = el.scrollLeft;
+      el.classList.add('drag');
+    };
+    const onMouseMove = (e) => {
+      if (!isDrag) return;
+      el.scrollLeft = startScroll - (e.clientX - startX);
+      wrap();
+    };
+    const onMouseUp = () => {
+      isDrag = false;
+      el.classList.remove('drag');
+    };
+    const onWheel = (e) => {
+      e.preventDefault();
+      el.scrollLeft += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      wrap();
+    };
+
+    el.addEventListener('mouseover', onMouseOver);
+    el.addEventListener('mouseout', onMouseOut);
+    el.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    el.addEventListener('wheel', onWheel, { passive: false });
+
+    // Center wrap initialization
+    const h = half();
+    if (h) el.scrollLeft = h;
+
+    const tick = (t) => {
+      if (!isHover && !isDrag) {
+        const dt = Math.min(50, t - lastTime || 16);
+        el.scrollLeft -= dt * 0.04;
+        wrap();
+      }
+      lastTime = t;
+      animId = requestAnimationFrame(tick);
+    };
+    animId = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(animId);
+      el.removeEventListener('mouseover', onMouseOver);
+      el.removeEventListener('mouseout', onMouseOut);
+      el.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      el.removeEventListener('wheel', onWheel);
+    };
+  }, [categories, view]);
+
+  // Actions
+  const addToCart = (pid, vid = null) => {
+    const prod = products.find(p => p.id === pid);
+    if (!prod) return;
+    const variant = vid ? prod.v.find(v => v.id === vid) : getActiveVariant(prod);
+    if (variant.stock < 1) return showToast('Out of stock', true);
+
+    const exist = cart.find(c => c.pid === pid && c.vid === variant.id);
+    if (exist) {
+      if (exist.q >= variant.stock) return showToast('Max stock reached', true);
+      setCart(cart.map(c => c.pid === pid && c.vid === variant.id ? { ...c, q: c.q + 1 } : c));
+    } else {
+      setCart([...cart, { pid, vid: variant.id, q: 1 }]);
+    }
     showToast('Added to your Orayve bag');
   };
 
-  const updateCartQty = (productId, variantId, delta) => {
-    setCart((prev) =>
-      prev
-        .map((i) =>
-          i.productId === productId && i.variantId === variantId ? { ...i, qty: i.qty + delta } : i
-        )
-        .filter((i) => i.qty > 0)
-    );
-  };
+  const updateCartQty = (pid, vid, delta) => {
+    const prod = products.find(p => p.id === pid);
+    const variant = prod?.v.find(v => v.id === vid);
+    const maxStock = variant?.stock || 99;
 
-  const toggleWishlist = (productId) => {
-    setWishlist((prev) => {
-      const exists = prev.includes(productId);
-      showToast(exists ? 'Removed from Wishlist' : 'Saved to Wishlist');
-      return exists ? prev.filter((id) => id !== productId) : [...prev, productId];
+    setCart(prev => {
+      return prev.map(item => {
+        if (item.pid === pid && item.vid === vid) {
+          const nextQ = delta === -99 ? 0 : item.q + delta;
+          if (nextQ > maxStock) {
+            showToast('Maximum available quantity reached', true);
+            return { ...item, q: maxStock };
+          }
+          return { ...item, q: Math.max(0, nextQ) };
+        }
+        return item;
+      }).filter(i => i.q > 0);
     });
   };
 
-  const handleApplyCoupon = () => {
-    const code = couponInput.trim().toUpperCase();
-    const found = coupons.find((c) => c.code === code && c.active);
-    if (!found) {
-      showToast('Invalid or inactive coupon code', 'error');
-      return;
+  const toggleWishlist = (pid) => {
+    setWishlist(prev => {
+      const has = prev.includes(pid);
+      showToast(has ? 'Removed from wishlist' : 'Saved to wishlist');
+      return has ? prev.filter(id => id !== pid) : [...prev, pid];
+    });
+  };
+
+  const copyShareLink = (pid) => {
+    const url = window.location.origin + window.location.pathname + '#' + pid;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(() => showToast('Share link copied'));
+    } else {
+      showToast('Share link copied');
     }
-    if (cartDetails.subtotal < found.minOrder) {
-      showToast(`Minimum order ₹${found.minOrder} required`, 'error');
-      return;
-    }
-    setAppliedCouponCode(code);
+  };
+
+  const applyCouponCode = (codeToApply) => {
+    const code = (codeToApply || couponInput).trim().toUpperCase();
+    const cp = coupons.find(c => c.code === code && c.on);
+    if (!cp) return showToast('Invalid or inactive coupon', true);
+    if (cartSummary.sub < cp.min) return showToast(`Minimum order ${inr(cp.min)} required`, true);
+
+    setAppliedCoupon(code);
     showToast(`Coupon ${code} applied`);
   };
 
-  const handleShareProduct = (product) => {
-    const url = `https://orayve.in/product/${product.id}`;
-    if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
-    showToast('Share link copied for WhatsApp & Social');
-  };
-
-  const handleDetectLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setNewAddrForm((prev) => ({
-            ...prev,
-            street: 'GPS Pin: Civil Lines / Central Avenue',
-            city: 'Kanpur',
-            state: 'Uttar Pradesh',
-            pincode: '208001',
-            lat: Number(pos.coords.latitude.toFixed(5)),
-            lng: Number(pos.coords.longitude.toFixed(5)),
-          }));
-          showToast('Exact GPS coordinates captured');
-        },
-        () => {
-          setNewAddrForm((prev) => ({
-            ...prev,
-            street: 'GPS Pin: Laxmi Chowk, Hinjewadi',
-            city: 'Pune',
-            state: 'Maharashtra',
-            pincode: '411057',
-            lat: 18.5913,
-            lng: 73.7389,
-          }));
-          showToast('GPS coordinates filled (demo fallback)');
-        }
-      );
-    }
-  };
-
-  const handleSaveAddress = (e) => {
-    e.preventDefault();
-    if (!newAddrForm.recipientName || !newAddrForm.street || !newAddrForm.pincode) {
-      showToast('Fill all required address fields', 'error');
+  const proceedToCheckout = () => {
+    if (!currentUser) {
+      setAuthModal('login');
+      setAuthAfterRedirect(true);
       return;
     }
-    const newId = `addr_${Date.now()}`;
-    setAddresses((prev) => [
-      ...prev,
-      {
-        id: newId,
-        label: newAddrForm.label,
-        recipientName: newAddrForm.recipientName,
-        phone: newAddrForm.phone || user?.phone || '+91 9876543210',
-        street: newAddrForm.street,
-        city: newAddrForm.city || 'Pune',
-        state: newAddrForm.state || 'Maharashtra',
-        pincode: newAddrForm.pincode,
-        lat: newAddrForm.lat,
-        lng: newAddrForm.lng,
-        isDefault: false,
-      },
-    ]);
-    setSelectedAddressId(newId);
-    setNewAddrForm({ show: false, label: 'Home', recipientName: '', phone: '', street: '', city: '', state: '', pincode: '', lat: null, lng: null });
-    showToast('Address saved');
+    const userAddrs = addresses.filter(a => a.m === currentUser.mobile);
+    if (userAddrs.length && !selectedAddrId) {
+      setSelectedAddrId(userAddrs[0].id);
+    }
+    setCheckoutStep(1);
+    setView('checkout');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handlePlaceOrder = () => {
-    if (cartDetails.items.length === 0) return;
-    const selectedAddress = addresses.find((a) => a.id === selectedAddressId) || addresses[0];
+    const addr = addresses.find(a => a.id === selectedAddrId);
+    if (!addr) return showToast('Select or add a delivery address', true);
+    if (!cartSummary.items.length) return showToast('Your bag is empty', true);
+
+    const year = new Date().getFullYear();
     const rand = Math.floor(100000 + Math.random() * 900000);
-    const newOrder = {
-      orderId: `ORD-2026-${rand}`,
-      invoiceNumber: `INV-2026-${rand}`,
-      createdAt: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
-      customerName: user?.name || selectedAddress.recipientName,
-      customerEmail: user?.email || 'customer@orayve.in',
-      customerPhone: user?.phone || selectedAddress.phone,
-      status: 'ORDER_PLACED',
-      paymentMethod,
-      couponCode: appliedCouponCode || null,
-      subtotal: cartDetails.subtotal,
-      discount: cartDetails.discount,
-      total: cartDetails.total,
-      address: selectedAddress,
-      items: cartDetails.items.map((ci) => ({
-        productId: ci.product.id,
-        title: ci.product.title,
-        category: ci.product.category,
-        colorName: ci.variant.colorName,
-        sku: ci.variant.sku,
-        hsnCode: ci.product.hsnCode,
-        mrp: ci.variant.mrp,
-        salePrice: ci.variant.salePrice,
-        qty: ci.qty,
-      })),
+    const orderId = `ORD-${year}-${rand}`;
+    const invId = `INV-${year}-${rand}`;
+
+    const orderData = {
+      mobile: currentUser?.mobile,
+      id: orderId,
+      inv: invId,
+      at: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
+      status: 0,
+      pay: paymentMethod,
+      coupon: appliedCoupon,
+      sub: cartSummary.sub,
+      disc: cartSummary.disc,
+      total: cartSummary.total,
+      addr,
+      items: cartSummary.items.map(i => ({
+        title: i.p.title,
+        cat: i.p.cat,
+        color: i.v.color,
+        sku: i.v.sku,
+        hsn: i.p.hsn,
+        price: i.v.price,
+        qty: i.q,
+        pid: i.p.id,
+        vid: i.v.id
+      }))
     };
 
-    setProducts((prev) =>
-      prev.map((p) => {
-        const bought = cartDetails.items.filter((ci) => ci.product.id === p.id);
-        if (bought.length === 0) return p;
-        const totalQty = bought.reduce((s, b) => s + b.qty, 0);
-        return {
-          ...p,
-          unitsSold: p.unitsSold + totalQty,
-          variants: p.variants.map((v) => {
-            const m = bought.find((b) => b.variant.id === v.id);
-            return m ? { ...v, stock: Math.max(0, v.stock - m.qty) } : v;
-          }),
-        };
+    // Decrement stock client-side
+    setProducts(prev => prev.map(p => {
+      const match = cartSummary.items.filter(it => it.p.id === p.id);
+      if (!match.length) return p;
+      return {
+        ...p,
+        sold: p.sold + match.reduce((s, it) => s + it.q, 0),
+        v: p.v.map(v => {
+          const m = match.find(it => it.v.id === v.id);
+          return m ? { ...v, stock: Math.max(0, v.stock - m.q) } : v;
+        })
+      };
+    }));
+
+    // Post to backend API
+    fetch('/api/checkout/place-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mobile: currentUser?.mobile,
+        addr,
+        items: orderData.items,
+        pay: paymentMethod,
+        coupon: appliedCoupon
       })
-    );
+    }).catch(() => {});
 
-    setOrders((prev) => [newOrder, ...prev]);
-    setLatestOrder(newOrder);
+    setOrders(prev => [orderData, ...prev]);
     setCart([]);
-    setAppliedCouponCode('');
-    setCouponInput('');
+    setAppliedCoupon('');
+    setLastPlacedOrder(orderData);
     setCheckoutStep(3);
-    showToast(`Order ${newOrder.orderId} confirmed!`);
+    showToast(`Order ${orderId} confirmed!`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Admin Analytics
-  const adminAnalytics = useMemo(() => {
-    const totalRevenue = orders.reduce((s, o) => s + o.total, 0);
-    const categoryMap = {};
-    orders.forEach((o) => {
-      o.items.forEach((item) => {
-        if (!categoryMap[item.category]) {
-          categoryMap[item.category] = { category: item.category, orders: 0, revenue: 0, products: {} };
-        }
-        categoryMap[item.category].orders += item.qty;
-        categoryMap[item.category].revenue += item.salePrice * item.qty;
-        categoryMap[item.category].products[item.title] =
-          (categoryMap[item.category].products[item.title] || 0) + item.qty;
-      });
-    });
-
-    const categoryStats = Object.values(categoryMap).map((c) => {
-      const best = Object.entries(c.products).sort((a, b) => b[1] - a[1])[0];
-      return { ...c, bestSeller: best ? `${best[0]} (${best[1]} sold)` : '—' };
-    });
-
-    const lowStockVariants = [];
-    products.forEach((p) => {
-      p.variants.forEach((v) => {
-        if (v.stock <= 10) lowStockVariants.push({ productTitle: p.title, sku: v.sku, colorName: v.colorName, stock: v.stock });
-      });
-    });
-
-    const productsToBoost = products
-      .map((p) => ({ ...p, conversionRate: p.viewCount > 0 ? (p.unitsSold / p.viewCount) * 100 : 0 }))
-      .filter((p) => p.viewCount >= 1200 && p.conversionRate < 1.8)
-      .sort((a, b) => a.conversionRate - b.conversionRate)
-      .slice(0, 8);
-
-    return { totalRevenue, totalOrders: orders.length, categoryStats, lowStockVariants: lowStockVariants.slice(0, 10), totalLowStock: lowStockVariants.length, productsToBoost };
-  }, [orders, products]);
-
-  const adminFilteredProducts = useMemo(() => {
-    const q = adminProductSearch.trim().toLowerCase();
-    if (!q) return products.slice(0, 40);
-    return products
-      .filter((p) => p.title.toLowerCase().includes(q) || p.category.toLowerCase().includes(q) || p.variants[0].sku.toLowerCase().includes(q))
-      .slice(0, 40);
-  }, [products, adminProductSearch]);
-
-  const handleSaveAdminProduct = (e) => {
-    e.preventDefault();
-    if (!productForm.title.trim()) return;
-    const catCfg = CATEGORY_CONFIGS.find((c) => c.name === productForm.category) || CATEGORY_CONFIGS[0];
-    const discountPct = Math.max(0, Math.round(((Number(productForm.mrp) - Number(productForm.salePrice)) / Number(productForm.mrp)) * 100));
-
-    if (editingProduct) {
-      setProducts((prev) =>
-        prev.map((p) =>
-          p.id === editingProduct.id
-            ? {
-                ...p,
-                title: productForm.title,
-                category: productForm.category,
-                materialType: productForm.materialType,
-                designStyle: productForm.designStyle,
-                isCouponApplicable: productForm.isCouponApplicable,
-                variants: p.variants.map((v, idx) =>
-                  idx === 0
-                    ? {
-                        ...v,
-                        colorName: productForm.colorName,
-                        colorHex: productForm.colorHex,
-                        mrp: Number(productForm.mrp),
-                        discountPercent: discountPct,
-                        salePrice: Number(productForm.salePrice),
-                        stock: Number(productForm.stock),
-                      }
-                    : v
-                ),
-              }
-            : p
-        )
-      );
-      setEditingProduct(null);
-      showToast('Product updated live');
-    } else {
-      const newId = `p_${Date.now()}`;
-      setProducts((prev) => [
-        {
-          id: newId,
-          title: productForm.title,
-          category: productForm.category,
-          materialType: productForm.materialType,
-          designStyle: productForm.designStyle,
-          hsnCode: catCfg.hsn,
-          countryOfOrigin: 'China',
-          returnPolicyDays: 7,
-          isCouponApplicable: productForm.isCouponApplicable,
-          rating: 4.9,
-          reviewCount: 1,
-          viewCount: 100,
-          unitsSold: 0,
-          fallbackPhoto: catCfg.fallbackPhoto,
-          description: `New Orayve arrival crafted in ${productForm.materialType}.`,
-          variants: [
-            {
-              id: `${newId}_v1`,
-              sku: `ORV-${catCfg.skuPrefix}-${Math.floor(100 + Math.random() * 899)}`,
-              colorName: productForm.colorName,
-              colorHex: productForm.colorHex,
-              photoUrl: catCfg.photos[0],
-              mrp: Number(productForm.mrp),
-              discountPercent: discountPct,
-              salePrice: Number(productForm.salePrice),
-              stock: Number(productForm.stock),
-            },
-          ],
-        },
-        ...prev,
-      ]);
-      showToast('New product published to storefront');
-    }
-    setProductForm({ title: '', category: 'Wallets', materialType: 'Full-Grain Leather', designStyle: 'Minimalist', isCouponApplicable: true, colorName: 'Pitch Black', colorHex: '#1C1B29', mrp: 1499, salePrice: 1099, stock: 25 });
+  // Open Product Details
+  const openProduct = (pid) => {
+    const p = products.find(x => x.id === pid);
+    if (!p) return;
+    setDetailProduct(p);
+    setGalleryIndex(0);
+    setDetailTab('spec');
+    setShowAllReviews(false);
+    setPincodeResult(null);
+    setNavHistory(prev => [...prev, { view, scroll: window.scrollY }]);
+    setView('product');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const detailProduct = products.find((p) => p.id === detailProductId);
+  // Stepper Component
+  const renderStepper = (pid, vid, q) => (
+    <div className="inline-flex items-center border border-ink/30 rounded-lg bg-white overflow-hidden text-xs font-bold">
+      <button
+        onClick={() => updateCartQty(pid, vid, -1)}
+        className="w-8 py-1.5 hover:bg-bone text-sm text-ink transition"
+        aria-label="Decrease"
+      >−</button>
+      <span className="w-6 text-center text-ink">{q}</span>
+      <button
+        onClick={() => updateCartQty(pid, vid, 1)}
+        className="w-8 py-1.5 hover:bg-bone text-sm text-ink transition"
+        aria-label="Increase"
+      >+</button>
+    </div>
+  );
+
+  // Stock status text
+  const stockText = (v) => {
+    if (v.stock < 1) return ['Out of stock', 'text-rose-700'];
+    if (v.stock < 15) return ['Order quickly – going out of stock soon', 'text-amber-700'];
+    return ['In stock', 'text-emerald-700'];
+  };
+
+  // Filtered products list
+  const filteredProducts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    let list = products.filter(p => {
+      const matchCat = selectedCat === 'All Categories' || p.cat === selectedCat;
+      const matchQ = !q || (p.title + p.cat + p.design).toLowerCase().includes(q);
+      const matchColor = selectedColor === 'All' || p.v.some(v => v.color === selectedColor);
+      const matchWish = !onlyWishlist || wishlist.includes(p.id);
+      return matchCat && matchQ && matchColor && matchWish;
+    });
+
+    if (sortBy === 'rating') list.sort((a, b) => b.rate - a.rate);
+    if (sortBy === 'asc') list.sort((a, b) => getActiveVariant(a).price - getActiveVariant(b).price);
+    if (sortBy === 'desc') list.sort((a, b) => getActiveVariant(b).price - getActiveVariant(a).price);
+
+    return list;
+  }, [products, selectedCat, searchQuery, selectedColor, sortBy, onlyWishlist, wishlist, activeVariants]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
+  const displayedProducts = filteredProducts.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  // Available colors for current category
+  const availableColors = useMemo(() => {
+    const scope = selectedCat === 'All Categories' ? products : products.filter(p => p.cat === selectedCat);
+    return ['All', ...new Set(scope.flatMap(p => p.v.map(v => v.color)))];
+  }, [products, selectedCat]);
 
   return (
-    <div className="min-h-screen bg-[#F3EFE7] text-[#1C1B29] font-sans-ui flex flex-col">
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Manrope:wght@400;500;600;700;800&display=swap');
-        .font-serif-brand { font-family: 'Fraunces', serif; }
-        .font-sans-ui { font-family: 'Manrope', sans-serif; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        @media print {
-          body * { visibility: hidden; }
-          #printable-invoice, #printable-invoice * { visibility: visible; }
-          #printable-invoice { position: fixed; inset: 0; background: white; padding: 24px; }
-        }
-      `}</style>
+    <div className="min-h-screen bg-bone text-ink font-sans flex flex-col selection:bg-brass selection:text-ink">
+      
+      {/* ==================================================================== */}
+      {/* HEADER                                                               */}
+      {/* ==================================================================== */}
+      <header className="sticky top-0 z-40 bg-ink text-bone shadow-md">
+        <div className="max-w-[1400px] mx-auto px-4 py-2 flex flex-wrap items-center gap-3 justify-between">
+          
+          {/* Logo */}
+          <button
+            onClick={() => {
+              setSelectedCat('All Categories');
+              setSearchQuery('');
+              setOnlyWishlist(false);
+              setView('store');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className="serif text-xl tracking-wide flex items-center gap-2 hover:opacity-90"
+          >
+            <svg width="30" height="30" viewBox="0 0 64 64" fill="none">
+              <circle cx="25" cy="32" r="16" stroke="#D6B98C" strokeWidth="3.2" />
+              <circle cx="39" cy="32" r="16" stroke="#F3EFE7" strokeWidth="3.2" />
+            </svg>
+            <span>Orayve</span>
+          </button>
 
-      {/* ====================================================================
-          TOP NAVIGATION BAR
-         ==================================================================== */}
-      {!(view === 'admin' && adminSession) && (
-        <header className="sticky top-0 z-40 bg-[#1C1B29] text-[#F3EFE7] border-b border-[#B8905C]/25 shadow-md">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-            <button onClick={() => setView('store')} className="focus:outline-none">
-              <OrayveLogo dark size="md" />
+          {/* Search bar */}
+          <input
+            id="q"
+            value={searchQuery}
+            onChange={e => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+              if (view !== 'store') setView('store');
+            }}
+            placeholder="Search 260 wallets, watches, shoes, ties, rings..."
+            className="order-last sm:order-none flex-1 min-w-full sm:min-w-0 sm:max-w-md !bg-white/10 !border-brass/40 !rounded-full !px-4 py-2 text-bone placeholder-bone/50 focus:outline-none focus:ring-1 focus:ring-gold"
+          />
+
+          {/* Header Action Buttons */}
+          <div className="flex items-center gap-2 text-xs font-semibold">
+            
+            {/* Wishlist Button */}
+            <button
+              onClick={() => {
+                setOnlyWishlist(!onlyWishlist);
+                setView('store');
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-full border border-brass/40 transition flex items-center gap-1.5 ${onlyWishlist ? 'bg-gold text-ink font-bold' : 'hover:bg-white/10'}`}
+            >
+              <span>♥</span>
+              <span>{wishlist.length}</span>
             </button>
 
-            <div className="hidden md:flex flex-1 max-w-md relative">
-              <Search className="w-4 h-4 text-[#D6B98C] absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setCurrentPage(1);
-                  if (view !== 'store') setView('store');
-                }}
-                placeholder="Search 260+ wallets, watches, shoes, ties, rings..."
-                className="w-full bg-[#2E2B26]/85 border border-[#B8905C]/30 rounded-full pl-10 pr-4 py-2 text-sm text-[#F3EFE7] placeholder-[#F3EFE7]/50 focus:outline-none focus:border-[#D6B98C]"
-              />
-            </div>
+            {/* Bag Button */}
+            <button
+              onClick={() => {
+                setView('cart');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="px-3 py-1.5 rounded-full border border-brass/40 hover:bg-white/10 transition flex items-center gap-1.5"
+            >
+              <span>Bag</span>
+              <span className="bg-brass text-ink px-1.5 py-0.2 rounded-full font-bold">{cartSummary.count}</span>
+            </button>
 
-            <div className="flex items-center gap-2 sm:gap-3">
-              <button onClick={() => setWishlistOpen(true)} className="relative p-2.5 rounded-full hover:bg-white/10 transition" title="Wishlist">
-                <Heart className="w-5 h-5" />
-                {wishlist.length > 0 && (
-                  <span className="absolute top-1 right-1 bg-[#B8905C] text-[#1C1B29] text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                    {wishlist.length}
-                  </span>
-                )}
-              </button>
+            {/* Account Sign in / Profile */}
+            <button
+              onClick={() => {
+                if (currentUser) {
+                  setView('orders');
+                } else {
+                  setAuthModal('login');
+                }
+              }}
+              className="px-3 py-1.5 rounded-full border border-brass/40 hover:bg-white/10 transition"
+            >
+              {currentUser ? `👤 ${currentUser.name.split(' ')[0]}` : 'Sign in'}
+            </button>
 
-              <button onClick={() => setCartOpen(true)} className="relative p-2.5 rounded-full hover:bg-white/10 transition" title="Bag">
-                <ShoppingBag className="w-5 h-5" />
-                {cartDetails.count > 0 && (
-                  <span className="absolute top-1 right-1 bg-[#D6B98C] text-[#1C1B29] text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                    {cartDetails.count}
-                  </span>
-                )}
-              </button>
+            {/* Admin Console Gate */}
+            <button
+              onClick={() => {
+                setView('admin');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="px-3 py-1.5 rounded-full bg-brass/20 text-gold border border-brass/50 hover:bg-brass hover:text-ink transition"
+            >
+              Admin
+            </button>
 
+            {/* Overflow Menu */}
+            <div className="relative">
               <button
-                onClick={() => (user ? setView('profile') : setAuthModalOpen(true))}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#B8905C]/40 hover:bg-white/10 text-xs sm:text-sm font-medium transition"
+                onClick={() => setMenuOpen(!menuOpen)}
+                aria-label="More options"
+                className="w-9 h-9 rounded-full border border-brass/40 text-lg leading-none flex items-center justify-center hover:bg-white/10 transition"
               >
-                <User className="w-4 h-4 text-[#D6B98C]" />
-                <span className="hidden sm:inline">{user ? user.name.split(' ')[0] : 'Sign In'}</span>
+                ⋮
               </button>
 
-              <button
-                onClick={() => setView('admin')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#B8905C]/20 border border-[#B8905C]/50 text-[#D6B98C] hover:bg-[#B8905C] hover:text-[#1C1B29] text-xs font-semibold transition"
-              >
-                <Lock className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Admin</span>
-              </button>
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)}></div>
+                  <div className="absolute right-0 top-11 z-50 w-56 bg-white text-ink rounded-xl shadow-2xl border border-ink/10 py-1 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                    {currentUser && (
+                      <div className="px-4 py-2.5 border-b text-xs bg-bone">
+                        <b className="block truncate">{currentUser.name}</b>
+                        <p className="text-ink/60 text-[11px]">+91 {currentUser.mobile}</p>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        if (currentUser) setView('orders');
+                        else setAuthModal('login');
+                      }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                    >
+                      {currentUser ? '👤 My Account' : '👤 Sign in / Register'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setView('orders');
+                      }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                    >
+                      📦 My Orders ({orders.filter(o => o.mobile === currentUser?.mobile).length})
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setOnlyWishlist(true);
+                        setView('store');
+                      }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                    >
+                      ♥ Wishlist ({wishlist.length})
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        copyShareLink('store');
+                      }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                    >
+                      🔗 Share Orayve
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setInfoTopic('help');
+                      }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                    >
+                      ❓ Help & Policies
+                    </button>
+                    {currentUser && (
+                      <div className="border-t border-ink/10">
+                        <button
+                          onClick={() => {
+                            setMenuOpen(false);
+                            setCurrentUser(null);
+                            showToast('Logged out');
+                          }}
+                          className="w-full text-left px-4 py-2.5 hover:bg-rose-50 text-xs font-semibold text-rose-700"
+                        >
+                          ⎋ Log out
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
-        </header>
-      )}
+        </div>
+      </header>
 
-      {/* ====================================================================
-          VIEW 1: STOREFRONT (260 REAL-PHOTO PRODUCTS)
-         ==================================================================== */}
+      {/* ==================================================================== */}
+      {/* STORE VIEW                                                           */}
+      {/* ==================================================================== */}
       {view === 'store' && (
         <main className="flex-1">
-          {/* Editorial Hero */}
-          <section className="bg-[#1C1B29] text-[#F3EFE7] border-b border-[#B8905C]/20">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
-              <p className="text-[11px] uppercase tracking-[0.28em] text-[#D6B98C] font-semibold mb-2">
-                Small Details. Big Presence.
-              </p>
-              <h1 className="font-serif-brand text-3xl sm:text-5xl font-medium leading-tight max-w-2xl">
-                260 curated essentials across 13 signature collections.
-              </h1>
-              <p className="text-sm text-[#F3EFE7]/75 mt-3 max-w-xl">
-                Wallets, belts, handbags, watches, footwear, ties, rings, and everyday luxury—each piece backed by our 7-day return & replacement guarantee.
-              </p>
-
-              {/* Horizontal Scrollable 13-Category Pill Bar */}
-              <div className="flex gap-2 overflow-x-auto no-scrollbar pt-6 pb-1">
-                {CATEGORY_NAMES.map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => {
-                      setSelectedCategory(cat);
-                      setFilterColor('All');
-                      setFilterMaterial('All');
-                      setFilterDesign('All');
-                      setCurrentPage(1);
-                    }}
-                    className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium transition flex items-center gap-1.5 ${
-                      selectedCategory === cat
-                        ? 'bg-[#B8905C] text-[#1C1B29] font-bold'
-                        : 'bg-white/5 text-[#F3EFE7]/85 border border-white/15 hover:border-[#D6B98C]'
-                    }`}
-                  >
-                    <span>{cat}</span>
-                    <span className="opacity-70 text-[10px]">({categoryCounts[cat] || 0})</span>
-                  </button>
+          
+          {/* Running Ticker Marquee with Coupons and Guarantees */}
+          <div className="bg-ink text-bone">
+            <div className="mq bg-brass/15 border-y border-brass/30 py-1.5">
+              <div className="tk-t flex width-max-content">
+                {[...Array(2)].map((_, loopIdx) => (
+                  <React.Fragment key={loopIdx}>
+                    {coupons.filter(c => c.on).map(c => (
+                      <React.Fragment key={c.code + loopIdx}>
+                        <span className="mx-6 text-[11px] font-semibold whitespace-nowrap">
+                          <b className="text-ink bg-gold px-2 py-0.5 rounded font-bold mr-1.5">{c.code}</b>
+                          {c.type === 'P' ? `${c.val}% off (up to ${inr(c.max)})` : `${inr(c.val)} off`} on orders above {inr(c.min)}
+                        </span>
+                        <span className="text-gold">◆</span>
+                      </React.Fragment>
+                    ))}
+                    <span className="mx-6 text-[11px] font-semibold whitespace-nowrap">🚚 7-Day Return &amp; Replacement</span>
+                    <span className="text-gold">◆</span>
+                    <span className="mx-6 text-[11px] font-semibold whitespace-nowrap">🔥 Up to 40% OFF across 13 collections</span>
+                    <span className="text-gold">◆</span>
+                    <span className="mx-6 text-[11px] font-semibold whitespace-nowrap">🎁 Free gift packaging on watches &amp; rings</span>
+                    <span className="text-gold">◆</span>
+                    <span className="mx-6 text-[11px] font-semibold whitespace-nowrap">✨ New offers added every week</span>
+                    <span className="text-gold">◆</span>
+                  </React.Fragment>
                 ))}
               </div>
             </div>
-          </section>
 
-          {/* Discovery Bar & Product Grid */}
-          <section className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-[#1C1B29]/12">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="font-serif-brand text-2xl font-medium">{selectedCategory}</h2>
-                  <p className="text-xs text-[#1C1B29]/60">
-                    Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filteredProducts.length)} of {filteredProducts.length} products
-                  </p>
+            {/* Hero Section */}
+            <div className="max-w-[1400px] mx-auto px-4 py-5">
+              <p className="text-[11px] uppercase tracking-[.28em] text-gold font-bold">Small Details. Big Presence.</p>
+              <h1 className="serif text-xl sm:text-3xl font-medium mt-1 max-w-2xl">
+                260 curated essentials across 13 signature collections.
+              </h1>
+              <p className="text-xs text-bone/75 mt-1.5 max-w-xl">
+                Wallets, belts, bags, watches, footwear, ties, rings and more — each backed by our 7-day return &amp; replacement guarantee.
+              </p>
+            </div>
+
+            {/* Interactive Category Offers Carousel */}
+            <div className="mq mt-4">
+              <div className="mq-s" ref={carouselRef}>
+                <div className="mq-t flex">
+                  {[...categories, ...categories].map((c, idx) => {
+                    const ps = products.filter(p => p.cat === c.name);
+                    if (!ps.length) return null;
+                    const mx = Math.max(...ps.map(p => Math.max(...p.v.map(v => v.d))));
+                    const mn = Math.min(...ps.map(p => Math.min(...p.v.map(v => v.price))));
+                    const o = OFFERS[c.name] || ['Special Offer Inside', '🔥 Deal'];
+                    const v = ps[0].v[0];
+
+                    return (
+                      <button
+                        key={c.name + idx}
+                        onClick={() => {
+                          setSelectedCat(c.name);
+                          setSearchQuery('');
+                          setCurrentPage(1);
+                          window.scrollTo({ top: 380, behavior: 'smooth' });
+                        }}
+                        className="ocard"
+                        aria-label={`${c.name} offers`}
+                      >
+                        <img
+                          src={imgUrl(v)}
+                          alt={c.name}
+                          loading="lazy"
+                          onError={e => { e.currentTarget.src = FB; }}
+                        />
+                        <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-brass text-ink text-[10px] font-extrabold">
+                          UP TO {mx}% OFF
+                        </span>
+                        <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-ink/80 text-gold text-[9px] font-bold">
+                          {o[1]}
+                        </span>
+                        <span
+                          className="absolute left-2 right-2 block text-center"
+                          style={{ top: '62%', transform: 'translateY(-50%)' }}
+                        >
+                          <span className="serif block text-sm text-bone leading-tight">{c.name}</span>
+                          <span className="block text-[10px] text-gold font-semibold">{o[0]}</span>
+                          <span className="block text-[10px] text-bone/70">Starting {inr(mn)} · Shop now →</span>
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-                <button
-                  onClick={() => setShowFiltersMobile(!showFiltersMobile)}
-                  className="lg:hidden flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#1C1B29]/20 text-xs font-semibold"
-                >
-                  <SlidersHorizontal className="w-3.5 h-3.5" /> Filters
-                </button>
+              </div>
+            </div>
+
+            {/* Category Pills Strip */}
+            <div className="max-w-[1400px] mx-auto px-4 pb-4">
+              <div className="flex gap-2 overflow-x-auto ns pt-4">
+                {['All Categories', ...categories.map(c => c.name)].map(c => {
+                  const cnt = c === 'All Categories' ? products.length : products.filter(p => p.cat === c).length;
+                  const isActive = selectedCat === c;
+                  return (
+                    <button
+                      key={c}
+                      onClick={() => {
+                        setSelectedCat(c);
+                        setCurrentPage(1);
+                      }}
+                      className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-medium transition ${
+                        isActive
+                          ? 'bg-brass text-ink font-bold shadow-md'
+                          : 'bg-white/5 border border-white/15 text-bone hover:bg-white/10'
+                      }`}
+                    >
+                      {c} ({cnt})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Product Grid Header & Controls */}
+          <section className="max-w-[1400px] mx-auto px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-ink/10">
+              <div>
+                <h2 className="serif text-lg font-bold">
+                  {onlyWishlist ? 'Your Wishlist' : selectedCat}
+                </h2>
+                <p className="text-xs text-ink/60">
+                  {filteredProducts.length
+                    ? `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filteredProducts.length)} of ${filteredProducts.length} products`
+                    : '0 products found'}
+                </p>
               </div>
 
-              <div className={`${showFiltersMobile ? 'grid' : 'hidden lg:flex'} grid-cols-2 sm:grid-cols-4 gap-2.5`}>
+              <div className="flex gap-2">
                 <select
-                  value={filterColor}
-                  onChange={(e) => { setFilterColor(e.target.value); setCurrentPage(1); }}
-                  className="bg-white border border-[#1C1B29]/15 rounded-lg px-3 py-2 text-xs font-medium"
+                  value={selectedColor}
+                  onChange={e => {
+                    setSelectedColor(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="rounded-lg text-xs"
                 >
-                  {filterOptions.colors.map((c) => <option key={c} value={c}>{c === 'All' ? 'Color: All' : c}</option>)}
-                </select>
-
-                <select
-                  value={filterMaterial}
-                  onChange={(e) => { setFilterMaterial(e.target.value); setCurrentPage(1); }}
-                  className="bg-white border border-[#1C1B29]/15 rounded-lg px-3 py-2 text-xs font-medium"
-                >
-                  {filterOptions.materials.map((m) => <option key={m} value={m}>{m === 'All' ? 'Material: All' : m}</option>)}
-                </select>
-
-                <select
-                  value={filterDesign}
-                  onChange={(e) => { setFilterDesign(e.target.value); setCurrentPage(1); }}
-                  className="bg-white border border-[#1C1B29]/15 rounded-lg px-3 py-2 text-xs font-medium"
-                >
-                  {filterOptions.designs.map((d) => <option key={d} value={d}>{d === 'All' ? 'Design: All' : d}</option>)}
+                  {availableColors.map(c => (
+                    <option key={c} value={c}>{c === 'All' ? 'Color: All' : c}</option>
+                  ))}
                 </select>
 
                 <select
                   value={sortBy}
-                  onChange={(e) => { setSortBy(e.target.value); setCurrentPage(1); }}
-                  className="bg-[#1C1B29] text-[#F3EFE7] rounded-lg px-3 py-2 text-xs font-semibold"
+                  onChange={e => {
+                    setSortBy(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="rounded-lg text-xs"
                 >
-                  <option value="featured">Sort: Featured</option>
-                  <option value="rating">Sort: Top Rated</option>
-                  <option value="price_asc">Price: Low to High</option>
-                  <option value="price_desc">Price: High to Low</option>
+                  <option value="featured">Featured</option>
+                  <option value="rating">Top Rated</option>
+                  <option value="asc">Price: Low–High</option>
+                  <option value="desc">Price: High–Low</option>
                 </select>
               </div>
             </div>
 
-            {/* Product Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-7">
-              {paginatedProducts.map((product) => {
-                const activeVar = getActiveVariant(product);
-                const isWishlisted = wishlist.includes(product.id);
-                return (
-                  <div
-                    key={product.id}
-                    className="group bg-white rounded-xl border border-[#1C1B29]/10 overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col"
-                  >
-                    <div className="relative h-60 cursor-pointer">
-                      <div onClick={() => setDetailProductId(product.id)} className="w-full h-full">
-                        <ProductPhoto
-                          src={activeVar.photoUrl}
-                          fallback={product.fallbackPhoto}
-                          alt={product.title}
-                          colorHex={activeVar.colorHex}
-                        />
-                      </div>
+            {/* Products Grid */}
+            {displayedProducts.length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 sm:gap-4 mt-4">
+                {displayedProducts.map(p => {
+                  const v = getActiveVariant(p);
+                  const isWish = wishlist.includes(p.id);
+                  const inCart = cart.find(c => c.pid === p.id && c.vid === v.id);
+                  const cartQty = inCart ? inCart.q : 0;
+                  const [stMsg, stCls] = stockText(v);
 
-                      <div className="absolute top-3 left-3 flex flex-col gap-1.5">
-                        <span className="px-2 py-0.5 rounded bg-[#B8905C] text-[#1C1B29] text-[10px] font-bold">
-                          {activeVar.discountPercent}% OFF
-                        </span>
-                        {product.isCouponApplicable && (
-                          <span className="px-2 py-0.5 rounded bg-[#1C1B29]/85 text-[#D6B98C] text-[10px] font-semibold">
-                            Coupon Eligible
+                  return (
+                    <div
+                      key={p.id}
+                      className="bg-white rounded-xl border border-ink/10 overflow-hidden shadow-sm hover:shadow-xl transition flex flex-col group"
+                    >
+                      {/* Product Image Box */}
+                      <div
+                        onClick={() => openProduct(p.id)}
+                        className="relative h-44 bg-ink cursor-pointer overflow-hidden"
+                      >
+                        <div className={`w-full h-full transition duration-300 group-hover:scale-105 ${v.stock < 1 ? 'grayscale' : ''}`}>
+                          <img
+                            src={imgUrl(v)}
+                            alt={p.title}
+                            loading="lazy"
+                            onError={e => { e.currentTarget.src = FB; }}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+
+                        {v.stock < 1 && (
+                          <span className="absolute inset-x-0 bottom-5 mx-auto w-fit px-3 py-1 rounded bg-ink/85 text-bone text-xs font-bold">
+                            Out of stock
                           </span>
                         )}
-                      </div>
 
-                      <div className="absolute top-3 right-3 flex flex-col gap-1.5">
-                        <button
-                          onClick={() => toggleWishlist(product.id)}
-                          className="p-2 rounded-full bg-[#1C1B29]/75 text-[#F3EFE7] hover:bg-[#1C1B29]"
-                        >
-                          <Heart className={`w-4 h-4 ${isWishlisted ? 'fill-[#D6B98C] text-[#D6B98C]' : ''}`} />
-                        </button>
-                        <button
-                          onClick={() => handleShareProduct(product)}
-                          className="p-2 rounded-full bg-[#1C1B29]/75 text-[#F3EFE7] hover:bg-[#1C1B29]"
-                        >
-                          <Share2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
+                        {/* Active Color Stripe */}
+                        <div className="absolute bottom-0 inset-x-0 h-1" style={{ background: v.hex }}></div>
 
-                    <div className="p-4 flex-1 flex flex-col">
-                      {/* 3 Clickable In-Page Color Swatch Buttons */}
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-1.5">
-                          {product.variants.map((v) => (
-                            <button
-                              key={v.id}
-                              onClick={() => setActiveVariantMap((prev) => ({ ...prev, [product.id]: v.id }))}
-                              title={v.colorName}
-                              className={`w-5 h-5 rounded-full border transition-transform ${
-                                v.id === activeVar.id
-                                  ? 'ring-2 ring-offset-1 ring-[#B8905C] scale-110 border-[#1C1B29]'
-                                  : 'border-[#1C1B29]/30 hover:scale-105'
-                              }`}
-                              style={{ backgroundColor: v.colorHex }}
-                            />
-                          ))}
+                        {/* Badges Left */}
+                        <div className="absolute top-3 left-3 flex flex-col gap-1.5 pointer-events-none">
+                          <span className="px-2 py-0.5 rounded bg-brass text-ink text-[10px] font-bold shadow">
+                            {v.d}% OFF
+                          </span>
+                          {p.coupon && (
+                            <span className="px-2 py-0.5 rounded bg-ink/85 text-gold text-[10px] font-semibold">
+                              Coupon Eligible
+                            </span>
+                          )}
                         </div>
-                        <span className="text-[11px] text-[#1C1B29]/60 font-medium">{activeVar.colorName}</span>
+
+                        {/* Actions Right */}
+                        <div className="absolute top-3 right-3 flex flex-col gap-1.5" onClick={e => e.stopPropagation()}>
+                          <button
+                            onClick={() => toggleWishlist(p.id)}
+                            className={`w-7 h-7 rounded-full bg-ink/75 text-bone flex items-center justify-center transition hover:scale-110 ${isWish ? '!text-gold' : ''}`}
+                            aria-label="Wishlist"
+                          >
+                            {isWish ? '♥' : '♡'}
+                          </button>
+                          <button
+                            onClick={() => copyShareLink(p.id)}
+                            className="w-7 h-7 rounded-full bg-ink/75 text-bone text-xs flex items-center justify-center transition hover:scale-110"
+                            aria-label="Share"
+                          >
+                            ⇪
+                          </button>
+                        </div>
                       </div>
 
-                      <p className="text-[10px] uppercase tracking-wider text-[#B8905C] font-bold">
-                        {product.materialType} · {product.designStyle}
-                      </p>
-
-                      <h3
-                        onClick={() => setDetailProductId(product.id)}
-                        className="font-serif-brand text-base font-medium mt-1 cursor-pointer hover:text-[#B8905C] line-clamp-1"
-                      >
-                        {product.title}
-                      </h3>
-
-                      <div className="flex items-center justify-between mt-1.5 text-xs">
-                        <span className="inline-flex items-center gap-1 font-semibold">
-                          <Star className="w-3.5 h-3.5 fill-[#B8905C] text-[#B8905C]" />
-                          {product.rating}
-                          <span className="text-[#1C1B29]/50 font-normal">({product.reviewCount})</span>
-                        </span>
-                        <span className={`text-[11px] font-semibold ${activeVar.stock <= 10 ? 'text-amber-700' : 'text-emerald-700'}`}>
-                          {activeVar.stock} in stock
-                        </span>
-                      </div>
-
-                      <div className="mt-auto pt-4 flex items-center justify-between gap-2">
-                        <div>
-                          <div className="flex items-baseline gap-1.5">
-                            <span className="text-lg font-bold">₹{activeVar.salePrice.toLocaleString('en-IN')}</span>
-                            <span className="text-xs line-through text-[#1C1B29]/45">₹{activeVar.mrp.toLocaleString('en-IN')}</span>
+                      {/* Card Body */}
+                      <div className="p-3 flex-1 flex flex-col">
+                        
+                        {/* Swatches Row */}
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex gap-1.5">
+                            {p.v.map((x, i) => (
+                              <button
+                                key={x.id}
+                                onClick={() => setActiveVariants(prev => ({ ...prev, [p.id]: i }))}
+                                title={x.color}
+                                className={`w-4 h-4 rounded-full border border-ink/30 transition ${
+                                  x.id === v.id ? 'ring-2 ring-offset-1 ring-brass scale-110' : ''
+                                }`}
+                                style={{ background: x.hex }}
+                              />
+                            ))}
                           </div>
-                          <p className="text-[10px] text-[#1C1B29]/50">SKU: {activeVar.sku}</p>
+                          <span className="text-[11px] text-ink/60 truncate max-w-[90px]">{v.color}</span>
                         </div>
 
-                        <button
-                          onClick={() => addToCart(product.id, activeVar.id)}
-                          className="px-3.5 py-2 rounded-lg bg-[#1C1B29] text-[#F3EFE7] hover:bg-[#B8905C] hover:text-[#1C1B29] text-xs font-semibold transition flex items-center gap-1.5"
+                        <p className="text-[10px] uppercase tracking-wider text-brass font-bold">
+                          {p.cat} · {p.design}
+                        </p>
+
+                        <h3
+                          onClick={() => openProduct(p.id)}
+                          className="serif text-sm mt-0.5 line-clamp-1 cursor-pointer hover:text-brass transition"
                         >
-                          <ShoppingBag className="w-3.5 h-3.5" /> Add
-                        </button>
+                          {p.title}
+                        </h3>
+
+                        <div className="flex justify-between items-center gap-2 mt-1.5 text-xs">
+                          <span className="font-semibold text-ink">
+                            ★ {p.rate} <span className="text-ink/50 font-normal">({p.rev})</span>
+                          </span>
+                          <span className={`font-semibold text-right text-[11px] truncate ${stCls}`}>
+                            {stMsg}
+                          </span>
+                        </div>
+
+                        {/* Price & Add to Bag */}
+                        <div className="mt-auto pt-2 flex flex-wrap items-center justify-between gap-1">
+                          <div>
+                            <span className="text-base font-bold text-ink">{inr(v.price)}</span>{' '}
+                            <span className="text-xs line-through text-ink/45">{inr(v.mrp)}</span>
+                            <p className="text-[10px] text-ink/50">SKU: {v.sku}</p>
+                          </div>
+
+                          {v.stock < 1 ? (
+                            <button
+                              disabled
+                              className="px-3 py-1.5 rounded-lg bg-ink/15 text-ink/50 text-xs font-semibold cursor-not-allowed"
+                            >
+                              Sold out
+                            </button>
+                          ) : cartQty > 0 ? (
+                            renderStepper(p.id, v.id, cartQty)
+                          ) : (
+                            <button
+                              onClick={() => addToCart(p.id, v.id)}
+                              className="px-3 py-1.5 rounded-lg bg-ink text-bone hover:bg-brass hover:text-ink text-xs font-semibold transition"
+                            >
+                              Add
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="py-20 text-center text-ink/60">No products match your search.</p>
+            )}
 
-            {/* Pagination Controls */}
+            {/* Pagination */}
             {totalPages > 1 && (
-              <div className="mt-10 flex items-center justify-center gap-2">
+              <div className="mt-6 flex items-center justify-center gap-3 text-xs font-bold">
                 <button
-                  disabled={safePage === 1}
-                  onClick={() => { setCurrentPage((p) => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                  className="px-3.5 py-2 rounded-lg border border-[#1C1B29]/20 bg-white text-xs font-bold disabled:opacity-40 flex items-center gap-1"
+                  disabled={currentPage === 1}
+                  onClick={() => {
+                    setCurrentPage(p => Math.max(1, p - 1));
+                    window.scrollTo({ top: 380, behavior: 'smooth' });
+                  }}
+                  className="px-4 py-2 rounded-lg border bg-white disabled:opacity-40 hover:bg-bone transition"
                 >
-                  <ChevronLeft className="w-4 h-4" /> Prev
+                  ‹ Prev
                 </button>
-                <span className="px-4 py-2 text-xs font-bold text-[#1C1B29]">
-                  Page {safePage} of {totalPages}
-                </span>
+                <span>Page {currentPage} of {totalPages}</span>
                 <button
-                  disabled={safePage === totalPages}
-                  onClick={() => { setCurrentPage((p) => Math.min(totalPages, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                  className="px-3.5 py-2 rounded-lg border border-[#1C1B29]/20 bg-white text-xs font-bold disabled:opacity-40 flex items-center gap-1"
+                  disabled={currentPage === totalPages}
+                  onClick={() => {
+                    setCurrentPage(p => Math.min(totalPages, p + 1));
+                    window.scrollTo({ top: 380, behavior: 'smooth' });
+                  }}
+                  className="px-4 py-2 rounded-lg border bg-white disabled:opacity-40 hover:bg-bone transition"
                 >
-                  Next <ChevronRight className="w-4 h-4" />
+                  Next ›
                 </button>
               </div>
             )}
@@ -1449,731 +1251,1775 @@ export default function App() {
         </main>
       )}
 
-      {/* ====================================================================
-          VIEW 2: CHECKOUT FLOW
-         ==================================================================== */}
-      {view === 'checkout' && (
-        <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-10">
-          <div className="flex items-center justify-center gap-4 sm:gap-8 mb-10">
-            {[
-              { step: 1, label: 'Address' },
-              { step: 2, label: 'Payment' },
-              { step: 3, label: 'Confirmed' },
-            ].map((s) => (
-              <div key={s.step} className="flex items-center gap-2">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${checkoutStep >= s.step ? 'bg-[#1C1B29] text-[#D6B98C]' : 'bg-[#1C1B29]/15 text-[#1C1B29]/50'}`}>
-                  {checkoutStep > s.step ? <Check className="w-4 h-4" /> : s.step}
-                </div>
-                <span className={`text-xs sm:text-sm font-semibold ${checkoutStep >= s.step ? 'text-[#1C1B29]' : 'text-[#1C1B29]/45'}`}>{s.label}</span>
-              </div>
-            ))}
-          </div>
+      {/* ==================================================================== */}
+      {/* PRODUCT DETAILS VIEW                                                 */}
+      {/* ==================================================================== */}
+      {view === 'product' && detailProduct && (() => {
+        const p = detailProduct;
+        const v = getActiveVariant(p);
+        const [stMsg, stCls] = stockText(v);
+        const galleryImgs = [...new Set([...(p.imgs || []), ...p.v.map(x => x.photo)].filter(Boolean))];
+        const gList = galleryImgs.length ? galleryImgs : [''];
+        const activePhoto = gList[Math.min(galleryIndex, gList.length - 1)];
 
-          {checkoutStep === 1 && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="font-serif-brand text-2xl font-medium">Delivery Address</h2>
-                  <button
-                    onClick={() => setNewAddrForm((prev) => ({ ...prev, show: !prev.show }))}
-                    className="text-xs font-bold text-[#B8905C] hover:underline flex items-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Add New Address
-                  </button>
-                </div>
+        const inCart = cart.find(c => c.pid === p.id && c.vid === v.id);
+        const cartQty = inCart ? inCart.q : 0;
 
-                {addresses.map((addr) => (
-                  <div
-                    key={addr.id}
-                    onClick={() => setSelectedAddressId(addr.id)}
-                    className={`p-4 rounded-xl border bg-white cursor-pointer ${selectedAddressId === addr.id ? 'border-[#B8905C] ring-2 ring-[#B8905C]/25' : 'border-[#1C1B29]/15'}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded bg-[#1C1B29] text-[#D6B98C] text-[10px] font-bold uppercase">{addr.label}</span>
-                        <span className="font-bold text-sm">{addr.recipientName}</span>
-                        {addr.isDefault && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Default</span>}
-                      </div>
-                      {!addr.isDefault && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setAddresses((prev) => prev.map((a) => ({ ...a, isDefault: a.id === addr.id })));
-                            setSelectedAddressId(addr.id);
-                            showToast('Default address updated');
-                          }}
-                          className="text-[11px] font-semibold text-[#B8905C] hover:underline"
-                        >
-                          Make Default
-                        </button>
-                      )}
-                    </div>
-                    <p className="text-xs text-[#1C1B29]/75 mt-1">{addr.street}, {addr.city}, {addr.state} — {addr.pincode}</p>
-                    <div className="flex items-center gap-4 mt-2 text-[11px] text-[#1C1B29]/55">
-                      <span>Phone: {addr.phone}</span>
-                      {addr.lat && <span className="inline-flex items-center gap-1 text-emerald-700"><MapPin className="w-3 h-3" /> GPS Verified ({addr.lat}, {addr.lng})</span>}
-                    </div>
-                  </div>
-                ))}
+        const userAddrs = currentUser ? addresses.filter(a => a.m === currentUser.mobile) : [];
+        const primaryAddr = userAddrs.find(a => a.id === selectedAddrId) || userAddrs[0];
 
-                {newAddrForm.show && (
-                  <form onSubmit={handleSaveAddress} className="p-5 rounded-xl bg-white border border-[#B8905C]/40 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-semibold text-sm">Add Address</h3>
-                      <button type="button" onClick={handleDetectLocation} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1C1B29] text-[#D6B98C] text-xs font-semibold">
-                        <Navigation className="w-3.5 h-3.5" /> Use Current Location (GPS)
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                      <input placeholder="Recipient Name *" value={newAddrForm.recipientName} onChange={(e) => setNewAddrForm({ ...newAddrForm, recipientName: e.target.value })} className="border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                      <input placeholder="Phone *" value={newAddrForm.phone} onChange={(e) => setNewAddrForm({ ...newAddrForm, phone: e.target.value })} className="border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                      <input placeholder="Street / Landmark *" value={newAddrForm.street} onChange={(e) => setNewAddrForm({ ...newAddrForm, street: e.target.value })} className="sm:col-span-2 border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                      <input placeholder="City" value={newAddrForm.city} onChange={(e) => setNewAddrForm({ ...newAddrForm, city: e.target.value })} className="border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                      <input placeholder="Pincode *" value={newAddrForm.pincode} onChange={(e) => setNewAddrForm({ ...newAddrForm, pincode: e.target.value })} className="border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                    </div>
-                    <button type="submit" className="px-4 py-2 rounded-lg bg-[#B8905C] text-[#1C1B29] text-xs font-bold">Save Address</button>
-                  </form>
-                )}
-              </div>
+        // Similar products
+        const sameCatProds = products.filter(x => x.cat === p.cat && x.id !== p.id).slice(0, 6);
 
-              <div className="bg-white p-5 rounded-xl border border-[#1C1B29]/12 h-fit space-y-3">
-                <h3 className="font-serif-brand text-lg font-medium">Order Summary</h3>
-                <div className="space-y-2 text-xs border-b border-[#1C1B29]/10 pb-3">
-                  <div className="flex justify-between"><span>Subtotal ({cartDetails.count} items)</span><span>₹{cartDetails.subtotal.toLocaleString('en-IN')}</span></div>
-                  {cartDetails.discount > 0 && <div className="flex justify-between text-emerald-700 font-semibold"><span>Coupon ({appliedCouponCode})</span><span>-₹{cartDetails.discount.toLocaleString('en-IN')}</span></div>}
-                  <div className="flex justify-between"><span>Shipping</span><span className="text-emerald-700 font-semibold">FREE</span></div>
-                </div>
-                <div className="flex justify-between text-base font-bold"><span>Total</span><span>₹{cartDetails.total.toLocaleString('en-IN')}</span></div>
-                <button onClick={() => setCheckoutStep(2)} className="w-full py-3 rounded-xl bg-[#1C1B29] text-[#F3EFE7] hover:bg-[#B8905C] hover:text-[#1C1B29] font-semibold text-sm transition flex items-center justify-center gap-2">
-                  Continue to Payment <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {checkoutStep === 2 && (
-            <div className="max-w-xl mx-auto bg-white rounded-2xl border border-[#1C1B29]/15 overflow-hidden shadow-lg">
-              <div className="bg-[#1C1B29] text-[#F3EFE7] p-5 flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] uppercase tracking-widest text-[#D6B98C]">Orayve Secure Checkout · Razorpay</p>
-                  <p className="text-xl font-bold mt-0.5">₹{cartDetails.total.toLocaleString('en-IN')}</p>
-                </div>
-                <ShieldCheck className="w-8 h-8 text-[#D6B98C]" />
-              </div>
-              <div className="p-6 space-y-3">
-                {[
-                  { id: 'UPI', title: 'UPI (GPay, PhonePe, Paytm)', desc: 'Instant zero-fee UPI payment', icon: Smartphone },
-                  { id: 'CARD', title: 'Credit / Debit Card', desc: 'Visa, Mastercard, RuPay', icon: CreditCard },
-                  { id: 'NET_BANKING', title: 'Net Banking', desc: 'HDFC, ICICI, SBI, Axis & 40+ banks', icon: Building2 },
-                ].map((opt) => {
-                  const Icon = opt.icon;
-                  return (
-                    <div key={opt.id} onClick={() => setPaymentMethod(opt.id)} className={`p-4 rounded-xl border flex items-center gap-4 cursor-pointer ${paymentMethod === opt.id ? 'border-[#B8905C] bg-[#F3EFE7]/60' : 'border-[#1C1B29]/15'}`}>
-                      <Icon className="w-5 h-5 text-[#B8905C]" />
-                      <div className="flex-1"><p className="text-sm font-bold">{opt.title}</p><p className="text-xs text-[#1C1B29]/60">{opt.desc}</p></div>
-                    </div>
-                  );
-                })}
-                <div className="pt-4 flex gap-3">
-                  <button onClick={() => setCheckoutStep(1)} className="px-4 py-3 rounded-xl border border-[#1C1B29]/20 text-xs font-semibold">Back</button>
-                  <button onClick={handlePlaceOrder} className="flex-1 py-3 rounded-xl bg-[#1C1B29] text-[#F3EFE7] hover:bg-[#B8905C] hover:text-[#1C1B29] font-bold text-sm transition">
-                    Pay ₹{cartDetails.total.toLocaleString('en-IN')} Now
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {checkoutStep === 3 && latestOrder && (
-            <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-[#B8905C]/40 p-8 text-center shadow-lg">
-              <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-4">
-                <CheckCircle2 className="w-8 h-8" />
-              </div>
-              <p className="text-[11px] uppercase tracking-[0.25em] text-[#B8905C] font-bold">Order Confirmed</p>
-              <h2 className="font-serif-brand text-3xl font-medium mt-1">Thank you for choosing Orayve</h2>
-              <p className="text-sm text-[#1C1B29]/70 mt-2">Order ID: <strong className="text-[#1C1B29]">{latestOrder.orderId}</strong></p>
-              <div className="mt-5 p-4 rounded-xl bg-[#F3EFE7] border border-[#B8905C]/30 text-xs text-left space-y-1">
-                <p>✓ SMS confirmation dispatched to <strong>{latestOrder.customerPhone}</strong></p>
-                <p>✓ GST PDF Invoice emailed to <strong>{latestOrder.customerEmail}</strong></p>
-                <p>✓ Protected under Orayve's <strong>7-Day Return & Replacement Policy</strong></p>
-              </div>
-              <div className="mt-6 flex flex-wrap justify-center gap-3">
-                <button onClick={() => setInvoiceOrder(latestOrder)} className="px-5 py-2.5 rounded-xl bg-[#1C1B29] text-[#F3EFE7] text-xs font-bold flex items-center gap-2">
-                  <FileText className="w-4 h-4" /> Download / Print GST Invoice
-                </button>
-                <button onClick={() => setView('profile')} className="px-5 py-2.5 rounded-xl border border-[#1C1B29]/25 text-xs font-bold">
-                  View Order History
-                </button>
-              </div>
-            </div>
-          )}
-        </main>
-      )}
-
-      {/* ====================================================================
-          VIEW 3: USER PROFILE & ORDER HISTORY
-         ==================================================================== */}
-      {view === 'profile' && (
-        <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-10">
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.2em] text-[#B8905C] font-bold">Member Profile</p>
-              <h1 className="font-serif-brand text-3xl font-medium">{user?.name}</h1>
-              <p className="text-xs text-[#1C1B29]/65">{user?.email} · {user?.phone}</p>
-            </div>
-            <button onClick={() => setView('store')} className="px-4 py-2 rounded-full bg-[#1C1B29] text-[#F3EFE7] text-xs font-semibold">
-              Continue Shopping
+        return (
+          <main className="max-w-[1400px] mx-auto px-4 py-3 flex-1">
+            <button
+              onClick={() => {
+                const prevNav = navHistory.pop();
+                setView('store');
+                window.scrollTo({ top: prevNav?.scroll || 0, behavior: 'smooth' });
+              }}
+              className="text-xs font-bold mb-2 flex items-center gap-1 hover:text-brass"
+            >
+              ‹ Back to products
             </button>
-          </div>
 
-          <h2 className="font-serif-brand text-xl font-medium mb-4">Order History ({orders.length})</h2>
-          <div className="space-y-5">
-            {orders.map((order) => {
-              const currentIdx = ORDER_STATUSES.indexOf(order.status);
-              return (
-                <div key={order.orderId} className="bg-white rounded-xl border border-[#1C1B29]/12 p-5 shadow-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[#1C1B29]/10">
-                    <div>
-                      <span className="text-sm font-bold">{order.orderId}</span>
-                      <span className="text-xs text-[#1C1B29]/55 ml-3">{order.createdAt}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-bold">₹{order.total.toLocaleString('en-IN')}</span>
-                      <button onClick={() => setInvoiceOrder(order)} className="px-3 py-1.5 rounded-lg bg-[#F3EFE7] border border-[#B8905C]/40 text-xs font-bold flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5" /> Download Bill
+            <div className="grid md:grid-cols-5 gap-6">
+              
+              {/* Left Column: Gallery */}
+              <div className="md:col-span-2">
+                <div className="relative overflow-hidden rounded-2xl bg-ink aspect-[4/3] shadow-md">
+                  <img
+                    src={imgUrl({ photo: activePhoto })}
+                    alt={p.title}
+                    className={`w-full h-full object-cover transition duration-300 ${v.stock < 1 ? 'grayscale' : ''}`}
+                    onError={e => { e.currentTarget.src = FB; }}
+                  />
+
+                  {gList.length > 1 && (
+                    <>
+                      <button
+                        onClick={() => setGalleryIndex((galleryIndex - 1 + gList.length) % gList.length)}
+                        className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-ink/70 text-bone flex items-center justify-center hover:bg-ink transition"
+                      >
+                        ‹
                       </button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-4 gap-2 py-4">
-                    {ORDER_STATUSES.map((st, idx) => (
-                      <div key={st} className="text-center">
-                        <div className={`h-1.5 rounded-full mb-2 ${idx <= currentIdx ? 'bg-[#B8905C]' : 'bg-[#1C1B29]/12'}`} />
-                        <p className={`text-[10px] font-bold ${idx <= currentIdx ? 'text-[#1C1B29]' : 'text-[#1C1B29]/40'}`}>{st.replace(/_/g, ' ')}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="space-y-1 text-xs text-[#1C1B29]/80">
-                    {order.items.map((item, i) => (
-                      <div key={i} className="flex justify-between">
-                        <span>{item.title} ({item.colorName}) × {item.qty}</span>
-                        <span className="font-semibold">₹{(item.salePrice * item.qty).toLocaleString('en-IN')}</span>
-                      </div>
-                    ))}
-                  </div>
+                      <button
+                        onClick={() => setGalleryIndex((galleryIndex + 1) % gList.length)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-ink/70 text-bone flex items-center justify-center hover:bg-ink transition"
+                      >
+                        ›
+                      </button>
+                    </>
+                  )}
+
+                  <span className="absolute top-3 left-3 px-2 py-0.5 rounded bg-brass text-ink text-[10px] font-bold">
+                    {v.d}% OFF
+                  </span>
+                  {v.stock < 1 && (
+                    <span className="absolute inset-x-0 bottom-4 mx-auto w-fit px-4 py-1.5 rounded bg-ink/85 text-bone text-xs font-bold">
+                      Out of stock
+                    </span>
+                  )}
                 </div>
-              );
-            })}
-          </div>
-        </main>
-      )}
 
-      {/* ====================================================================
-          VIEW 4: ADMIN PORTAL (AUTH GATE + LIVE DASHBOARD)
-         ==================================================================== */}
-      {view === 'admin' && !adminSession && (
-        <main className="flex-1 flex items-center justify-center p-4 bg-[#1C1B29]">
-          <div className="w-full max-w-md bg-[#F3EFE7] rounded-2xl p-7 shadow-2xl border border-[#B8905C]/40">
-            <div className="flex items-center justify-between mb-6">
-              <OrayveLogo dark={false} size="sm" />
-              <span className="px-2.5 py-1 rounded bg-[#1C1B29] text-[#D6B98C] text-[10px] font-bold uppercase">Admin Gate</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-1 p-1 bg-[#1C1B29]/10 rounded-lg mb-6">
-              <button onClick={() => setAdminGateTab('login')} className={`py-2 rounded-md text-xs font-bold ${adminGateTab === 'login' ? 'bg-[#1C1B29] text-[#F3EFE7]' : ''}`}>Admin Login</button>
-              <button onClick={() => setAdminGateTab('kyc')} className={`py-2 rounded-md text-xs font-bold ${adminGateTab === 'kyc' ? 'bg-[#1C1B29] text-[#F3EFE7]' : ''}`}>KYC Registration</button>
-            </div>
-
-            {adminGateTab === 'login' ? (
-              <div className="space-y-4">
-                <input value={adminLoginId} onChange={(e) => setAdminLoginId(e.target.value)} placeholder="ADM-2026-0001" className="w-full bg-white border border-[#1C1B29]/20 rounded-lg px-3 py-2.5 text-sm" />
-                <input type="password" value={adminLoginPass} onChange={(e) => setAdminLoginPass(e.target.value)} placeholder="Password" className="w-full bg-white border border-[#1C1B29]/20 rounded-lg px-3 py-2.5 text-sm" />
-                <button
-                  onClick={() => { setAdminSession({ adminId: adminLoginId || 'ADM-2026-0001' }); showToast('Admin console unlocked'); }}
-                  className="w-full py-2.5 rounded-xl bg-[#1C1B29] text-[#F3EFE7] font-bold text-sm"
-                >
-                  Sign In
-                </button>
-                <button
-                  onClick={() => { setAdminSession({ adminId: 'ADM-2026-0001' }); showToast('Demo Super Admin active'); }}
-                  className="w-full py-2 rounded-xl border border-[#B8905C] text-[#1C1B29] font-bold text-xs"
-                >
-                  1-Click Demo Super Admin Login
-                </button>
-              </div>
-            ) : kycSubmitted ? (
-              <div className="p-5 rounded-xl bg-emerald-50 border border-emerald-200 text-center space-y-2 text-xs">
-                <ShieldCheck className="w-10 h-10 text-emerald-700 mx-auto" />
-                <p className="font-bold text-emerald-900">KYC Queued for Super Admin Approval</p>
-                <p>Encrypted Gov ID & PAN received for <strong>{kycForm.companyEmail}</strong>.</p>
-                <button onClick={() => { setKycSubmitted(false); setAdminGateTab('login'); }} className="mt-2 px-4 py-1.5 rounded-lg bg-[#1C1B29] text-[#F3EFE7] font-semibold">Back to Login</button>
-              </div>
-            ) : (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!kycForm.companyEmail.endsWith('@orayve.in')) {
-                    showToast('Use an official @orayve.in email', 'error');
-                    return;
-                  }
-                  setKycSubmitted(true);
-                }}
-                className="space-y-2.5 text-xs"
-              >
-                <input required placeholder="Full Legal Name" value={kycForm.fullName} onChange={(e) => setKycForm({ ...kycForm, fullName: e.target.value })} className="w-full bg-white border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                <input required type="email" placeholder="Company Email (@orayve.in)" value={kycForm.companyEmail} onChange={(e) => setKycForm({ ...kycForm, companyEmail: e.target.value })} className="w-full bg-white border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                <div className="grid grid-cols-2 gap-2">
-                  <input required placeholder="Mobile" value={kycForm.mobile} onChange={(e) => setKycForm({ ...kycForm, mobile: e.target.value })} className="bg-white border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                  <input required placeholder="PAN Number" value={kycForm.panNumber} onChange={(e) => setKycForm({ ...kycForm, panNumber: e.target.value })} className="bg-white border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                </div>
-                <input required placeholder="Gov ID (Passport / DL — AES-256)" value={kycForm.govIdNumber} onChange={(e) => setKycForm({ ...kycForm, govIdNumber: e.target.value })} className="w-full bg-white border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                <input required placeholder="Residential Address" value={kycForm.address} onChange={(e) => setKycForm({ ...kycForm, address: e.target.value })} className="w-full bg-white border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                <div className="flex gap-2">
-                  <input required placeholder="OTP (Demo: 123456)" value={kycForm.otp} onChange={(e) => setKycForm({ ...kycForm, otp: e.target.value })} className="flex-1 bg-white border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                  <button type="button" onClick={() => showToast('KYC OTP sent: 123456')} className="px-3 rounded-lg bg-[#1C1B29] text-[#D6B98C] font-semibold">Send OTP</button>
-                </div>
-                <button type="submit" className="w-full py-2.5 rounded-xl bg-[#B8905C] text-[#1C1B29] font-bold">Verify OTP & Submit KYC</button>
-              </form>
-            )}
-          </div>
-        </main>
-      )}
-
-      {view === 'admin' && adminSession && (
-        <div className="flex-1 flex flex-col md:flex-row min-h-screen">
-          <aside className="w-full md:w-64 bg-[#2E2B26] text-[#F3EFE7] p-5 flex flex-col justify-between shrink-0">
-            <div>
-              <div className="pb-5 border-b border-white/10">
-                <OrayveLogo dark size="sm" />
-                <p className="text-[10px] uppercase tracking-widest text-[#D6B98C] mt-2">Admin · {adminSession.adminId}</p>
-              </div>
-              <nav className="mt-5 space-y-1.5">
-                {[
-                  { id: 'analytics', label: 'Analytics Overview', icon: BarChart3 },
-                  { id: 'products', label: `Product CRUD (${products.length})`, icon: Package },
-                  { id: 'coupons', label: 'Coupon Manager', icon: Tag },
-                  { id: 'orders', label: 'Order Tracker', icon: Truck },
-                ].map((nav) => {
-                  const Icon = nav.icon;
-                  return (
+                {/* Thumbnails row */}
+                <div className="flex gap-2 mt-3 overflow-x-auto ns">
+                  {gList.map((ph, idx) => (
                     <button
-                      key={nav.id}
-                      onClick={() => setAdminSection(nav.id)}
-                      className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold ${adminSection === nav.id ? 'bg-[#B8905C] text-[#1C1B29]' : 'text-[#F3EFE7]/80 hover:bg-white/10'}`}
+                      key={idx}
+                      onClick={() => setGalleryIndex(idx)}
+                      className={`w-16 h-16 rounded-lg overflow-hidden shrink-0 border border-ink/20 transition ${
+                        idx === galleryIndex ? 'ring-2 ring-brass ring-offset-1' : 'opacity-70 hover:opacity-100'
+                      }`}
                     >
-                      <Icon className="w-4 h-4" /> {nav.label}
+                      <img
+                        src={imgUrl({ photo: ph })}
+                        alt="Thumbnail"
+                        className="w-full h-full object-cover"
+                        onError={e => { e.currentTarget.src = FB; }}
+                      />
                     </button>
-                  );
-                })}
-              </nav>
-            </div>
-            <div className="pt-5 border-t border-white/10 space-y-2">
-              <button onClick={() => setView('store')} className="w-full py-2 rounded-lg bg-white/10 text-xs font-semibold">View Storefront</button>
-              <button onClick={() => { setAdminSession(null); setView('store'); }} className="w-full py-2 rounded-lg text-xs text-rose-300 flex items-center justify-center gap-1.5">
-                <LogOut className="w-3.5 h-3.5" /> Sign Out
-              </button>
-            </div>
-          </aside>
-
-          <section className="flex-1 bg-[#F3EFE7] p-5 sm:p-8 overflow-y-auto">
-            {adminSection === 'analytics' && (
-              <div className="space-y-6">
-                <h1 className="font-serif-brand text-3xl font-medium">Executive Analytics</h1>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-white p-5 rounded-xl border border-[#1C1B29]/10"><p className="text-xs text-[#1C1B29]/60 font-semibold">Total Revenue</p><p className="text-2xl font-bold mt-1">₹{adminAnalytics.totalRevenue.toLocaleString('en-IN')}</p></div>
-                  <div className="bg-white p-5 rounded-xl border border-[#1C1B29]/10"><p className="text-xs text-[#1C1B29]/60 font-semibold">Total Orders</p><p className="text-2xl font-bold mt-1">{adminAnalytics.totalOrders}</p></div>
-                  <div className="bg-white p-5 rounded-xl border border-[#1C1B29]/10"><p className="text-xs text-[#1C1B29]/60 font-semibold">Live Products</p><p className="text-2xl font-bold mt-1">{products.length}</p></div>
-                  <div className="bg-white p-5 rounded-xl border border-amber-300"><p className="text-xs text-amber-800 font-semibold flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Low Stock SKUs</p><p className="text-2xl font-bold text-amber-700 mt-1">{adminAnalytics.totalLowStock}</p></div>
-                </div>
-
-                <div className="bg-white rounded-xl border border-[#1C1B29]/10 p-5">
-                  <h2 className="font-serif-brand text-lg font-medium mb-3">Orders & Best Sellers by Category</h2>
-                  <table className="w-full text-left text-xs">
-                    <thead className="border-b text-[#1C1B29]/60"><tr><th className="py-2">Category</th><th className="py-2">Units</th><th className="py-2">Revenue</th><th className="py-2">Best Seller</th></tr></thead>
-                    <tbody className="divide-y">
-                      {adminAnalytics.categoryStats.map((c) => (
-                        <tr key={c.category}><td className="py-2.5 font-semibold">{c.category}</td><td className="py-2.5">{c.orders}</td><td className="py-2.5 font-bold">₹{c.revenue.toLocaleString('en-IN')}</td><td className="py-2.5 text-[#B8905C] font-semibold">{c.bestSeller}</td></tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="bg-white rounded-xl border border-[#1C1B29]/10 p-5">
-                    <h2 className="font-serif-brand text-lg font-medium mb-3 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-[#B8905C]" /> Products to Boost</h2>
-                    <div className="space-y-2">
-                      {adminAnalytics.productsToBoost.map((p) => (
-                        <div key={p.id} className="p-3 rounded-lg bg-[#F3EFE7] flex justify-between text-xs">
-                          <div><p className="font-bold">{p.title}</p><p className="text-[#1C1B29]/60">{p.viewCount} views · {p.unitsSold} sold</p></div>
-                          <span className="px-2 py-1 h-fit rounded bg-amber-100 text-amber-800 font-bold">{p.conversionRate.toFixed(1)}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="bg-white rounded-xl border border-[#1C1B29]/10 p-5">
-                    <h2 className="font-serif-brand text-lg font-medium mb-3 flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-amber-600" /> Low Stock Alerts</h2>
-                    <div className="space-y-2">
-                      {adminAnalytics.lowStockVariants.map((v) => (
-                        <div key={v.sku} className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex justify-between text-xs">
-                          <div><p className="font-bold">{v.productTitle}</p><p className="text-[#1C1B29]/60">{v.sku} · {v.colorName}</p></div>
-                          <span className="font-bold text-amber-800">{v.stock} left</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {adminSection === 'products' && (
-              <div className="space-y-6">
-                <h1 className="font-serif-brand text-3xl font-medium">Product CRUD ({products.length} Live)</h1>
-                <form onSubmit={handleSaveAdminProduct} className="bg-white p-5 rounded-xl border border-[#1C1B29]/12 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
-                  <input required placeholder="Product Title *" value={productForm.title} onChange={(e) => setProductForm({ ...productForm, title: e.target.value })} className="sm:col-span-2 border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                  <select value={productForm.category} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })} className="border border-[#1C1B29]/20 rounded-lg px-3 py-2">
-                    {CATEGORY_NAMES.slice(1).map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <input placeholder="Material" value={productForm.materialType} onChange={(e) => setProductForm({ ...productForm, materialType: e.target.value })} className="border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                  <input type="number" placeholder="MRP (₹)" value={productForm.mrp} onChange={(e) => setProductForm({ ...productForm, mrp: e.target.value })} className="border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                  <input type="number" placeholder="Sale Price (₹)" value={productForm.salePrice} onChange={(e) => setProductForm({ ...productForm, salePrice: e.target.value })} className="border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                  <input type="number" placeholder="Stock" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })} className="border border-[#1C1B29]/20 rounded-lg px-3 py-2" />
-                  <button type="submit" className="rounded-lg bg-[#1C1B29] text-[#F3EFE7] font-bold hover:bg-[#B8905C] hover:text-[#1C1B29] transition">
-                    {editingProduct ? 'Save Edit' : 'Publish Product'}
-                  </button>
-                </form>
-
-                <input
-                  value={adminProductSearch}
-                  onChange={(e) => setAdminProductSearch(e.target.value)}
-                  placeholder="Search 260+ products by title, category, or SKU..."
-                  className="w-full max-w-md bg-white border border-[#1C1B29]/20 rounded-lg px-3.5 py-2 text-xs"
-                />
-
-                <div className="bg-white rounded-xl border border-[#1C1B29]/10 overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-[#1C1B29] text-[#F3EFE7]">
-                      <tr><th className="p-3">Product</th><th className="p-3">Category</th><th className="p-3">Price</th><th className="p-3">Stock</th><th className="p-3 text-right">Actions</th></tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {adminFilteredProducts.map((p) => (
-                        <tr key={p.id}>
-                          <td className="p-3 font-semibold">{p.title}</td>
-                          <td className="p-3 text-[#1C1B29]/70">{p.category}</td>
-                          <td className="p-3"><strong>₹{p.variants[0].salePrice}</strong> <span className="line-through text-[#1C1B29]/45">₹{p.variants[0].mrp}</span></td>
-                          <td className="p-3">{p.variants[0].stock}</td>
-                          <td className="p-3 text-right space-x-2">
-                            <button
-                              onClick={() => {
-                                setEditingProduct(p);
-                                setProductForm({ title: p.title, category: p.category, materialType: p.materialType, designStyle: p.designStyle, isCouponApplicable: p.isCouponApplicable, colorName: p.variants[0].colorName, colorHex: p.variants[0].colorHex, mrp: p.variants[0].mrp, salePrice: p.variants[0].salePrice, stock: p.variants[0].stock });
-                              }}
-                              className="text-[#B8905C] font-bold hover:underline"
-                            >
-                              Edit
-                            </button>
-                            <button onClick={() => { setProducts((prev) => prev.filter((x) => x.id !== p.id)); showToast('Product deleted'); }} className="text-rose-600 font-bold hover:underline">
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {adminSection === 'coupons' && (
-              <div className="space-y-6">
-                <h1 className="font-serif-brand text-3xl font-medium">Coupon Manager</h1>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!newCouponForm.code.trim()) return;
-                    setCoupons((prev) => [...prev, { id: `c_${Date.now()}`, code: newCouponForm.code.toUpperCase(), type: newCouponForm.type, value: Number(newCouponForm.value), maxDiscount: Number(newCouponForm.maxDiscount), minOrder: Number(newCouponForm.minOrder), active: true }]);
-                    setNewCouponForm({ code: '', type: 'PERCENTAGE', value: 10, maxDiscount: 300, minOrder: 500 });
-                    showToast('Coupon created');
-                  }}
-                  className="bg-white p-5 rounded-xl border border-[#1C1B29]/12 grid grid-cols-1 sm:grid-cols-5 gap-3 text-xs"
-                >
-                  <input required placeholder="CODE" value={newCouponForm.code} onChange={(e) => setNewCouponForm({ ...newCouponForm, code: e.target.value })} className="border rounded-lg px-3 py-2 uppercase" />
-                  <select value={newCouponForm.type} onChange={(e) => setNewCouponForm({ ...newCouponForm, type: e.target.value })} className="border rounded-lg px-3 py-2"><option value="PERCENTAGE">%</option><option value="FLAT">Flat ₹</option></select>
-                  <input type="number" value={newCouponForm.value} onChange={(e) => setNewCouponForm({ ...newCouponForm, value: e.target.value })} className="border rounded-lg px-3 py-2" />
-                  <input type="number" value={newCouponForm.minOrder} onChange={(e) => setNewCouponForm({ ...newCouponForm, minOrder: e.target.value })} className="border rounded-lg px-3 py-2" />
-                  <button type="submit" className="rounded-lg bg-[#1C1B29] text-[#F3EFE7] font-bold">Create</button>
-                </form>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {coupons.map((c) => (
-                    <div key={c.id} className="bg-white p-4 rounded-xl border flex justify-between items-center">
-                      <div><p className="font-bold text-sm">{c.code}</p><p className="text-xs text-[#1C1B29]/60">{c.type === 'PERCENTAGE' ? `${c.value}% off` : `₹${c.value} off`} · Min ₹{c.minOrder}</p></div>
-                      <button onClick={() => setCoupons((prev) => prev.map((x) => (x.id === c.id ? { ...x, active: !x.active } : x)))} className={`px-3 py-1 rounded-full text-xs font-bold ${c.active ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-600'}`}>{c.active ? 'Active' : 'Paused'}</button>
-                    </div>
                   ))}
                 </div>
               </div>
-            )}
 
-            {adminSection === 'orders' && (
-              <div className="space-y-4">
-                <h1 className="font-serif-brand text-3xl font-medium">Order Management</h1>
-                {orders.map((o) => (
-                  <div key={o.orderId} className="bg-white p-5 rounded-xl border flex flex-col sm:flex-row justify-between gap-4">
-                    <div>
-                      <p className="font-bold text-sm">{o.orderId} · {o.customerName} ({o.paymentMethod})</p>
-                      <p className="text-xs text-[#1C1B29]/70 mt-1">{o.items.map((i) => `${i.title} ×${i.qty}`).join(', ')}</p>
-                      <p className="text-xs font-bold text-[#B8905C] mt-1">₹{o.total.toLocaleString('en-IN')}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={o.status}
-                        onChange={(e) => {
-                          setOrders((prev) => prev.map((x) => (x.orderId === o.orderId ? { ...x, status: e.target.value } : x)));
-                          showToast(`Order updated to ${e.target.value}`);
+              {/* Right Column: Info & Buy */}
+              <div className="md:col-span-3">
+                <p className="text-[10px] uppercase tracking-wider text-brass font-bold">
+                  {p.cat} · {p.design}
+                </p>
+                <h1 className="serif text-xl sm:text-2xl mt-1 font-bold">{p.title}</h1>
+
+                {/* Rating Bar */}
+                <div className="flex items-center gap-2 mt-2 text-sm">
+                  <span className="text-brass">★ {p.rate}</span>
+                  <span className="text-xs text-ink/60">({p.rev} ratings &amp; reviews)</span>
+                </div>
+
+                {/* Price Breakdown */}
+                <div className="mt-3 p-3 rounded-xl bg-white border border-ink/10 text-xs space-y-0.5 shadow-sm">
+                  <div className="flex justify-between text-ink/60">
+                    <span>MRP</span>
+                    <span className="line-through">{inr(v.mrp)}</span>
+                  </div>
+                  <div className="flex justify-between text-emerald-700 font-semibold">
+                    <span>Discount ({v.d}% off)</span>
+                    <span>− {inr(v.mrp - v.price)}</span>
+                  </div>
+                  <div className="flex justify-between text-base font-bold border-t border-ink/10 pt-1.5">
+                    <span>Final price</span>
+                    <span className="text-ink">{inr(v.price)}</span>
+                  </div>
+                  <p className="text-[10px] text-ink/50">Inclusive of all taxes · Free delivery nationwide</p>
+                </div>
+
+                {/* Swatches Selection */}
+                <div className="mt-4">
+                  <p className="text-xs font-bold mb-2">
+                    Colour: <span className="text-brass">{v.color}</span>
+                  </p>
+                  <div className="flex gap-2">
+                    {p.v.map((x, i) => (
+                      <button
+                        key={x.id}
+                        onClick={() => {
+                          setActiveVariants(prev => ({ ...prev, [p.id]: i }));
+                          setGalleryIndex(0);
                         }}
-                        className="bg-[#1C1B29] text-[#F3EFE7] text-xs font-bold rounded-lg px-3 py-2"
-                      >
-                        {ORDER_STATUSES.map((st) => <option key={st} value={st}>{st.replace(/_/g, ' ')}</option>)}
-                      </select>
-                      <button onClick={() => setInvoiceOrder(o)} className="p-2 rounded-lg border"><FileText className="w-4 h-4" /></button>
-                    </div>
+                        title={x.color}
+                        className={`w-7 h-7 rounded-full border border-ink/30 transition ${
+                          x.id === v.id ? 'ring-2 ring-offset-2 ring-brass scale-110' : ''
+                        }`}
+                        style={{ background: x.hex }}
+                      />
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-      )}
-
-      {/* ====================================================================
-          PRODUCT DETAIL MODAL
-         ==================================================================== */}
-      {detailProduct && (
-        <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-sm flex items-center justify-center p-4">
-          {(() => {
-            const v = getActiveVariant(detailProduct);
-            return (
-              <div className="bg-[#F3EFE7] rounded-2xl max-w-3xl w-full overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-2 max-h-[90vh] overflow-y-auto">
-                <div className="h-72 md:h-auto relative">
-                  <ProductPhoto src={v.photoUrl} fallback={detailProduct.fallbackPhoto} alt={detailProduct.title} colorHex={v.colorHex} />
-                  <button onClick={() => setDetailProductId(null)} className="absolute top-3 left-3 p-2 rounded-full bg-[#1C1B29]/80 text-[#F3EFE7]">
-                    <X className="w-4 h-4" />
-                  </button>
+                  <p className={`text-xs mt-2 font-semibold ${stCls}`}>{stMsg}</p>
                 </div>
-                <div className="p-6 flex flex-col justify-between space-y-4">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-widest text-[#B8905C] font-bold">{detailProduct.category}</p>
-                    <h2 className="font-serif-brand text-2xl font-medium mt-1">{detailProduct.title}</h2>
-                    <div className="flex items-baseline gap-2 mt-2">
-                      <span className="text-2xl font-bold">₹{v.salePrice.toLocaleString('en-IN')}</span>
-                      <span className="text-sm line-through text-[#1C1B29]/45">₹{v.mrp.toLocaleString('en-IN')}</span>
-                      <span className="text-xs font-bold text-emerald-700">{v.discountPercent}% OFF</span>
-                    </div>
-                    <p className="text-xs text-[#1C1B29]/75 mt-3 leading-relaxed">{detailProduct.description}</p>
-                    <div className="mt-4">
-                      <p className="text-xs font-bold mb-2">Color: <span className="text-[#B8905C]">{v.colorName}</span></p>
-                      <div className="flex gap-2">
-                        {detailProduct.variants.map((variant) => (
-                          <button
-                            key={variant.id}
-                            onClick={() => setActiveVariantMap((prev) => ({ ...prev, [detailProduct.id]: variant.id }))}
-                            className={`w-7 h-7 rounded-full border ${variant.id === v.id ? 'ring-2 ring-offset-2 ring-[#B8905C] border-[#1C1B29]' : 'border-[#1C1B29]/30'}`}
-                            style={{ backgroundColor: variant.colorHex }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                    <div className="mt-4 pt-3 border-t border-[#1C1B29]/12 grid grid-cols-2 gap-1.5 text-[11px] text-[#1C1B29]/70">
-                      <span>Material: {detailProduct.materialType}</span>
-                      <span>Design: {detailProduct.designStyle}</span>
-                      <span>HSN: {detailProduct.hsnCode}</span>
-                      <span>Origin: {detailProduct.countryOfOrigin}</span>
-                      <span className="col-span-2 text-emerald-800 font-semibold">✓ 7-Day Return & Replacement Policy</span>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
+
+                {/* Purchase Actions */}
+                <div className="mt-4 flex gap-2">
+                  {v.stock < 1 ? (
                     <button
-                      onClick={() => { addToCart(detailProduct.id, v.id); setDetailProductId(null); setCartOpen(true); }}
-                      className="flex-1 py-3 rounded-xl bg-[#1C1B29] text-[#F3EFE7] hover:bg-[#B8905C] hover:text-[#1C1B29] font-bold text-xs transition"
+                      disabled
+                      className="flex-1 py-2.5 rounded-xl bg-ink/15 text-ink/50 font-bold text-sm cursor-not-allowed"
                     >
-                      Add to Bag · ₹{v.salePrice.toLocaleString('en-IN')}
+                      Out of stock
                     </button>
-                    <button onClick={() => handleShareProduct(detailProduct)} className="p-3 rounded-xl border border-[#1C1B29]/20 hover:bg-white">
-                      <Share2 className="w-4 h-4" />
+                  ) : cartQty > 0 ? (
+                    <div className="flex-1 flex items-center gap-2">
+                      {renderStepper(p.id, v.id, cartQty)}
+                      <button
+                        onClick={() => setView('cart')}
+                        className="flex-1 py-2.5 rounded-xl bg-brass text-ink font-bold text-sm hover:opacity-90 transition"
+                      >
+                        Go to Cart
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => addToCart(p.id, v.id)}
+                      className="flex-1 py-2.5 rounded-xl border-2 border-ink font-bold text-sm hover:bg-ink hover:text-bone transition"
+                    >
+                      Add to Cart
                     </button>
-                  </div>
+                  )}
+
+                  {v.stock >= 1 && (
+                    <button
+                      onClick={() => {
+                        if (!cart.some(c => c.vid === v.id)) {
+                          setCart([...cart, { pid: p.id, vid: v.id, q: 1 }]);
+                        }
+                        proceedToCheckout();
+                      }}
+                      className="flex-1 py-2.5 rounded-xl bg-ink text-bone hover:bg-brass hover:text-ink font-bold text-sm transition"
+                    >
+                      Buy Now
+                    </button>
+                  )}
+                </div>
+
+                {/* Expected Delivery Box */}
+                <div className="mt-4 p-3 rounded-xl bg-white border border-ink/10 text-xs space-y-1 shadow-sm">
+                  <p className="font-bold text-sm">🚚 Expected delivery</p>
+                  {primaryAddr ? (
+                    <>
+                      <p className="text-ink/70">
+                        To {primaryAddr.name}, {primaryAddr.city} – {primaryAddr.pin}
+                      </p>
+                      <p className="text-emerald-700 font-semibold">
+                        {checkPincodeRule(primaryAddr.pin).msg}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-ink/70">
+                      {currentUser
+                        ? 'Add an address at checkout, or check any pincode below.'
+                        : 'Sign in to see delivery to your saved address, or check any pincode below.'}
+                    </p>
+                  )}
+                </div>
+
+                {/* Pincode Checker Form */}
+                <div className="mt-2 p-3 rounded-xl bg-white border border-ink/10 shadow-sm">
+                  <p className="font-bold text-xs mb-1.5">Check delivery to a pincode</p>
+                  <form
+                    onSubmit={e => {
+                      e.preventDefault();
+                      const res = checkPincodeRule(pincodeInput);
+                      setPincodeResult(res);
+                    }}
+                    className="flex gap-2"
+                  >
+                    <input
+                      value={pincodeInput}
+                      onChange={e => setPincodeInput(e.target.value)}
+                      maxLength={6}
+                      inputMode="numeric"
+                      placeholder="Enter 6-digit pincode"
+                      className="flex-1 text-xs"
+                    />
+                    <button
+                      type="submit"
+                      className="px-4 rounded-lg bg-ink text-bone text-xs font-bold hover:bg-brass hover:text-ink transition"
+                    >
+                      Check
+                    </button>
+                  </form>
+                  {pincodeResult && (
+                    <p className={`mt-2 text-xs font-semibold ${pincodeResult.ok ? 'text-emerald-700' : 'text-rose-700'}`}>
+                      {pincodeResult.msg}
+                    </p>
+                  )}
                 </div>
               </div>
-            );
-          })()}
-        </div>
-      )}
+            </div>
 
-      {/* ====================================================================
-          CART & WISHLIST DRAWERS
-         ==================================================================== */}
-      {cartOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex justify-end">
-          <div className="w-full max-w-md bg-[#F3EFE7] h-full flex flex-col shadow-2xl">
-            <div className="p-5 bg-[#1C1B29] text-[#F3EFE7] flex items-center justify-between">
-              <h2 className="font-serif-brand text-xl">Your Bag ({cartDetails.count})</h2>
-              <button onClick={() => setCartOpen(false)}><X className="w-5 h-5" /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-5 space-y-3">
-              {cartDetails.items.length === 0 ? (
-                <p className="text-center text-sm text-[#1C1B29]/60 py-16">Your bag is empty.</p>
-              ) : (
-                cartDetails.items.map((item) => (
-                  <div key={`${item.productId}-${item.variantId}`} className="bg-white p-3.5 rounded-xl border flex gap-3">
-                    <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0">
-                      <ProductPhoto src={item.variant.photoUrl} fallback={item.product.fallbackPhoto} alt={item.product.title} colorHex={item.variant.colorHex} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-xs truncate">{item.product.title}</p>
-                      <p className="text-[11px] text-[#1C1B29]/60">{item.variant.colorName} · ₹{item.variant.salePrice}</p>
-                      <div className="flex items-center justify-between mt-2">
-                        <div className="flex items-center gap-2 border rounded-lg px-2 py-0.5">
-                          <button onClick={() => updateCartQty(item.productId, item.variantId, -1)}><Minus className="w-3 h-3" /></button>
-                          <span className="text-xs font-bold">{item.qty}</span>
-                          <button onClick={() => updateCartQty(item.productId, item.variantId, 1)}><Plus className="w-3 h-3" /></button>
-                        </div>
-                        <button onClick={() => updateCartQty(item.productId, item.variantId, -item.qty)} className="text-rose-600"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-              {cartDetails.items.length > 0 && (
-                <div className="pt-3 border-t">
-                  <p className="text-[11px] font-bold mb-1.5">Coupon (Try WELCOME15 or ORAYVE200)</p>
-                  <div className="flex gap-2">
-                    <input value={couponInput} onChange={(e) => setCouponInput(e.target.value)} placeholder="Coupon code" className="flex-1 bg-white border rounded-lg px-3 py-2 text-xs uppercase" />
-                    <button onClick={handleApplyCoupon} className="px-4 py-2 rounded-lg bg-[#1C1B29] text-[#D6B98C] text-xs font-bold">Apply</button>
-                  </div>
-                </div>
-              )}
-            </div>
-            {cartDetails.items.length > 0 && (
-              <div className="p-5 bg-white border-t space-y-2">
-                <div className="flex justify-between text-xs"><span>Subtotal</span><span>₹{cartDetails.subtotal.toLocaleString('en-IN')}</span></div>
-                {cartDetails.discount > 0 && <div className="flex justify-between text-xs text-emerald-700 font-semibold"><span>Discount ({appliedCouponCode})</span><span>-₹{cartDetails.discount.toLocaleString('en-IN')}</span></div>}
-                <div className="flex justify-between text-base font-bold pt-1"><span>Total</span><span>₹{cartDetails.total.toLocaleString('en-IN')}</span></div>
-                <button onClick={() => { setCartOpen(false); setCheckoutStep(1); setView('checkout'); }} className="w-full py-3 rounded-xl bg-[#1C1B29] text-[#F3EFE7] hover:bg-[#B8905C] hover:text-[#1C1B29] font-bold text-sm transition">
-                  Proceed to Checkout
+            {/* Tabs: Specifications & Manufacturer */}
+            <section className="mt-6 bg-white rounded-2xl border border-ink/10 overflow-hidden shadow-sm">
+              <div className="grid grid-cols-2 border-b border-ink/10 text-xs font-bold text-center">
+                <button
+                  onClick={() => setDetailTab('spec')}
+                  className={`py-2.5 transition ${detailTab === 'spec' ? 'border-b-2 border-brass text-ink font-bold' : 'text-ink/50'}`}
+                >
+                  Product Specification
+                </button>
+                <button
+                  onClick={() => setDetailTab('mfg')}
+                  className={`py-2.5 transition ${detailTab === 'mfg' ? 'border-b-2 border-brass text-ink font-bold' : 'text-ink/50'}`}
+                >
+                  Manufacturer Details
                 </button>
               </div>
-            )}
-          </div>
-        </div>
-      )}
 
-      {wishlistOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex justify-end">
-          <div className="w-full max-w-md bg-[#F3EFE7] h-full flex flex-col shadow-2xl">
-            <div className="p-5 bg-[#1C1B29] text-[#F3EFE7] flex items-center justify-between">
-              <h2 className="font-serif-brand text-xl">Wishlist ({wishlist.length})</h2>
-              <button onClick={() => setWishlistOpen(false)}><X className="w-5 h-5" /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-5 space-y-3">
-              {wishlist.map((pid) => {
-                const p = products.find((x) => x.id === pid);
-                if (!p) return null;
-                const v = getActiveVariant(p);
-                return (
-                  <div key={pid} className="bg-white p-3.5 rounded-xl border flex items-center gap-3">
-                    <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0">
-                      <ProductPhoto src={v.photoUrl} fallback={p.fallbackPhoto} alt={p.title} colorHex={v.colorHex} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-xs truncate">{p.title}</p>
-                      <p className="text-xs font-bold text-[#B8905C]">₹{v.salePrice}</p>
-                    </div>
-                    <button onClick={() => { addToCart(p.id, v.id); toggleWishlist(p.id); }} className="px-3 py-1.5 rounded-lg bg-[#1C1B29] text-[#F3EFE7] text-[11px] font-bold">
-                      Move to Cart
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ====================================================================
-          PRINTABLE GST PDF INVOICE MODAL
-         ==================================================================== */}
-      {invoiceOrder && (
-        <div className="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="p-4 border-b flex items-center justify-between bg-[#F3EFE7]">
-              <span className="text-xs font-bold uppercase">Tax Invoice · {invoiceOrder.invoiceNumber}</span>
-              <div className="flex items-center gap-2">
-                <button onClick={() => window.print()} className="px-3 py-1.5 rounded-lg bg-[#1C1B29] text-[#F3EFE7] text-xs font-bold flex items-center gap-1.5">
-                  <Printer className="w-3.5 h-3.5" /> Print / Save PDF
-                </button>
-                <button onClick={() => setInvoiceOrder(null)} className="p-1.5 rounded-lg hover:bg-black/10"><X className="w-4 h-4" /></button>
-              </div>
-            </div>
-            <div id="printable-invoice" className="p-7 space-y-5 text-xs">
-              <div className="flex justify-between items-start border-b pb-4">
-                <div>
-                  <OrayveLogo dark={false} size="sm" />
-                  <p className="text-[10px] uppercase tracking-widest text-[#B8905C] mt-1 font-bold">Small Details. Big Presence.</p>
-                  <p className="text-[#1C1B29]/65 mt-1">ORAYVE Retail India · orayve.in · GSTIN: 27AABCO1234F1Z5</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold text-sm">TAX INVOICE</p>
-                  <p>Invoice: {invoiceOrder.invoiceNumber}</p>
-                  <p>Order: {invoiceOrder.orderId}</p>
-                  <p>{invoiceOrder.createdAt}</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="font-bold uppercase text-[10px] text-[#1C1B29]/55">Shipped To</p>
-                  <p className="font-bold">{invoiceOrder.address.recipientName}</p>
-                  <p>{invoiceOrder.address.street}, {invoiceOrder.address.city} - {invoiceOrder.address.pincode}</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold uppercase text-[10px] text-[#1C1B29]/55">Payment</p>
-                  <p>{invoiceOrder.paymentMethod} · PAID</p>
-                </div>
-              </div>
-              <table className="w-full text-left border-t border-b">
-                <thead className="bg-[#F3EFE7]">
-                  <tr><th className="p-2">Item</th><th className="p-2">HSN</th><th className="p-2 text-right">Price</th><th className="p-2 text-right">Qty</th><th className="p-2 text-right">Total</th></tr>
-                </thead>
-                <tbody className="divide-y">
-                  {invoiceOrder.items.map((item, idx) => (
-                    <tr key={idx}>
-                      <td className="p-2"><p className="font-semibold">{item.title}</p><p className="text-[10px] text-[#1C1B29]/60">{item.colorName} · {item.sku}</p></td>
-                      <td className="p-2">{item.hsnCode}</td>
-                      <td className="p-2 text-right">₹{item.salePrice}</td>
-                      <td className="p-2 text-right">{item.qty}</td>
-                      <td className="p-2 text-right font-bold">₹{(item.salePrice * item.qty).toLocaleString('en-IN')}</td>
+              <table className="w-full text-xs">
+                <tbody>
+                  {(detailTab === 'spec' ? [
+                    ['Category', p.cat],
+                    ['Style / design', p.design],
+                    ['Material', MAT[p.cat] || 'Premium materials'],
+                    ['Colours available', p.v.map(x => x.color).join(', ')],
+                    ['Selected colour', v.color],
+                    ['SKU', v.sku],
+                    ['HSN code', p.hsn],
+                    ['Returns', '7-day return & replacement']
+                  ] : [
+                    ['Manufactured & marketed by', MFG.name],
+                    ['Registered address', MFG.addr],
+                    ['Country of origin', 'India'],
+                    ['Generic name', p.cat],
+                    ['Net quantity', '1 unit'],
+                    ['Customer care', MFG.care]
+                  ]).map(([k, val], idx) => (
+                    <tr key={idx} className="border-b border-ink/5 last:border-0">
+                      <td className="p-2.5 w-2/5 text-ink/60 font-semibold">{k}</td>
+                      <td className="p-2.5 text-ink">{val}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div className="flex justify-end">
-                <div className="w-56 space-y-1">
-                  <div className="flex justify-between"><span>Subtotal (Incl. GST)</span><span>₹{invoiceOrder.subtotal.toLocaleString('en-IN')}</span></div>
-                  {invoiceOrder.discount > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>-₹{invoiceOrder.discount.toLocaleString('en-IN')}</span></div>}
-                  <div className="flex justify-between font-bold text-sm border-t pt-1.5"><span>Grand Total</span><span>₹{invoiceOrder.total.toLocaleString('en-IN')}</span></div>
+            </section>
+
+            {/* Ratings & Reviews Section */}
+            <section className="mt-5 bg-white rounded-2xl border border-ink/10 p-4 shadow-sm">
+              <h2 className="serif text-xl mb-3 font-bold">Ratings &amp; Reviews</h2>
+              <div className="flex items-center gap-4 pb-4 border-b border-ink/10">
+                <div className="text-3xl font-bold">
+                  {p.rate}<span className="text-lg text-ink/50">/5</span>
+                </div>
+                <div>
+                  <div className="text-brass">★ ★ ★ ★ ★</div>
+                  <p className="text-xs text-ink/60 mt-1">{p.rev} verified customer reviews</p>
                 </div>
               </div>
-              <div className="p-3 rounded-lg bg-[#F3EFE7] border border-[#B8905C]/30 text-[11px]">
-                <strong>7-Day Return & Replacement Policy:</strong> Eligible within 7 days of delivery in original Orayve packaging. Country of Origin: China.
+
+              <div className="divide-y divide-ink/10">
+                {(showAllReviews ? REVIEWS : REVIEWS.slice(0, 3)).map((r, idx) => (
+                  <div key={idx} className="py-3 text-xs">
+                    <b>{r[0]}</b> <span className="text-ink/50">· {r[1]}</span>
+                    <div className="my-1 text-brass text-[11px]">{'★'.repeat(r[2])}{'☆'.repeat(5 - r[2])}</div>
+                    <p className="text-ink/80">{r[3]}</p>
+                  </div>
+                ))}
               </div>
+
+              <button
+                onClick={() => setShowAllReviews(!showAllReviews)}
+                className="mt-3 text-xs font-bold text-brass hover:underline"
+              >
+                {showAllReviews ? 'Show fewer reviews ▴' : `More reviews (${REVIEWS.length - 3}) ▾`}
+              </button>
+            </section>
+
+            {/* Similar Products */}
+            {sameCatProds.length > 0 && (
+              <section className="mt-6">
+                <h2 className="serif text-lg mb-1 font-bold">Similar products</h2>
+                <p className="text-xs text-ink/60 mb-3">More from {p.cat}</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  {sameCatProds.map(sp => {
+                    const sv = getActiveVariant(sp);
+                    return (
+                      <div
+                        key={sp.id}
+                        onClick={() => openProduct(sp.id)}
+                        className="bg-white rounded-xl border border-ink/10 p-2 cursor-pointer hover:shadow-md transition"
+                      >
+                        <div className="h-28 bg-ink rounded-lg overflow-hidden mb-2">
+                          <img
+                            src={imgUrl(sv)}
+                            alt={sp.title}
+                            className="w-full h-full object-cover"
+                            onError={e => { e.currentTarget.src = FB; }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-brass uppercase font-bold">{sp.cat}</p>
+                        <h4 className="serif text-xs font-bold line-clamp-1">{sp.title}</h4>
+                        <p className="text-xs font-bold mt-1">{inr(sv.price)}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+          </main>
+        );
+      })()}
+
+      {/* ==================================================================== */}
+      {/* CART / BAG VIEW                                                      */}
+      {/* ==================================================================== */}
+      {view === 'cart' && (
+        <main className="max-w-5xl mx-auto px-4 py-4 flex-1">
+          <button
+            onClick={() => setView('store')}
+            className="text-xs font-bold mb-3 flex items-center gap-1 hover:text-brass"
+          >
+            ‹ Back to shopping
+          </button>
+          
+          <h1 className="serif text-2xl font-bold mb-4">Your Bag ({cartSummary.count})</h1>
+
+          {cartSummary.items.length > 0 ? (
+            <div className="grid lg:grid-cols-3 gap-6 items-start">
+              
+              {/* Items List */}
+              <div className="lg:col-span-2 space-y-3">
+                {cartSummary.items.map(({ p, v, q }) => (
+                  <div key={v.id} className="bg-white p-3 rounded-xl border border-ink/10 flex gap-3 shadow-sm">
+                    <div className="w-20 h-20 rounded-lg overflow-hidden shrink-0 bg-ink">
+                      <img
+                        src={imgUrl(v)}
+                        alt={p.title}
+                        className="w-full h-full object-cover"
+                        onError={e => { e.currentTarget.src = FB; }}
+                      />
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{p.title}</p>
+                      <p className="text-xs text-ink/60">
+                        {v.color} · <b className="text-ink">{inr(v.price)}</b>{' '}
+                        <span className="line-through text-ink/40">{inr(v.mrp)}</span>{' '}
+                        <span className="text-emerald-700 font-semibold">{v.d}% off</span>
+                      </p>
+
+                      <div className="flex items-center justify-between gap-2 mt-2">
+                        {renderStepper(p.id, v.id, q)}
+                        <span className="text-sm font-bold">{inr(v.price * q)}</span>
+                        <button
+                          onClick={() => updateCartQty(p.id, v.id, -99)}
+                          className="text-rose-600 text-xs font-semibold hover:underline"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Order Summary Sidebar */}
+              <div className="bg-white p-4 rounded-xl border border-ink/10 space-y-3 text-xs shadow-sm">
+                <div>
+                  <p className="font-bold mb-1.5">Coupon <span className="font-normal text-ink/60">(try WELCOME15 or ORAYVE200)</span></p>
+                  <div className="flex gap-2">
+                    <input
+                      value={couponInput}
+                      onChange={e => setCouponInput(e.target.value.toUpperCase())}
+                      placeholder="Coupon code"
+                      className="flex-1 uppercase text-xs"
+                    />
+                    <button
+                      onClick={() => applyCouponCode(couponInput)}
+                      className="px-4 rounded-lg bg-ink text-gold font-bold hover:bg-brass hover:text-ink transition"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+
+                <div className="border-t border-ink/10 pt-3 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Subtotal</span>
+                    <span>{inr(cartSummary.sub)}</span>
+                  </div>
+                  {cartSummary.disc > 0 && (
+                    <div className="flex justify-between text-emerald-700 font-semibold">
+                      <span>Discount ({appliedCoupon})</span>
+                      <span>−{inr(cartSummary.disc)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span>Shipping</span>
+                    <span className="text-emerald-700 font-semibold">FREE</span>
+                  </div>
+                  <div className="flex justify-between text-base font-bold border-t border-ink/10 pt-2">
+                    <span>Total</span>
+                    <span>{inr(cartSummary.total)}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={proceedToCheckout}
+                  className="w-full py-2.5 rounded-xl bg-ink text-bone hover:bg-brass hover:text-ink font-bold text-sm transition shadow"
+                >
+                  Proceed to Checkout
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="py-16 text-center">
+              <p className="text-4xl">🛍</p>
+              <p className="mt-2 text-sm text-ink/70">Your bag is empty.</p>
+              <button
+                onClick={() => setView('store')}
+                className="mt-4 px-5 py-2.5 rounded-xl bg-ink text-bone text-xs font-bold hover:bg-brass hover:text-ink transition"
+              >
+                Continue shopping
+              </button>
+            </div>
+          )}
+        </main>
+      )}
+
+      {/* ==================================================================== */}
+      {/* 3-STEP CHECKOUT VIEW                                                 */}
+      {/* ==================================================================== */}
+      {view === 'checkout' && (
+        <main className="max-w-5xl mx-auto px-4 py-5 flex-1">
+          {checkoutStep < 3 && (
+            <button
+              onClick={() => {
+                if (checkoutStep === 2) setCheckoutStep(1);
+                else setView('cart');
+              }}
+              className="text-xs font-bold mb-3 hover:text-brass"
+            >
+              ‹ {checkoutStep === 2 ? 'Back to address' : 'Back to bag'}
+            </button>
+          )}
+
+          {/* Stepper Header */}
+          <div className="flex justify-center gap-3 mb-6">
+            {['Address', 'Payment', 'Confirmed'].map((l, i) => (
+              <span
+                key={l}
+                className={`text-xs font-bold ${checkoutStep >= i + 1 ? 'text-ink' : 'opacity-40'}`}
+              >
+                {i + 1}. {l} {i < 2 && <span className="ml-2 opacity-30">—</span>}
+              </span>
+            ))}
+          </div>
+
+          {/* Step 1: Address */}
+          {checkoutStep === 1 && (
+            <div className="grid lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 space-y-4">
+                <h2 className="serif text-2xl font-bold">Delivery Address</h2>
+
+                {/* Existing saved addresses */}
+                {currentUser && addresses.filter(a => a.m === currentUser.mobile).map(a => (
+                  <div
+                    key={a.id}
+                    onClick={() => setSelectedAddrId(a.id)}
+                    className={`p-4 rounded-xl border bg-white cursor-pointer transition ${
+                      selectedAddrId === a.id ? 'border-brass ring-2 ring-brass/25' : 'border-ink/15 hover:border-ink/30'
+                    }`}
+                  >
+                    <b className="text-sm">{a.name}</b> <span className="text-xs text-ink/60">{a.phone}</span>
+                    <p className="text-xs mt-1">{a.street}, {a.city} — {a.pin}</p>
+                  </div>
+                ))}
+
+                {/* Add new address form */}
+                <form
+                  onSubmit={e => {
+                    e.preventDefault();
+                    const fd = new FormData(e.currentTarget);
+                    const newA = {
+                      id: 'a' + Date.now(),
+                      m: currentUser?.mobile,
+                      name: fd.get('name'),
+                      phone: fd.get('phone'),
+                      street: fd.get('street'),
+                      city: fd.get('city') || 'Pune',
+                      pin: fd.get('pin')
+                    };
+                    setAddresses(prev => [...prev, newA]);
+                    setSelectedAddrId(newA.id);
+                    e.currentTarget.reset();
+                    showToast('Address saved');
+                  }}
+                  className="p-5 rounded-xl bg-white border border-brass/40 grid sm:grid-cols-2 gap-3 shadow-sm"
+                >
+                  <h3 className="sm:col-span-2 font-semibold text-sm">Add new address</h3>
+                  <input
+                    required
+                    name="name"
+                    defaultValue={currentUser?.name || ''}
+                    placeholder="Recipient name *"
+                    className="text-xs"
+                  />
+                  <input
+                    required
+                    name="phone"
+                    defaultValue={currentUser?.mobile || ''}
+                    placeholder="Phone *"
+                    pattern="[0-9+ ]{10,15}"
+                    className="text-xs"
+                  />
+                  <input
+                    required
+                    name="street"
+                    placeholder="Street / landmark *"
+                    className="sm:col-span-2 text-xs"
+                  />
+                  <input
+                    name="city"
+                    defaultValue="Bengaluru"
+                    placeholder="City"
+                    className="text-xs"
+                  />
+                  <input
+                    required
+                    name="pin"
+                    placeholder="Pincode *"
+                    pattern="[0-9]{6}"
+                    className="text-xs"
+                  />
+                  <button
+                    type="submit"
+                    className="sm:col-span-2 px-4 py-2 rounded-lg bg-brass text-ink text-xs font-bold hover:opacity-90 transition"
+                  >
+                    Save Address
+                  </button>
+                </form>
+              </div>
+
+              {/* Order Summary box */}
+              <div className="bg-white p-5 rounded-xl border border-ink/10 h-fit space-y-3 shadow-sm text-xs">
+                <h3 className="serif text-lg font-bold">Order Summary</h3>
+                <div className="space-y-1 border-b border-ink/10 pb-3">
+                  <div className="flex justify-between">
+                    <span>Subtotal ({cartSummary.count})</span>
+                    <span>{inr(cartSummary.sub)}</span>
+                  </div>
+                  {cartSummary.disc > 0 && (
+                    <div className="flex justify-between text-emerald-700 font-semibold">
+                      <span>Coupon {appliedCoupon}</span>
+                      <span>−{inr(cartSummary.disc)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span>Shipping</span>
+                    <span className="text-emerald-700 font-semibold">FREE</span>
+                  </div>
+                </div>
+                <div className="flex justify-between font-bold text-sm">
+                  <span>Total</span>
+                  <span>{inr(cartSummary.total)}</span>
+                </div>
+                <button
+                  onClick={() => {
+                    if (!selectedAddrId) return showToast('Select or add a delivery address', true);
+                    setCheckoutStep(2);
+                  }}
+                  className="w-full py-3 rounded-xl bg-ink text-bone hover:bg-brass hover:text-ink font-semibold text-sm transition shadow"
+                >
+                  Continue to Payment
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Payment */}
+          {checkoutStep === 2 && (
+            <div className="max-w-xl mx-auto bg-white rounded-2xl border border-ink/15 overflow-hidden shadow-lg">
+              <div className="bg-ink text-bone p-5">
+                <p className="text-[10px] uppercase tracking-widest text-gold">Secure Checkout (Demo)</p>
+                <p className="text-2xl font-bold">{inr(cartSummary.total)}</p>
+              </div>
+
+              <div className="p-6 space-y-3">
+                {[
+                  ['UPI', 'UPI (GPay, PhonePe, Paytm, QR)'],
+                  ['CARD', 'Credit / Debit Card (Visa, MasterCard, RuPay)'],
+                  ['NET_BANKING', 'Net Banking (All Major Indian Banks)']
+                ].map(([k, label]) => (
+                  <div
+                    key={k}
+                    onClick={() => setPaymentMethod(k)}
+                    className={`p-4 rounded-xl border cursor-pointer text-sm font-bold transition flex items-center justify-between ${
+                      paymentMethod === k ? 'border-brass bg-bone ring-1 ring-brass' : 'border-ink/15 hover:border-ink/30'
+                    }`}
+                  >
+                    <span>{label}</span>
+                    {paymentMethod === k && <span className="text-brass">✓</span>}
+                  </div>
+                ))}
+
+                <div className="pt-3 flex gap-3">
+                  <button
+                    onClick={() => setCheckoutStep(1)}
+                    className="px-4 py-3 rounded-xl border text-xs font-semibold hover:bg-bone transition"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={handlePlaceOrder}
+                    className="flex-1 py-3 rounded-xl bg-ink text-bone hover:bg-brass hover:text-ink font-bold text-sm transition shadow"
+                  >
+                    Place Order · {inr(cartSummary.total)}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Confirmed */}
+          {checkoutStep === 3 && lastPlacedOrder && (
+            <div className="max-w-xl mx-auto bg-white rounded-2xl border border-brass/40 p-8 text-center shadow-lg">
+              <p className="text-5xl">✅</p>
+              <p className="text-[11px] uppercase tracking-[.25em] text-brass font-bold mt-3">Order Confirmed</p>
+              <h2 className="serif text-3xl mt-1 font-bold">Thank you for choosing Orayve</h2>
+              <p className="text-sm mt-2">Order ID: <b>{lastPlacedOrder.id}</b></p>
+              <p className="text-xs text-ink/60 mt-1">Protected by our 7-Day Return &amp; Replacement Policy</p>
+
+              <div className="mt-6 flex justify-center gap-3">
+                <button
+                  onClick={() => setInvoiceModalOrder(lastPlacedOrder)}
+                  className="px-5 py-2.5 rounded-xl bg-ink text-bone text-xs font-bold hover:bg-brass hover:text-ink transition"
+                >
+                  GST Invoice
+                </button>
+                <button
+                  onClick={() => {
+                    setView('orders');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="px-5 py-2.5 rounded-xl border border-ink/25 text-xs font-bold hover:bg-bone transition"
+                >
+                  Order History
+                </button>
+              </div>
+            </div>
+          )}
+        </main>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MY ORDERS VIEW                                                       */}
+      {/* ==================================================================== */}
+      {view === 'orders' && (
+        <main className="max-w-4xl mx-auto px-4 py-10 flex-1">
+          {!currentUser ? (
+            <div className="py-20 text-center">
+              <button
+                onClick={() => setAuthModal('login')}
+                className="px-5 py-2.5 rounded-xl bg-ink text-bone text-sm font-bold hover:bg-brass hover:text-ink transition"
+              >
+                Sign in to view your orders
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* User Profile Card */}
+              <div className="bg-white rounded-xl border border-ink/10 p-5 mb-6 flex flex-wrap justify-between items-center gap-3 text-sm shadow-sm">
+                <div>
+                  <b>{currentUser.name}</b> · {currentUser.age} yrs
+                  <p className="text-xs text-ink/60">+91 {currentUser.mobile} · {currentUser.email}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setCurrentUser(null);
+                    setView('store');
+                    showToast('Logged out');
+                  }}
+                  className="text-xs font-bold text-rose-700 hover:underline"
+                >
+                  Log out
+                </button>
+              </div>
+
+              <h1 className="serif text-3xl mb-6 font-bold">
+                Order History ({orders.filter(o => o.mobile === currentUser.mobile).length})
+              </h1>
+
+              {orders.filter(o => o.mobile === currentUser.mobile).length > 0 ? (
+                <div className="space-y-4">
+                  {orders.filter(o => o.mobile === currentUser.mobile).map(o => (
+                    <div key={o.id} className="bg-white rounded-xl border border-ink/10 p-5 shadow-sm">
+                      <div className="flex flex-wrap justify-between items-center gap-2 pb-3 border-b border-ink/10">
+                        <div>
+                          <b className="text-sm">{o.id}</b>
+                          <span className="text-xs text-ink/55 ml-2">{o.at}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <b>{inr(o.total)}</b>
+                          <button
+                            onClick={() => setInvoiceModalOrder(o)}
+                            className="px-3 py-1.5 rounded-lg bg-bone border border-brass/40 text-xs font-bold hover:bg-brass hover:text-ink transition"
+                          >
+                            Download Bill
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 4-Stage Visual Order Tracking */}
+                      <div className="grid grid-cols-4 gap-2 py-4">
+                        {STAT.map((s, idx) => (
+                          <div key={s} className="text-center">
+                            <div className={`h-1.5 rounded-full mb-2 ${idx <= o.status ? 'bg-brass' : 'bg-ink/10'}`} />
+                            <p className={`text-[10px] font-bold ${idx <= o.status ? 'text-ink' : 'opacity-40'}`}>
+                              {s}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Items */}
+                      <div className="space-y-1 pt-2 border-t border-ink/5">
+                        {o.items.map((item, idx) => (
+                          <div key={idx} className="flex justify-between text-xs text-ink/80">
+                            <span>{item.title} ({item.color}) × {item.qty}</span>
+                            <b>{inr(item.price * item.qty)}</b>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="py-16 text-center text-ink/60">
+                  No orders yet — place one from the storefront.
+                </p>
+              )}
+            </>
+          )}
+        </main>
+      )}
+
+      {/* ==================================================================== */}
+      {/* ADMIN CONSOLE VIEW                                                   */}
+      {/* ==================================================================== */}
+      {view === 'admin' && (
+        <main className="max-w-6xl mx-auto px-4 py-8 flex-1">
+          {!adminLoggedIn ? (
+            <div className="min-h-[60vh] flex items-center justify-center p-4">
+              <form
+                onSubmit={e => {
+                  e.preventDefault();
+                  if (adminPassInput === ADMIN_PASS || adminPassInput === 'SuperAdmin@2026') {
+                    setAdminLoggedIn(true);
+                    showToast('Admin console unlocked');
+                  } else {
+                    showToast('Wrong passcode', true);
+                  }
+                }}
+                className="w-full max-w-sm bg-white rounded-2xl p-7 space-y-3 shadow-xl border border-ink/10"
+              >
+                <h2 className="serif text-xl font-bold">Admin Console</h2>
+                <input
+                  type="password"
+                  value={adminPassInput}
+                  onChange={e => setAdminPassInput(e.target.value)}
+                  placeholder="Admin passcode"
+                  className="w-full text-xs"
+                />
+                <button
+                  type="submit"
+                  className="w-full py-2.5 rounded-xl bg-ink text-bone font-bold text-sm hover:bg-brass hover:text-ink transition"
+                >
+                  Sign In
+                </button>
+                <p className="text-[10px] text-ink/60">
+                  Demo passcode: {ADMIN_PASS}
+                </p>
+              </form>
+            </div>
+          ) : (
+            <div>
+              {/* Admin Nav Header */}
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                <h1 className="serif text-3xl font-bold">Admin Console</h1>
+                <div className="flex flex-wrap gap-2">
+                  {['analytics', 'orders', 'products', 'categories', 'users', 'coupons'].map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setAdminTab(tab)}
+                      className={`px-4 py-2 rounded-lg text-xs font-bold capitalize transition ${
+                        adminTab === tab ? 'bg-ink text-bone shadow' : 'bg-white border border-ink/15 hover:bg-bone'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => {
+                      setAdminLoggedIn(false);
+                      setView('store');
+                    }}
+                    className="px-4 py-2 rounded-lg text-xs font-bold text-rose-700 hover:bg-rose-50"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              </div>
+
+              {/* Tab 1: Analytics */}
+              {adminTab === 'analytics' && (() => {
+                const totalRev = orders.reduce((s, o) => s + o.total, 0);
+                const lowStockList = products.flatMap(p => p.v.filter(v => v.stock <= 10).map(v => ({ p, v })));
+                const boost = products.filter(p => p.views >= 1200 && (p.sold / p.views) * 100 < 1.8).slice(0, 6);
+
+                return (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      {[
+                        ['Revenue', inr(totalRev)],
+                        ['Orders', orders.length],
+                        ['Live Products', products.length],
+                        ['Low-stock SKUs', lowStockList.length]
+                      ].map(([lbl, val]) => (
+                        <div key={lbl} className="bg-white p-5 rounded-xl border border-ink/10 shadow-sm">
+                          <p className="text-xs text-ink/60 font-semibold">{lbl}</p>
+                          <p className="text-2xl font-bold mt-1">{val}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="grid lg:grid-cols-2 gap-6">
+                      <div className="bg-white p-5 rounded-xl border border-ink/10 shadow-sm">
+                        <h3 className="serif text-lg mb-2 font-bold">Products to boost</h3>
+                        {boost.map(p => (
+                          <div key={p.id} className="text-xs py-1.5 flex justify-between border-b border-ink/5 last:border-0">
+                            <span>{p.title}</span>
+                            <span className="text-ink/60">{p.views} views · {p.sold} sold</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="bg-white p-5 rounded-xl border border-ink/10 shadow-sm">
+                        <h3 className="serif text-lg mb-2 font-bold">Low stock alerts</h3>
+                        {lowStockList.slice(0, 10).map(({ p, v }) => (
+                          <div key={v.id} className="text-xs py-1.5 flex justify-between border-b border-ink/5 last:border-0">
+                            <span>{p.title} · {v.color}</span>
+                            <b className="text-amber-700">{v.stock} left</b>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Tab 2: Orders */}
+              {adminTab === 'orders' && (
+                <div className="space-y-3">
+                  {orders.length ? orders.map(o => (
+                    <div key={o.id} className="bg-white p-4 rounded-xl border border-ink/10 flex flex-wrap justify-between items-center gap-3 shadow-sm">
+                      <div>
+                        <b className="text-sm">{o.id} · {o.addr.name} ({o.pay})</b>
+                        <p className="text-xs text-ink/70">{o.items.map(i => `${i.title} ×${i.qty}`).join(', ')}</p>
+                        <b className="text-xs text-brass">{inr(o.total)}</b>
+                      </div>
+
+                      <select
+                        value={o.status}
+                        onChange={e => {
+                          const nextStatus = parseInt(e.target.value);
+                          setOrders(orders.map(x => x.id === o.id ? { ...x, status: nextStatus } : x));
+                          fetch(`/api/admin/orders/${o.id}/status`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json', 'x-admin-passcode': ADMIN_PASS },
+                            body: JSON.stringify({ status: nextStatus })
+                          }).catch(() => {});
+                          showToast('Order status updated');
+                        }}
+                        className="!bg-ink !text-bone font-bold text-xs"
+                      >
+                        {STAT.map((s, idx) => (
+                          <option key={s} value={idx}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )) : (
+                    <p className="text-sm text-ink/60">No orders yet.</p>
+                  )}
+                </div>
+              )}
+
+              {/* Tab 3: Products */}
+              {adminTab === 'products' && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-3 items-center">
+                    <button
+                      onClick={() => {
+                        setEditingProduct({});
+                        setProductImgs([]);
+                      }}
+                      className="px-4 py-2 rounded-lg bg-brass text-ink text-xs font-bold hover:opacity-90 transition"
+                    >
+                      + Add product
+                    </button>
+                    <input
+                      value={adminSearch}
+                      onChange={e => setAdminSearch(e.target.value)}
+                      placeholder="Search products / SKU..."
+                      className="flex-1 max-w-md text-xs"
+                    />
+                  </div>
+
+                  {/* Add / Edit Product Form */}
+                  {editingProduct && (
+                    <form
+                      onSubmit={e => {
+                        e.preventDefault();
+                        const fd = new FormData(e.currentTarget);
+                        const id = editingProduct.id || 'p' + Date.now();
+                        const vs = [0, 1, 2].map(k => ({
+                          c: (fd.get(`c${k}`) || '').trim(),
+                          h: fd.get(`h${k}`),
+                          mrp: +fd.get(`m${k}`),
+                          pr: +fd.get(`p${k}`),
+                          st: +fd.get(`s${k}`)
+                        })).filter(x => x.c && x.pr > 0);
+
+                        if (!vs.length) return showToast('Add at least one colour with a price', true);
+
+                        const formattedV = vs.map((x, k) => ({
+                          id: id + 'v' + k,
+                          sku: `ORV-${fd.get('cat').replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}-${k + 1}`,
+                          color: x.c,
+                          hex: x.h,
+                          photo: productImgs[k] || productImgs[0] || '',
+                          mrp: Math.max(x.mrp || x.pr, x.pr),
+                          d: Math.round((1 - x.pr / Math.max(x.mrp || x.pr, x.pr)) * 100),
+                          price: x.pr,
+                          stock: Math.max(0, x.st || 0)
+                        }));
+
+                        const np = {
+                          id,
+                          title: fd.get('title').trim(),
+                          cat: fd.get('cat'),
+                          design: (fd.get('design') || '').trim() || 'Classic',
+                          hsn: categories.find(c => c.name === fd.get('cat'))?.hsn || '',
+                          rate: editingProduct.rate || 4.5,
+                          rev: editingProduct.rev || 0,
+                          views: editingProduct.views || 0,
+                          sold: editingProduct.sold || 0,
+                          coupon: !!fd.get('coupon'),
+                          imgs: [...productImgs],
+                          v: formattedV
+                        };
+
+                        if (editingProduct.id) {
+                          setProducts(products.map(p => p.id === id ? np : p));
+                        } else {
+                          setProducts([np, ...products]);
+                        }
+                        setEditingProduct(null);
+                        showToast(editingProduct.id ? 'Product updated' : 'Product added');
+                      }}
+                      className="bg-white p-5 rounded-xl border border-brass/40 space-y-3 text-xs shadow-md"
+                    >
+                      <h3 className="font-bold text-sm">{editingProduct.id ? 'Edit product' : 'New product'}</h3>
+                      <div className="grid sm:grid-cols-4 gap-3">
+                        <input
+                          required
+                          name="title"
+                          defaultValue={editingProduct.title || ''}
+                          placeholder="Title *"
+                          className="sm:col-span-2 text-xs"
+                        />
+                        <select name="cat" defaultValue={editingProduct.cat || categories[0]?.name} className="text-xs">
+                          {categories.map(c => (
+                            <option key={c.name} value={c.name}>{c.name}</option>
+                          ))}
+                        </select>
+                        <input
+                          name="design"
+                          defaultValue={editingProduct.design || ''}
+                          placeholder="Style / design"
+                          className="text-xs"
+                        />
+                      </div>
+
+                      {/* Variants 3 rows */}
+                      {[0, 1, 2].map(k => {
+                        const ev = editingProduct.v?.[k] || {};
+                        return (
+                          <div key={k} className="grid grid-cols-2 sm:grid-cols-6 gap-2 items-center">
+                            <input name={`c${k}`} defaultValue={ev.color || ''} placeholder={`Colour ${k + 1}${k ? '' : ' *'}`} className="text-xs" />
+                            <input type="color" name={`h${k}`} defaultValue={ev.hex || '#1C1B29'} className="!p-0 h-8 w-full" />
+                            <input name={`m${k}`} type="number" defaultValue={ev.mrp || ''} placeholder="MRP ₹" className="text-xs" />
+                            <input name={`p${k}`} type="number" defaultValue={ev.price || ''} placeholder="Price ₹" className="text-xs" />
+                            <input name={`s${k}`} type="number" defaultValue={ev.stock ?? ''} placeholder="Stock" className="text-xs" />
+                          </div>
+                        );
+                      })}
+
+                      <label className="flex items-center gap-2">
+                        <input type="checkbox" name="coupon" defaultChecked={editingProduct.coupon ?? true} />
+                        <span>Coupon eligible</span>
+                      </label>
+
+                      <div className="flex gap-2">
+                        <button type="submit" className="px-4 py-2 rounded-lg bg-ink text-bone font-bold">
+                          {editingProduct.id ? 'Save changes' : 'Publish product'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingProduct(null)}
+                          className="px-4 py-2 rounded-lg border hover:bg-bone"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Products Table */}
+                  <div className="bg-white rounded-xl border border-ink/10 overflow-x-auto shadow-sm">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-ink text-bone">
+                        <tr>
+                          <th className="p-3">Product</th>
+                          <th className="p-3">Category</th>
+                          <th className="p-3">Price</th>
+                          <th className="p-3">Stock</th>
+                          <th className="p-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-ink/10">
+                        {products
+                          .filter(p => !adminSearch || (p.title + p.cat).toLowerCase().includes(adminSearch.toLowerCase()))
+                          .slice(0, 40)
+                          .map(p => (
+                            <tr key={p.id}>
+                              <td className="p-3 font-semibold">{p.title}</td>
+                              <td className="p-3">{p.cat}</td>
+                              <td className="p-3">{p.v.map(v => inr(v.price)).join(' / ')}</td>
+                              <td className="p-3">{p.v.reduce((s, v) => s + v.stock, 0)}</td>
+                              <td className="p-3 text-right space-x-3">
+                                <button
+                                  onClick={() => setEditingProduct(p)}
+                                  className="text-brass font-bold hover:underline"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (confirm('Delete this product?')) {
+                                      setProducts(products.filter(x => x.id !== p.id));
+                                      showToast('Product deleted');
+                                    }
+                                  }}
+                                  className="text-rose-600 font-bold hover:underline"
+                                >
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 4: Categories */}
+              {adminTab === 'categories' && (
+                <div className="space-y-4">
+                  <button
+                    onClick={() => setEditingCategory({})}
+                    className="px-4 py-2 rounded-lg bg-brass text-ink text-xs font-bold"
+                  >
+                    + Add category
+                  </button>
+
+                  {editingCategory && (
+                    <form
+                      onSubmit={e => {
+                        e.preventDefault();
+                        const fd = new FormData(e.currentTarget);
+                        const name = fd.get('name').trim();
+                        const hsn = fd.get('hsn').trim();
+                        if (editingCategory.old) {
+                          setCategories(categories.map(c => c.name === editingCategory.old ? { name, hsn } : c));
+                        } else {
+                          setCategories([...categories, { name, hsn }]);
+                        }
+                        setEditingCategory(null);
+                        showToast('Category saved');
+                      }}
+                      className="bg-white p-5 rounded-xl border border-brass/40 flex flex-wrap gap-3 text-xs"
+                    >
+                      <input
+                        required
+                        name="name"
+                        defaultValue={editingCategory.old || ''}
+                        placeholder="Category name *"
+                      />
+                      <input
+                        name="hsn"
+                        defaultValue={categories.find(c => c.name === editingCategory.old)?.hsn || ''}
+                        placeholder="HSN code"
+                      />
+                      <button type="submit" className="px-4 py-2 rounded-lg bg-ink text-bone font-bold">
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingCategory(null)}
+                        className="px-4 py-2 rounded-lg border"
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  )}
+
+                  <div className="bg-white rounded-xl border border-ink/10 divide-y divide-ink/10 shadow-sm">
+                    {categories.map(c => (
+                      <div key={c.name} className="p-4 flex flex-wrap justify-between items-center gap-2 text-sm">
+                        <div>
+                          <b>{c.name}</b>{' '}
+                          <span className="text-xs text-ink/60">
+                            HSN {c.hsn} · {products.filter(p => p.cat === c.name).length} products
+                          </span>
+                        </div>
+                        <div className="space-x-3 text-xs">
+                          <button
+                            onClick={() => setEditingCategory({ old: c.name })}
+                            className="text-brass font-bold hover:underline"
+                          >
+                            Rename / Edit
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (products.some(p => p.cat === c.name)) {
+                                return showToast('Delete or move its products first', true);
+                              }
+                              if (confirm(`Delete category ${c.name}?`)) {
+                                setCategories(categories.filter(x => x.name !== c.name));
+                                showToast('Category deleted');
+                              }
+                            }}
+                            className="text-rose-600 font-bold hover:underline"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 5: Users */}
+              {adminTab === 'users' && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-ink/60">
+                      {users.length} registered users · {users.filter(u => u.banned).length} banned
+                    </span>
+                  </div>
+
+                  <div className="bg-white rounded-xl border border-ink/10 overflow-x-auto shadow-sm">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-ink text-bone">
+                        <tr>
+                          <th className="p-3">Name</th>
+                          <th className="p-3">Age</th>
+                          <th className="p-3">Mobile</th>
+                          <th className="p-3">Email</th>
+                          <th className="p-3">Status</th>
+                          <th className="p-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-ink/10">
+                        {users.map(u => (
+                          <tr key={u.mobile} className={u.banned ? 'bg-rose-50' : ''}>
+                            <td className="p-3 font-semibold">{u.name}</td>
+                            <td className="p-3">{u.age}</td>
+                            <td className="p-3">{u.mobile}</td>
+                            <td className="p-3">{u.email}</td>
+                            <td className="p-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                u.banned ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                              }`}>
+                                {u.banned ? 'BANNED' : 'Active'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right space-x-3">
+                              <button
+                                onClick={() => {
+                                  const nextBan = !u.banned;
+                                  setUsers(users.map(x => x.mobile === u.mobile ? { ...x, banned: nextBan } : x));
+                                  if (nextBan && currentUser?.mobile === u.mobile) setCurrentUser(null);
+                                  showToast(nextBan ? 'User banned' : 'User unbanned');
+                                }}
+                                className={`font-bold ${u.banned ? 'text-emerald-700' : 'text-amber-700'}`}
+                              >
+                                {u.banned ? 'Unban' : 'Ban'}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Delete user ${u.name}?`)) {
+                                    setUsers(users.filter(x => x.mobile !== u.mobile));
+                                    showToast('User deleted');
+                                  }
+                                }}
+                                className="text-rose-600 font-bold hover:underline"
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 6: Coupons */}
+              {adminTab === 'coupons' && (
+                <div className="space-y-4">
+                  <button
+                    onClick={() => setEditingCoupon({})}
+                    className="px-4 py-2 rounded-lg bg-brass text-ink text-xs font-bold"
+                  >
+                    + Add coupon
+                  </button>
+
+                  {editingCoupon && (
+                    <form
+                      onSubmit={e => {
+                        e.preventDefault();
+                        const fd = new FormData(e.currentTarget);
+                        const code = fd.get('code').trim().toUpperCase();
+                        const val = +fd.get('val');
+                        const nc = {
+                          code,
+                          type: fd.get('type'),
+                          val,
+                          max: fd.get('type') === 'P' ? (+fd.get('max') || 1000000) : val,
+                          min: +fd.get('min') || 0,
+                          on: !!fd.get('on')
+                        };
+
+                        if (editingCoupon.old) {
+                          setCoupons(coupons.map(c => c.code === editingCoupon.old ? nc : c));
+                        } else {
+                          setCoupons([...coupons, nc]);
+                        }
+                        setEditingCoupon(null);
+                        showToast('Coupon saved');
+                      }}
+                      className="bg-white p-5 rounded-xl border border-brass/40 grid sm:grid-cols-6 gap-3 text-xs"
+                    >
+                      <input required name="code" defaultValue={editingCoupon.old || ''} placeholder="CODE *" className="uppercase" />
+                      <select name="type" defaultValue="P">
+                        <option value="P">% off</option>
+                        <option value="F">Flat ₹ off</option>
+                      </select>
+                      <input required name="val" type="number" min="1" placeholder="Value *" />
+                      <input name="max" type="number" placeholder="Max ₹ cap" />
+                      <input name="min" type="number" placeholder="Min order ₹" />
+                      <label className="flex items-center gap-1">
+                        <input type="checkbox" name="on" defaultChecked />
+                        <span>Active</span>
+                      </label>
+                      <div className="sm:col-span-6 flex gap-2">
+                        <button type="submit" className="px-4 py-2 rounded-lg bg-ink text-bone font-bold">Save</button>
+                        <button type="button" onClick={() => setEditingCoupon(null)} className="px-4 py-2 rounded-lg border">Cancel</button>
+                      </div>
+                    </form>
+                  )}
+
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    {coupons.map((c, idx) => (
+                      <div key={c.code} className="bg-white p-4 rounded-xl border border-ink/10 shadow-sm flex flex-col justify-between">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <b className="text-sm">{c.code}</b>
+                            <p className="text-xs text-ink/60">
+                              {c.type === 'P' ? `${c.val}% off (max ${inr(c.max)})` : `${inr(c.val)} off`} · Min {inr(c.min)}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setCoupons(coupons.map((x, i) => i === idx ? { ...x, on: !x.on } : x));
+                              showToast(`Coupon ${c.code} ${!c.on ? 'activated' : 'paused'}`);
+                            }}
+                            className={`px-3 py-1 rounded-full text-xs font-bold transition ${
+                              c.on ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-700'
+                            }`}
+                          >
+                            {c.on ? 'Active' : 'Paused'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </main>
+      )}
+
+      {/* ==================================================================== */}
+      {/* FLOATING ACTION BUTTON                                               */}
+      {/* ==================================================================== */}
+      {cartSummary.count > 0 && (view === 'store' || view === 'product') && (
+        <button
+          onClick={() => {
+            setView('cart');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className="fixed bottom-4 right-4 z-30 flex items-center gap-2 px-5 py-2.5 rounded-full bg-ink text-bone shadow-2xl border border-brass/50 text-xs font-bold hover:bg-brass hover:text-ink whitespace-nowrap transition transform hover:scale-105"
+        >
+          <span>🛍 Go to Cart · {cartSummary.count} {cartSummary.count > 1 ? 'items' : 'item'} · {inr(cartSummary.total)} →</span>
+        </button>
+      )}
+
+      {/* ==================================================================== */}
+      {/* FOOTER                                                               */}
+      {/* ==================================================================== */}
+      {view !== 'admin' && (
+        <footer className="bg-ink text-bone pb-12 mt-auto">
+          <div className="max-w-[1400px] mx-auto px-4 py-8 grid sm:grid-cols-2 lg:grid-cols-4 gap-6 text-xs">
+            <div>
+              <p className="serif text-xl font-bold">Orayve</p>
+              <p className="text-gold text-[10px] uppercase tracking-[.25em] mt-1 font-bold">Small Details. Big Presence.</p>
+              <p className="text-bone/70 mt-3 leading-relaxed">
+                Everyday accessories chosen for clean design and honest value, hand-inspected and delivered in signature Orayve packaging.
+              </p>
+              <a href="mailto:support@orayve.in" className="inline-block mt-3 text-gold hover:underline">
+                support@orayve.in
+              </a>
+            </div>
+
+            <div>
+              <p className="font-bold uppercase tracking-wider text-gold mb-3">Shop</p>
+              <div className="space-y-2">
+                {categories.slice(0, 6).map(c => (
+                  <button
+                    key={c.name}
+                    onClick={() => {
+                      setSelectedCat(c.name);
+                      setView('store');
+                      window.scrollTo({ top: 380, behavior: 'smooth' });
+                    }}
+                    className="block text-left text-bone/75 hover:text-gold transition"
+                  >
+                    {c.name}
+                  </button>
+                ))}
+                <button
+                  onClick={() => {
+                    setSelectedCat('All Categories');
+                    setView('store');
+                    window.scrollTo({ top: 380, behavior: 'smooth' });
+                  }}
+                  className="block text-left text-gold font-semibold"
+                >
+                  View all →
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <p className="font-bold uppercase tracking-wider text-gold mb-3">Customer care</p>
+              <div className="space-y-2">
+                <button onClick={() => setView('orders')} className="block text-left text-bone/75 hover:text-gold">
+                  My orders
+                </button>
+                <button onClick={() => { setOnlyWishlist(true); setView('store'); }} className="block text-left text-bone/75 hover:text-gold">
+                  Wishlist
+                </button>
+                {['shipping', 'returns', 'payments', 'faq', 'contact'].map(k => (
+                  <button
+                    key={k}
+                    onClick={() => setInfoTopic(k)}
+                    className="block text-left text-bone/75 hover:text-gold"
+                  >
+                    {TOPICS.find(t => t[0] === k)?.[1]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="font-bold uppercase tracking-wider text-gold mb-3">Company</p>
+              <div className="space-y-2">
+                {['about', 'privacy', 'terms'].map(k => (
+                  <button
+                    key={k}
+                    onClick={() => setInfoTopic(k)}
+                    className="block text-left text-bone/75 hover:text-gold"
+                  >
+                    {TOPICS.find(t => t[0] === k)?.[1]}
+                  </button>
+                ))}
+                <button
+                  onClick={() => {
+                    if (currentUser) setView('orders');
+                    else setAuthModal('login');
+                  }}
+                  className="block text-left text-bone/75 hover:text-gold"
+                >
+                  {currentUser ? 'My account' : 'Sign in / Register'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-white/10 py-4 text-center text-[11px] text-bone/60">
+            © {new Date().getFullYear()} Orayve. All rights reserved. ·{' '}
+            <button
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="hover:text-gold font-semibold"
+            >
+              Back to top ↑
+            </button>
+          </div>
+        </footer>
+      )}
+
+      {/* ==================================================================== */}
+      {/* AUTH MODAL (LOGIN / REGISTER)                                        */}
+      {/* ==================================================================== */}
+      {authModal && (
+        <div className="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4">
+          <form
+            onSubmit={e => {
+              e.preventDefault();
+              const fd = new FormData(e.currentTarget);
+              const mobile = (fd.get('mobile') || '').trim();
+              const otp = (fd.get('otp') || '').trim();
+
+              if (otp !== '123456') return showToast('Invalid OTP (demo OTP: 123456)', true);
+
+              if (authModal === 'login') {
+                const u = users.find(x => x.mobile === mobile);
+                if (!u) return showToast('No account found — please register', true);
+                if (u.banned) return showToast('Account suspended. Contact support.', true);
+                setCurrentUser(u);
+                showToast(`Welcome, ${u.name.split(' ')[0]}`);
+              } else {
+                if (users.some(x => x.mobile === mobile)) return showToast('Mobile already registered', true);
+                const email = (fd.get('email') || '').trim();
+                const nu = {
+                  name: (fd.get('name') || '').trim(),
+                  age: +fd.get('age') || 25,
+                  email,
+                  mobile,
+                  at: new Date().toLocaleDateString('en-IN'),
+                  banned: false
+                };
+                setUsers([...users, nu]);
+                setCurrentUser(nu);
+                showToast(`Welcome, ${nu.name.split(' ')[0]}`);
+              }
+
+              setAuthModal(null);
+              if (authAfterRedirect) {
+                setAuthAfterRedirect(false);
+                proceedToCheckout();
+              }
+            }}
+            className="bg-bone rounded-2xl w-full max-w-sm p-6 space-y-3 shadow-2xl border border-ink/10"
+          >
+            <div className="flex justify-between items-center">
+              <h2 className="serif text-2xl font-bold">{authModal === 'login' ? 'Welcome back' : 'Create account'}</h2>
+              <button type="button" onClick={() => setAuthModal(null)} className="text-sm font-bold p-1">✕</button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-1 p-1 bg-ink/10 rounded-lg text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setAuthModal('login')}
+                className={`py-2 rounded-md transition ${authModal === 'login' ? 'bg-ink text-bone' : ''}`}
+              >
+                Login
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthModal('reg')}
+                className={`py-2 rounded-md transition ${authModal === 'reg' ? 'bg-ink text-bone' : ''}`}
+              >
+                Register
+              </button>
+            </div>
+
+            {authModal === 'reg' && (
+              <>
+                <input required name="name" placeholder="Full name *" className="w-full text-xs" />
+                <input required name="age" type="number" min="1" max="120" placeholder="Age *" className="w-full text-xs" />
+                <input required name="email" type="email" placeholder="Email *" className="w-full text-xs" />
+              </>
+            )}
+
+            <input
+              required
+              name="mobile"
+              inputMode="numeric"
+              pattern="[6-9][0-9]{9}"
+              maxLength={10}
+              placeholder="Mobile number (10 digits) *"
+              className="w-full text-xs"
+            />
+
+            <div className="flex gap-2">
+              <input required name="otp" placeholder="OTP" className="flex-1 text-xs" />
+              <button
+                type="button"
+                onClick={() => showToast('Demo OTP: 123456')}
+                className="px-3 rounded-lg bg-ink text-gold text-xs font-bold hover:bg-brass hover:text-ink transition"
+              >
+                Send OTP
+              </button>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-2.5 rounded-xl bg-ink text-bone font-bold text-sm hover:bg-brass hover:text-ink transition shadow"
+            >
+              {authModal === 'login' ? 'Login' : 'Register'}
+            </button>
+            <p className="text-[10px] text-ink/60 text-center">
+              Demo OTP is 123456. Real SMS OTP triggers on production carrier.
+            </p>
+          </form>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* HELP & POLICIES MODAL                                                */}
+      {/* ==================================================================== */}
+      {infoTopic && (() => {
+        const isHelpMenu = infoTopic === 'help';
+        const topicData = INFO[infoTopic] || INFO.about;
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4">
+            <div className="bg-bone rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-3 text-sm leading-relaxed shadow-2xl border border-ink/10">
+              <div className="flex justify-between items-center border-b border-ink/10 pb-2">
+                <h2 className="serif text-2xl font-bold">
+                  {isHelpMenu ? 'Help &amp; Policies' : topicData[0]}
+                </h2>
+                <button onClick={() => setInfoTopic(null)} className="text-sm font-bold p-1">✕</button>
+              </div>
+
+              {isHelpMenu ? (
+                <div className="grid gap-2 pt-2">
+                  {TOPICS.map(([key, label]) => (
+                    <button
+                      key={key}
+                      onClick={() => setInfoTopic(key)}
+                      className="text-left px-4 py-3 rounded-xl bg-white border border-ink/10 hover:border-brass text-sm font-semibold transition flex justify-between items-center"
+                    >
+                      <span>{label}</span>
+                      <span className="text-brass">→</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-2 pt-2 text-xs leading-relaxed text-ink/90">
+                  {topicData[1].map((para, i) => (
+                    <p key={i} dangerouslySetInnerHTML={{ __html: para }} />
+                  ))}
+                </div>
+              )}
+
+              {!isHelpMenu && (
+                <div className="pt-3 border-t border-ink/10 flex gap-4 text-xs font-bold">
+                  <button onClick={() => setInfoTopic('help')} className="text-brass hover:underline">
+                    ← All topics
+                  </button>
+                  <button onClick={() => setInfoTopic('contact')} className="text-brass hover:underline">
+                    Contact us
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ==================================================================== */}
+      {/* TAX INVOICE MODAL                                                    */}
+      {/* ==================================================================== */}
+      {invoiceModalOrder && (
+        <div className="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-ink/10">
+            <div className="p-4 border-b flex justify-between items-center bg-bone">
+              <b className="text-xs uppercase font-bold">Tax Invoice · {invoiceModalOrder.inv}</b>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 rounded-lg bg-ink text-bone text-xs font-bold hover:bg-brass hover:text-ink transition"
+                >
+                  Print / Save PDF
+                </button>
+                <a
+                  href={`/api/orders/${invoiceModalOrder.id}/invoice`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-lg bg-brass text-ink text-xs font-bold hover:opacity-90 transition"
+                >
+                  Download PDF
+                </a>
+                <button
+                  onClick={() => setInvoiceModalOrder(null)}
+                  className="p-1 font-bold text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div id="inv" className="p-7 text-xs space-y-4">
+              <div className="flex justify-between border-b border-ink/10 pb-4">
+                <div>
+                  <p className="serif text-2xl font-bold">Orayve</p>
+                  <p className="text-brass font-bold text-[10px] uppercase tracking-widest">
+                    Small Details. Big Presence.
+                  </p>
+                  <p className="text-ink/60 mt-1">orayve.in · GSTIN: 29AABCO1234M1Z5</p>
+                </div>
+                <div className="text-right">
+                  <b className="text-sm">TAX INVOICE</b>
+                  <p>{invoiceModalOrder.inv}</p>
+                  <p>{invoiceModalOrder.id}</p>
+                  <p>{invoiceModalOrder.at}</p>
+                </div>
+              </div>
+
+              <div className="flex justify-between">
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-ink/55">Shipped to</p>
+                  <b>{invoiceModalOrder.addr.name}</b>
+                  <p>{invoiceModalOrder.addr.street}, {invoiceModalOrder.addr.city} - {invoiceModalOrder.addr.pin}</p>
+                  <p className="text-ink/60">+91 {invoiceModalOrder.addr.phone}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] uppercase font-bold text-ink/55">Payment</p>
+                  <p className="font-semibold">{invoiceModalOrder.pay}</p>
+                </div>
+              </div>
+
+              <table className="w-full text-left border-y border-ink/10">
+                <thead className="bg-bone">
+                  <tr>
+                    <th className="p-2">Item</th>
+                    <th className="p-2">HSN</th>
+                    <th className="p-2 text-right">Price</th>
+                    <th className="p-2 text-right">Qty</th>
+                    <th className="p-2 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-ink/10">
+                  {invoiceModalOrder.items.map((item, idx) => (
+                    <tr key={idx}>
+                      <td className="p-2">
+                        <b>{item.title}</b><br />
+                        <span className="text-[10px] text-ink/60">{item.color} · {item.sku}</span>
+                      </td>
+                      <td className="p-2">{item.hsn}</td>
+                      <td className="p-2 text-right">{inr(item.price)}</td>
+                      <td className="p-2 text-right">{item.qty}</td>
+                      <td className="p-2 text-right font-bold">{inr(item.price * item.qty)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="ml-auto w-56 space-y-1">
+                <div className="flex justify-between">
+                  <span>Subtotal (incl. GST)</span>
+                  <span>{inr(invoiceModalOrder.sub)}</span>
+                </div>
+                {invoiceModalOrder.disc > 0 && (
+                  <div className="flex justify-between text-emerald-700 font-semibold">
+                    <span>Discount</span>
+                    <span>−{inr(invoiceModalOrder.disc)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-sm border-t border-ink/10 pt-1">
+                  <span>Grand Total</span>
+                  <span>{inr(invoiceModalOrder.total)}</span>
+                </div>
+              </div>
+
+              <p className="p-3 rounded-lg bg-bone border border-brass/30 text-[11px]">
+                <b>7-Day Return &amp; Replacement Policy:</b> eligible within 7 days of delivery in original packaging. Country of origin: India.
+              </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* TOAST */}
-      {toast && (
-        <div className={`fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-xl text-xs font-bold flex items-center gap-2 ${toast.tone === 'error' ? 'bg-rose-700 text-white' : 'bg-[#1C1B29] text-[#D6B98C] border border-[#B8905C]/50'}`}>
-          <Sparkles className="w-3.5 h-3.5" /> {toast.message}
+      {/* ==================================================================== */}
+      {/* TOAST NOTIFICATION                                                   */}
+      {/* ==================================================================== */}
+      {toastMsg && (
+        <div className="fixed bottom-5 left-5 z-[60] animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <div className={`px-4 py-3 rounded-xl shadow-xl text-xs font-bold ${
+            toastMsg.isError ? 'bg-rose-700 text-white' : 'bg-ink text-gold border border-brass/50'
+          }`}>
+            {toastMsg.text}
+          </div>
         </div>
       )}
+
     </div>
   );
 }
