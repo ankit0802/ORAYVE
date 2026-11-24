@@ -189,21 +189,65 @@ app.get('/api/delivery/check-pincode', (req, res) => {
 // 2. AUTHENTICATION & USER APIS
 // ============================================================================
 
+// In-memory live OTP storage: mobile -> { otp, exp }
+const LIVE_OTPS = new Map();
+
+function verifyOtpHelper(mobile, userOtp) {
+  if (!userOtp) return false;
+  const trimmed = userOtp.trim();
+  if (trimmed === '123456') return true; // dev fallback
+  const clean = (mobile || '').replace(/\s+/g, '');
+  const entry = LIVE_OTPS.get(clean);
+  if (!entry) return false;
+  if (Date.now() > entry.exp) {
+    LIVE_OTPS.delete(clean);
+    return false;
+  }
+  if (entry.otp === trimmed) {
+    LIVE_OTPS.delete(clean);
+    return true;
+  }
+  return false;
+}
+
 // POST /api/auth/send-otp
 app.post('/api/auth/send-otp', (req, res) => {
-  const { mobile } = req.body;
-  if (!mobile || !/^[6-9][0-9]{9}$/.test(mobile.trim())) {
-    return res.status(400).json({ success: false, message: 'Valid 10-digit mobile number required' });
+  const { mobile, countryCode } = req.body;
+  if (!mobile) {
+    return res.status(400).json({ success: false, message: 'Valid mobile number required' });
   }
-  res.json({ success: true, message: 'OTP sent: 123456 (demo mode)' });
+
+  const cleanMobile = mobile.trim().replace(/\s+/g, '');
+  const digits = cleanMobile.replace(/[^0-9]/g, '');
+  if (digits.length < 7 || digits.length > 15) {
+    return res.status(400).json({ success: false, message: 'Please enter a valid mobile number (7-15 digits)' });
+  }
+
+  const liveOtp = String(Math.floor(100000 + Math.random() * 900000));
+  LIVE_OTPS.set(cleanMobile, { otp: liveOtp, exp: Date.now() + 5 * 60 * 1000 });
+
+  console.log(`\n=======================================================`);
+  console.log(`  [ORAYVE LIVE SMS] Sent to: ${cleanMobile}`);
+  console.log(`  [LIVE OTP CODE] : ${liveOtp} (Valid for 5 minutes)`);
+  console.log(`  [TIMESTAMP]     : ${new Date().toISOString()}`);
+  console.log(`=======================================================\n`);
+
+  res.json({
+    success: true,
+    message: `Live OTP sent to ${cleanMobile}`,
+    data: { mobile: cleanMobile, countryCode: countryCode || '+91', expiresIn: 300, otp: liveOtp }
+  });
 });
 
 // POST /api/auth/login
 app.post('/api/auth/login', async (req, res) => {
   const { mobile, otp } = req.body;
-  if (otp !== '123456') return res.status(400).json({ success: false, message: 'Invalid OTP (use demo: 123456)' });
-
   const m = (mobile || '').trim();
+
+  if (!verifyOtpHelper(m, otp)) {
+    return res.status(400).json({ success: false, message: 'Invalid or expired OTP. Please enter the latest 6-digit OTP or click Send OTP.' });
+  }
+
   let user = USERS.find(u => u.mobile === m);
 
   // Check Neon DB if available
@@ -231,11 +275,21 @@ app.post('/api/auth/login', async (req, res) => {
 // POST /api/auth/register
 app.post('/api/auth/register', async (req, res) => {
   const { name, age, email, mobile, otp } = req.body;
-  if (otp !== '123456') return res.status(400).json({ success: false, message: 'Invalid OTP (use demo: 123456)' });
   if (!name || !age || !email || !mobile) return res.status(400).json({ success: false, message: 'All fields are required' });
 
   const m = mobile.trim();
   const em = email.trim();
+
+  // Strict email format validation
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (!emailRegex.test(em)) {
+    return res.status(400).json({ success: false, message: 'Please enter a valid email address (e.g. name@domain.com)' });
+  }
+
+  // Verify OTP
+  if (!verifyOtpHelper(m, otp)) {
+    return res.status(400).json({ success: false, message: 'Invalid or expired OTP. Please enter the latest 6-digit OTP or click Send OTP.' });
+  }
 
   // Check duplicate in Neon DB
   if (pool) {

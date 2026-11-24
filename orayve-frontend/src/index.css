@@ -11,6 +11,24 @@
   --font-sans: 'Manrope', sans-serif;
 }
 
+/* Black border styling for all text inputs across the application */
+input[type="text"],
+input[type="email"],
+input[type="number"],
+input[type="tel"],
+input[type="password"],
+textarea,
+select {
+  border: 1.5px solid #000000 !important;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: #000000 !important;
+  box-shadow: 0 0 0 1px #000000 !important;
+}
+
 body {
   font-family: 'Manrope', sans-serif;
   background-color: #F3EFE7;

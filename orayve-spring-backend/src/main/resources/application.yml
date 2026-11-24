@@ -1,0 +1,48 @@
+server:
+  port: 5000
+
+spring:
+  application:
+    name: orayve-spring-backend
+  datasource:
+    url: ${NEON_DATABASE_URL:jdbc:postgresql://ep-proud-salad-bdp25wkf-pooler.c-8.us-east-2.aws.neon.tech/neondb?sslmode=require}
+    username: ${DB_USER:neondb_owner}
+    password: ${DB_PASSWORD:npg_Gi5g2ZHbroQL}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      idle-timeout: 30000
+      connection-timeout: 20000
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+        jdbc:
+          lob:
+            non_contextual_creation: true
+
+orayve:
+  jwt:
+    secret: ${JWT_SECRET:orayve-production-super-secret-key-92847120938471092384}
+    expiration-ms: 604800000 # 7 days
+  cors:
+    allowed-origins: "http://localhost:5173,http://127.0.0.1:5173,https://orayve.vercel.app"
+  sms:
+    provider: ${SMS_PROVIDER:console}
+    twilio:
+      account-sid: ${TWILIO_ACCOUNT_SID:}
+      auth-token: ${TWILIO_AUTH_TOKEN:}
+      from-number: ${TWILIO_PHONE_NUMBER:}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: method
