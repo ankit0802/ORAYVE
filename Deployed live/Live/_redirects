@@ -1,0 +1,5 @@
+# Netlify API Proxy to Live Backend (Render / Railway / Cloud)
+/api/*  https://orayve-backend.onrender.com/api/:splat  200!
+
+# SPA Fallback for React Router / client-side views
+/*      /index.html                                     200

@@ -1,0 +1,19 @@
+# Netlify Configuration for ORAYVE Luxury E-Commerce Platform
+
+[build]
+  base = "orayve-frontend"
+  publish = "dist"
+  command = "npm run build"
+
+# Proxy all /api/* requests to the live backend server (Render / Cloud)
+[[redirects]]
+  from = "/api/*"
+  to = "https://orayve-backend.onrender.com/api/:splat"
+  status = 200
+  force = true
+
+# Single Page Application routing fallback
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
