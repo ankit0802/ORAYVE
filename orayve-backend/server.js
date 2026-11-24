@@ -211,8 +211,8 @@ function verifyOtpHelper(mobile, userOtp) {
 }
 
 // POST /api/auth/send-otp
-app.post('/api/auth/send-otp', (req, res) => {
-  const { mobile, countryCode } = req.body;
+app.post('/api/auth/send-otp', async (req, res) => {
+  const { mobile, countryCode, purpose } = req.body;
   if (!mobile) {
     return res.status(400).json({ success: false, message: 'Valid mobile number required' });
   }
@@ -221,6 +221,44 @@ app.post('/api/auth/send-otp', (req, res) => {
   const digits = cleanMobile.replace(/[^0-9]/g, '');
   if (digits.length < 7 || digits.length > 15) {
     return res.status(400).json({ success: false, message: 'Please enter a valid mobile number (7-15 digits)' });
+  }
+  const last10 = digits.slice(-10);
+
+  // Early context-aware duplicate / existence check
+  if (purpose === 'register') {
+    if (pool) {
+      try {
+        const existing = await pool.query(
+          "SELECT 1 FROM public.users WHERE RIGHT(regexp_replace(mobile_number, '[^0-9]', '', 'g'), 10) = $1",
+          [last10]
+        );
+        if (existing.rows.length > 0) {
+          return res.status(409).json({ success: false, message: 'Mobile number is already registered. Please switch to Login.' });
+        }
+      } catch (e) {
+        console.error('[DB] Error checking duplicate user in send-otp:', e.message);
+      }
+    } else if (USERS.some(u => (u.mobile || '').replace(/[^0-9]/g, '').endsWith(last10))) {
+      return res.status(409).json({ success: false, message: 'Mobile number is already registered. Please switch to Login.' });
+    }
+  } else if (purpose === 'login') {
+    let exists = false;
+    if (pool) {
+      try {
+        const found = await pool.query(
+          "SELECT 1 FROM public.users WHERE RIGHT(regexp_replace(mobile_number, '[^0-9]', '', 'g'), 10) = $1",
+          [last10]
+        );
+        exists = found.rows.length > 0;
+      } catch (e) {
+        console.error('[DB] Error checking user existence in send-otp:', e.message);
+      }
+    } else {
+      exists = USERS.some(u => (u.mobile || '').replace(/[^0-9]/g, '').endsWith(last10));
+    }
+    if (!exists) {
+      return res.status(404).json({ success: false, message: 'No account found with this mobile number. Please switch to Register.' });
+    }
   }
 
   const liveOtp = String(Math.floor(100000 + Math.random() * 900000));
@@ -290,19 +328,21 @@ app.post('/api/auth/send-otp', (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   const { mobile, otp } = req.body;
   const m = (mobile || '').trim();
+  const digits = m.replace(/[^0-9]/g, '');
+  const last10 = digits.slice(-10);
 
   if (!verifyOtpHelper(m, otp)) {
     return res.status(400).json({ success: false, message: 'Invalid or expired OTP. Please enter the latest 6-digit OTP or click Send OTP.' });
   }
 
-  let user = USERS.find(u => u.mobile === m);
+  let user = USERS.find(u => (u.mobile || '').replace(/[^0-9]/g, '').endsWith(last10));
 
   // Check Neon DB if available
   if (pool) {
     try {
       const q = await pool.query(
-        'SELECT full_name as name, age, email, mobile_number as mobile, is_banned as banned, role FROM public.users WHERE mobile_number = $1',
-        [m]
+        "SELECT full_name as name, age, email, mobile_number as mobile, is_banned as banned, role FROM public.users WHERE RIGHT(regexp_replace(mobile_number, '[^0-9]', '', 'g'), 10) = $1 OR mobile_number = $2",
+        [last10, m]
       );
       if (q.rows.length > 0) {
         user = q.rows[0];
@@ -338,21 +378,25 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Invalid or expired OTP. Please enter the latest 6-digit OTP or click Send OTP.' });
   }
 
-  // Check duplicate in Neon DB
+  // Check duplicate mobile or email in Neon DB
+  const digitsOnly = m.replace(/[^0-9]/g, '');
+  const last10 = digitsOnly.slice(-10);
   if (pool) {
     try {
       const existing = await pool.query(
-        'SELECT 1 FROM public.users WHERE mobile_number = $1 OR email = $2',
-        [m, em]
+        'SELECT 1 FROM public.users WHERE mobile_number LIKE $1 OR mobile_number = $2 OR email = $3',
+        [`%${last10}`, m, em]
       );
       if (existing.rows.length > 0) {
-        return res.status(409).json({ success: false, message: 'Mobile or email already registered' });
+        return res.status(409).json({ success: false, message: 'Mobile number or email is already registered. Please switch to Login.' });
       }
     } catch (e) {
       console.error('[DB] Error checking duplicate user:', e.message);
     }
   } else {
-    if (USERS.some(u => u.mobile === m)) return res.status(409).json({ success: false, message: 'Mobile already registered' });
+    if (USERS.some(u => (u.mobile || '').replace(/[^0-9]/g, '').endsWith(last10))) {
+      return res.status(409).json({ success: false, message: 'Mobile number is already registered. Please switch to Login.' });
+    }
     if (USERS.some(u => u.email.toLowerCase() === em.toLowerCase())) return res.status(409).json({ success: false, message: 'Email already registered' });
   }
 

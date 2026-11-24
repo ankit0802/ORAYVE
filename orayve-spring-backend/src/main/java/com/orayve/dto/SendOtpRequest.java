@@ -8,6 +8,7 @@ public class SendOtpRequest {
     private String mobile;
 
     private String countryCode = "+91";
+    private String purpose; // "register", "login", or null
 
     public SendOtpRequest() {}
 
@@ -16,9 +17,18 @@ public class SendOtpRequest {
         this.countryCode = countryCode;
     }
 
+    public SendOtpRequest(String mobile, String countryCode, String purpose) {
+        this.mobile = mobile;
+        this.countryCode = countryCode;
+        this.purpose = purpose;
+    }
+
     public String getMobile() { return mobile; }
     public void setMobile(String mobile) { this.mobile = mobile; }
 
     public String getCountryCode() { return countryCode; }
     public void setCountryCode(String countryCode) { this.countryCode = countryCode; }
+
+    public String getPurpose() { return purpose; }
+    public void setPurpose(String purpose) { this.purpose = purpose; }
 }

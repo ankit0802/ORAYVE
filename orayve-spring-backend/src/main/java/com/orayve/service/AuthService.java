@@ -47,6 +47,19 @@ public class AuthService {
         }
 
         String fullMobile = rawMobile.startsWith("+") ? rawMobile : (countryCode + digitsOnly);
+        String suffix = digitsOnly.length() >= 10 ? digitsOnly.substring(digitsOnly.length() - 10) : digitsOnly;
+
+        // Context-aware early check to save SMS costs & provide immediate feedback
+        if ("register".equalsIgnoreCase(request.getPurpose())) {
+            if (userRepository.existsByMobileSuffix(suffix)) {
+                throw new ConflictException("Mobile number " + fullMobile + " is already registered. Please switch to Login.");
+            }
+        } else if ("login".equalsIgnoreCase(request.getPurpose())) {
+            if (!userRepository.existsByMobileSuffix(suffix)) {
+                throw new ResourceNotFoundException("No account found for mobile " + fullMobile + ". Please switch to Register.");
+            }
+        }
+
         String liveOtp = otpService.generateAndSendOtp(fullMobile);
 
         Map<String, Object> result = new HashMap<>();
@@ -73,9 +86,14 @@ public class AuthService {
             throw new BadRequestException("Mobile number is required");
         }
 
-        // 3. Unique mobile check in database
-        if (userRepository.existsByMobileNumber(rawMobile)) {
-            throw new ConflictException("Mobile number " + rawMobile + " is already registered. Please login.");
+        // 3. Bulletproof Unique Mobile Check using DB functional index
+        String digits = rawMobile.replaceAll("[^0-9]", "");
+        if (digits.length() < 7 || digits.length() > 15) {
+            throw new BadRequestException("Please enter a valid mobile number (7-15 digits)");
+        }
+        String checkDigits = digits.length() >= 10 ? digits.substring(digits.length() - 10) : digits;
+        if (userRepository.existsByMobileSuffix(checkDigits)) {
+            throw new ConflictException("Mobile number " + rawMobile + " is already registered. Please switch to Login.");
         }
 
         // 4. Unique email check in database
@@ -91,7 +109,13 @@ public class AuthService {
 
         // 6. Save to Neon PostgreSQL
         User newUser = new User(name, request.getAge(), rawEmail, rawMobile, "ROLE_USER");
-        User savedUser = userRepository.save(newUser);
+        User savedUser;
+        try {
+            savedUser = userRepository.save(newUser);
+        } catch (org.springframework.dao.DataIntegrityViolationException dive) {
+            log.error("[DB] Unique constraint violation on user registration: {}", dive.getMessage());
+            throw new ConflictException("Mobile number or email is already registered in the system.");
+        }
         log.info("[AUTH] Registered new user {} ({}) in Neon DB", savedUser.getFullName(), savedUser.getMobileNumber());
 
         // 7. Issue JWT token
@@ -106,18 +130,12 @@ public class AuthService {
             throw new BadRequestException("Mobile number is required");
         }
 
-        // Lookup in Neon DB (or check with country code)
-        User user = userRepository.findByMobileNumber(rawMobile)
-                .orElse(null);
+        String digits = rawMobile.replaceAll("[^0-9]", "");
+        String checkDigits = digits.length() >= 10 ? digits.substring(digits.length() - 10) : digits;
 
-        if (user == null) {
-            // Check if stripped digits match
-            String digits = rawMobile.replaceAll("[^0-9]", "");
-            user = userRepository.findAll().stream()
-                    .filter(u -> u.getMobileNumber() != null && u.getMobileNumber().replaceAll("[^0-9]", "").endsWith(digits))
-                    .findFirst()
-                    .orElseThrow(() -> new ResourceNotFoundException("No account found for mobile: " + rawMobile + ". Please register."));
-        }
+        // Lookup in Neon DB via indexed suffix query
+        User user = userRepository.findByMobileSuffix(checkDigits)
+                .orElseThrow(() -> new ResourceNotFoundException("No account found for mobile: " + rawMobile + ". Please register."));
 
         if (user.getIsBanned()) {
             throw new BadRequestException("Account suspended. Please contact support@orayve.in for assistance.");

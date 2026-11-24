@@ -408,7 +408,8 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mobile: fullMobile,
-          countryCode: selectedCountry.code
+          countryCode: selectedCountry.code,
+          purpose: authModal === 'reg' ? 'register' : 'login'
         })
       }).then(r => r.json());
 
