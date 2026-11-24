@@ -253,8 +253,26 @@ const INDIAN_STATES = [
 // ============================================================================
 
 export default function App() {
-  // Navigation & Views
-  const [view, setView] = useState('store'); // 'store', 'product', 'cart', 'checkout', 'orders', 'admin'
+  // Admin Authentication State (Persists across page refresh)
+  const [adminLoggedIn, setAdminLoggedIn] = useState(() => {
+    try {
+      return localStorage.getItem('orv_admin_auth') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Navigation & Views (Keeps admin view on page refresh)
+  const [view, setView] = useState(() => {
+    try {
+      const savedAdmin = localStorage.getItem('orv_admin_auth') === 'true';
+      const savedView = localStorage.getItem('orv_view');
+      if (savedAdmin) return savedView || 'admin';
+      return savedView === 'admin' ? 'store' : (savedView || 'store');
+    } catch {
+      return 'store';
+    }
+  });
   const [navHistory, setNavHistory] = useState([]);
 
   // Data Collections
@@ -366,18 +384,44 @@ export default function App() {
   const [invoiceModalOrder, setInvoiceModalOrder] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
 
-  // Admin State
-  const [adminLoggedIn, setAdminLoggedIn] = useState(false);
+  // Admin State & Persistence
   const [adminPassInput, setAdminPassInput] = useState('');
-  const [adminTab, setAdminTab] = useState('analytics'); // 'analytics', 'orders', 'products', 'categories', 'users', 'coupons'
+  const [adminTab, setAdminTab] = useState(() => {
+    try {
+      return localStorage.getItem('orv_admin_tab') || 'analytics';
+    } catch {
+      return 'analytics';
+    }
+  });
   const [adminSearch, setAdminSearch] = useState('');
   const [adminOrderFilter, setAdminOrderFilter] = useState('ALL');
   const [adminOrderSearch, setAdminOrderSearch] = useState('');
+  const [adminUserSearch, setAdminUserSearch] = useState('');
   const [editingProduct, setEditingProduct] = useState(null);
   const [productImgs, setProductImgs] = useState([]);
   const [editingCategory, setEditingCategory] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
   const [editingCoupon, setEditingCoupon] = useState(null);
+
+  // Sync Timestamp State (Real-time data update clock)
+  const [lastUpdatedTime, setLastUpdatedTime] = useState(() => {
+    return new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  });
+
+  const updateSyncTimestamp = () => {
+    setLastUpdatedTime(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
+  };
+
+  const handleAdminLogout = () => {
+    setAdminLoggedIn(false);
+    try {
+      localStorage.removeItem('orv_admin_auth');
+      localStorage.setItem('orv_view', 'store');
+    } catch {}
+    setView('store');
+    showToast('Admin logged out successfully');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Offer Carousel Drag & Scroll Ref
   const carouselRef = useRef(null);
@@ -464,8 +508,9 @@ export default function App() {
     fetch('/api/orders')
       .then(r => r.json())
       .then(res => {
-        if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+        if (res.success && Array.isArray(res.data)) {
           setOrders(res.data);
+          updateSyncTimestamp();
         }
       })
       .catch(() => {});
@@ -477,6 +522,19 @@ export default function App() {
       .then(res => {
         if (res.success && res.data?.items && res.data.items.length > 0) {
           setProducts(res.data.items);
+          updateSyncTimestamp();
+        }
+      })
+      .catch(() => {});
+  };
+
+  const refreshLiveUsers = () => {
+    fetch('/api/admin/users')
+      .then(r => r.json())
+      .then(res => {
+        if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+          setUsers(res.data);
+          updateSyncTimestamp();
         }
       })
       .catch(() => {});
@@ -486,6 +544,7 @@ export default function App() {
   useEffect(() => {
     refreshLiveOrders();
     refreshLiveProducts();
+    refreshLiveUsers();
 
     fetch('/api/catalog/categories')
       .then(r => r.json())
@@ -500,22 +559,48 @@ export default function App() {
         if (res.success && res.data) setCoupons(res.data);
       })
       .catch(() => {});
-
-    fetch('/api/admin/users')
-      .then(r => r.json())
-      .then(res => {
-        if (res.success && Array.isArray(res.data) && res.data.length > 0) {
-          setUsers(res.data);
-        }
-      })
-      .catch(() => {});
   }, []);
 
-  // Re-fetch live orders and stock whenever Admin or Orders view is opened
+  // Persist Admin Session & View across page refreshes
+  useEffect(() => {
+    try {
+      if (adminLoggedIn) {
+        localStorage.setItem('orv_admin_auth', 'true');
+      } else {
+        localStorage.removeItem('orv_admin_auth');
+      }
+    } catch {}
+  }, [adminLoggedIn]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('orv_view', view);
+    } catch {}
+  }, [view]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('orv_admin_tab', adminTab);
+    } catch {}
+  }, [adminTab]);
+
+  // Automatic 5-Minute Data Polling in Background
+  useEffect(() => {
+    const timer = setInterval(() => {
+      refreshLiveOrders();
+      refreshLiveProducts();
+      refreshLiveUsers();
+    }, 5 * 60 * 1000); // exactly every 5 minutes
+
+    return () => clearInterval(timer);
+  }, []);
+
+  // Re-fetch live orders, stock, and users whenever Admin or Orders view is opened
   useEffect(() => {
     if (view === 'admin' || view === 'orders') {
       refreshLiveOrders();
       refreshLiveProducts();
+      refreshLiveUsers();
     }
   }, [view, adminTab]);
 
@@ -873,185 +958,400 @@ export default function App() {
   }, [products, selectedCat]);
 
   return (
-    <div className="min-h-screen bg-bone text-ink font-sans flex flex-col selection:bg-brass selection:text-ink">
+    <div className="min-h-screen w-full overflow-x-hidden bg-bone text-ink font-sans flex flex-col selection:bg-brass selection:text-ink">
       
       {/* ==================================================================== */}
       {/* HEADER                                                               */}
       {/* ==================================================================== */}
-      <header className="sticky top-0 z-40 bg-ink text-bone shadow-md">
-        <div className="max-w-[1400px] mx-auto px-4 py-2 flex flex-wrap items-center gap-3 justify-between">
-          
-          {/* Logo */}
-          <button
-            onClick={() => {
-              setSelectedCat('All Categories');
-              setSearchQuery('');
-              setOnlyWishlist(false);
-              setView('store');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            className="serif text-xl tracking-wide flex items-center gap-2 hover:opacity-90"
-          >
-            <svg width="30" height="30" viewBox="0 0 64 64" fill="none">
-              <circle cx="25" cy="32" r="16" stroke="#D6B98C" strokeWidth="3.2" />
-              <circle cx="39" cy="32" r="16" stroke="#F3EFE7" strokeWidth="3.2" />
-            </svg>
-            <span>Orayve</span>
-          </button>
-
-          {/* Search bar */}
-          <input
-            id="q"
-            value={searchQuery}
-            onChange={e => {
-              setSearchQuery(e.target.value);
-              setCurrentPage(1);
-              if (view !== 'store') setView('store');
-            }}
-            placeholder="Search 260 wallets, watches, shoes, ties, rings..."
-            className="order-last sm:order-none flex-1 min-w-full sm:min-w-0 sm:max-w-md !bg-white/10 !border-brass/40 !rounded-full !px-4 py-2 text-bone placeholder-bone/50 focus:outline-none focus:ring-1 focus:ring-gold"
-          />
-
-          {/* Header Action Buttons */}
-          <div className="flex items-center gap-2 text-xs font-semibold">
-            
-            {/* Wishlist Button */}
-            <button
-              onClick={() => {
-                setOnlyWishlist(!onlyWishlist);
-                setView('store');
-                setCurrentPage(1);
-              }}
-              className={`px-3 py-1.5 rounded-full border border-brass/40 transition flex items-center gap-1.5 ${onlyWishlist ? 'bg-gold text-ink font-bold' : 'hover:bg-white/10'}`}
-            >
-              <span>♥</span>
-              <span>{wishlist.length}</span>
-            </button>
-
-            {/* Bag Button */}
-            <button
-              onClick={() => {
-                setView('cart');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              className="px-3 py-1.5 rounded-full border border-brass/40 hover:bg-white/10 transition flex items-center gap-1.5"
-            >
-              <span>Bag</span>
-              <span className="bg-brass text-ink px-1.5 py-0.2 rounded-full font-bold">{cartSummary.count}</span>
-            </button>
-
-            {/* Account Sign in / Profile */}
-            <button
-              onClick={() => {
-                if (currentUser) {
-                  setView('orders');
-                } else {
-                  setAuthModal('login');
-                }
-              }}
-              className="px-3 py-1.5 rounded-full border border-brass/40 hover:bg-white/10 transition"
-            >
-              {currentUser ? `👤 ${currentUser.name.split(' ')[0]}` : 'Sign in'}
-            </button>
-
-            {/* Admin Console Gate */}
-            <button
-              onClick={() => {
-                setView('admin');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              className="px-3 py-1.5 rounded-full bg-brass/20 text-gold border border-brass/50 hover:bg-brass hover:text-ink transition"
-            >
-              Admin
-            </button>
-
-            {/* Overflow Menu */}
-            <div className="relative">
+      <header className="sticky top-0 z-40 w-full min-w-full bg-ink text-bone shadow-md">
+        {adminLoggedIn ? (
+          /* ================================================================= */
+          /* DEDICATED ADMIN HEADER                                            */
+          /* ================================================================= */
+          <div className="w-full max-w-[1400px] mx-auto px-4 py-2.5 flex items-center justify-between gap-3">
+            {/* Logo with Admin Console Badge */}
+            <div className="flex items-center gap-3">
               <button
-                onClick={() => setMenuOpen(!menuOpen)}
-                aria-label="More options"
-                className="w-9 h-9 rounded-full border border-brass/40 text-lg leading-none flex items-center justify-center hover:bg-white/10 transition"
+                onClick={() => {
+                  setView('admin');
+                  setAdminTab('analytics');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="serif text-xl tracking-wide flex items-center gap-2 hover:opacity-90"
               >
-                ⋮
+                <svg width="28" height="28" viewBox="0 0 64 64" fill="none">
+                  <circle cx="25" cy="32" r="16" stroke="#D6B98C" strokeWidth="3.2" />
+                  <circle cx="39" cy="32" r="16" stroke="#F3EFE7" strokeWidth="3.2" />
+                </svg>
+                <span>Orayve</span>
+              </button>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold tracking-widest bg-brass text-ink uppercase shadow-sm">
+                ADMIN CONSOLE
+              </span>
+            </div>
+
+            {/* Quick Admin Navigation Tabs (Desktop) */}
+            <div className="hidden lg:flex items-center gap-1.5 text-xs font-bold">
+              {[
+                ['analytics', 'Analytics'],
+                ['orders', `Orders (${orders.length})`],
+                ['products', 'Products'],
+                ['categories', 'Categories'],
+                ['users', `Users (${users.length})`],
+                ['coupons', 'Coupons']
+              ].map(([tab, label]) => (
+                <button
+                  key={tab}
+                  onClick={() => {
+                    setView('admin');
+                    setAdminTab(tab);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className={`px-3 py-1.5 rounded-lg transition ${
+                    view === 'admin' && adminTab === tab
+                      ? 'bg-brass text-ink shadow'
+                      : 'text-bone/70 hover:text-bone hover:bg-white/10'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Admin Right Controls */}
+            <div className="flex items-center gap-2.5 text-xs font-semibold">
+              {/* Real-time Data Sync Status Pill */}
+              <button
+                onClick={() => {
+                  refreshLiveOrders();
+                  refreshLiveProducts();
+                  refreshLiveUsers();
+                  updateSyncTimestamp();
+                  showToast('Database refreshed');
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-bone border border-brass/30 transition text-[11px] font-mono shadow-sm"
+                title="Click to refresh live data from database"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="hidden sm:inline text-bone/60">Updated:</span>
+                <span className="font-bold text-bone">{lastUpdatedTime}</span>
+                <span className="text-bone/50 hover:text-bone ml-0.5">🔄</span>
               </button>
 
-              {menuOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)}></div>
-                  <div className="absolute right-0 top-11 z-50 w-56 bg-white text-ink rounded-xl shadow-2xl border border-ink/10 py-1 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                    {currentUser && (
-                      <div className="px-4 py-2.5 border-b text-xs bg-bone">
-                        <b className="block truncate">{currentUser.name}</b>
-                        <p className="text-ink/60 text-[11px]">+91 {currentUser.mobile}</p>
+              {/* View Storefront Toggle */}
+              <button
+                onClick={() => {
+                  setView(view === 'admin' ? 'store' : 'admin');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-brass/40 text-bone hover:bg-white/10 transition"
+              >
+                <span>{view === 'admin' ? '🏪 View Store' : '🛡️ Admin Area'}</span>
+              </button>
+
+              {/* Admin 3-Dot Overflow Menu */}
+              <div className="relative">
+                <button
+                  onClick={() => setMenuOpen(!menuOpen)}
+                  aria-label="Admin options"
+                  className="w-9 h-9 rounded-full border border-brass/40 text-lg leading-none flex items-center justify-center hover:bg-white/10 transition text-bone"
+                >
+                  ⋮
+                </button>
+
+                {menuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)}></div>
+                    <div className="absolute right-0 top-11 z-50 w-60 bg-white text-ink rounded-xl shadow-2xl border border-ink/10 py-1 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                      <div className="px-4 py-2.5 border-b text-xs bg-ink text-bone">
+                        <span className="text-[10px] tracking-wider uppercase text-brass font-bold block">Authenticated As</span>
+                        <b className="block text-sm">Super Admin</b>
+                        <p className="text-bone/60 text-[10px]">Neon DB Connected</p>
                       </div>
-                    )}
-                    <button
-                      onClick={() => {
-                        setMenuOpen(false);
-                        if (currentUser) setView('orders');
-                        else setAuthModal('login');
-                      }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
-                    >
-                      {currentUser ? '👤 My Account' : '👤 Sign in / Register'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setMenuOpen(false);
-                        setView('orders');
-                      }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
-                    >
-                      📦 My Orders ({orders.filter(o => o.mobile === currentUser?.mobile).length})
-                    </button>
-                    <button
-                      onClick={() => {
-                        setMenuOpen(false);
-                        setOnlyWishlist(true);
-                        setView('store');
-                      }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
-                    >
-                      ♥ Wishlist ({wishlist.length})
-                    </button>
-                    <button
-                      onClick={() => {
-                        setMenuOpen(false);
-                        copyShareLink('store');
-                      }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
-                    >
-                      🔗 Share Orayve
-                    </button>
-                    <button
-                      onClick={() => {
-                        setMenuOpen(false);
-                        setInfoTopic('help');
-                      }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
-                    >
-                      ❓ Help & Policies
-                    </button>
-                    {currentUser && (
+
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setView('admin');
+                          setAdminTab('analytics');
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold flex items-center justify-between"
+                      >
+                        <span>📊 Analytics Dashboard</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setView('admin');
+                          setAdminTab('orders');
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold flex items-center justify-between"
+                      >
+                        <span>📦 Live Orders</span>
+                        <span className="bg-brass text-ink px-1.5 py-0.5 rounded-full font-bold text-[10px]">{orders.length}</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setView('admin');
+                          setAdminTab('products');
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                      >
+                        🏷️ Product & Stock Manager
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setView('admin');
+                          setAdminTab('users');
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                      >
+                        👥 Customer Directory ({users.length})
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setView('admin');
+                          setAdminTab('coupons');
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                      >
+                        🎟️ Discount Coupons
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          refreshLiveOrders();
+                          refreshLiveProducts();
+                          refreshLiveUsers();
+                          updateSyncTimestamp();
+                          showToast('Database synchronized');
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold border-t border-ink/5"
+                      >
+                        🔄 Sync Database Now
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setView(view === 'admin' ? 'store' : 'admin');
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                      >
+                        {view === 'admin' ? '🏪 Switch to Storefront' : '🛡️ Open Admin Console'}
+                      </button>
+
                       <div className="border-t border-ink/10">
                         <button
                           onClick={() => {
                             setMenuOpen(false);
-                            setCurrentUser(null);
-                            showToast('Logged out');
+                            handleAdminLogout();
                           }}
-                          className="w-full text-left px-4 py-2.5 hover:bg-rose-50 text-xs font-semibold text-rose-700"
+                          className="w-full text-left px-4 py-2.5 hover:bg-rose-50 text-xs font-bold text-rose-700 flex items-center gap-1.5"
                         >
-                          ⎋ Log out
+                          <span>⎋</span>
+                          <span>Sign out Admin</span>
                         </button>
                       </div>
-                    )}
-                  </div>
-                </>
-              )}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          /* ================================================================= */
+          /* CUSTOMER STOREFRONT HEADER                                        */
+          /* ================================================================= */
+          <div className="w-full max-w-[1400px] mx-auto px-4 py-2 flex flex-wrap items-center gap-3 justify-between">
+            {/* Logo */}
+            <button
+              onClick={() => {
+                setSelectedCat('All Categories');
+                setSearchQuery('');
+                setOnlyWishlist(false);
+                setView('store');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="serif text-xl tracking-wide flex items-center gap-2 hover:opacity-90"
+            >
+              <svg width="30" height="30" viewBox="0 0 64 64" fill="none">
+                <circle cx="25" cy="32" r="16" stroke="#D6B98C" strokeWidth="3.2" />
+                <circle cx="39" cy="32" r="16" stroke="#F3EFE7" strokeWidth="3.2" />
+              </svg>
+              <span>Orayve</span>
+            </button>
+
+            {/* Search bar */}
+            <input
+              id="q"
+              value={searchQuery}
+              onChange={e => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+                if (view !== 'store') setView('store');
+              }}
+              placeholder="Search 260 wallets, watches, shoes, ties, rings..."
+              className="order-last sm:order-none flex-1 min-w-full sm:min-w-0 sm:max-w-md !bg-white/10 !border-brass/40 !rounded-full !px-4 py-2 text-bone placeholder-bone/50 focus:outline-none focus:ring-1 focus:ring-gold"
+            />
+
+            {/* Header Action Buttons */}
+            <div className="flex items-center gap-2 text-xs font-semibold">
+              {/* Real-time Data Sync Status Pill */}
+              <div
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 text-bone/80 border border-brass/30 text-[11px] font-mono whitespace-nowrap shadow-sm"
+                title="Live database synchronization"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span>{lastUpdatedTime}</span>
+              </div>
+
+              {/* Wishlist Button */}
+              <button
+                onClick={() => {
+                  setOnlyWishlist(!onlyWishlist);
+                  setView('store');
+                  setCurrentPage(1);
+                }}
+                className={`px-3 py-1.5 rounded-full border border-brass/40 transition flex items-center gap-1.5 ${onlyWishlist ? 'bg-gold text-ink font-bold' : 'hover:bg-white/10'}`}
+              >
+                <span>♥</span>
+                <span>{wishlist.length}</span>
+              </button>
+
+              {/* Bag Button */}
+              <button
+                onClick={() => {
+                  setView('cart');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="px-3 py-1.5 rounded-full border border-brass/40 hover:bg-white/10 transition flex items-center gap-1.5"
+              >
+                <span>Bag</span>
+                <span className="bg-brass text-ink px-1.5 py-0.2 rounded-full font-bold">{cartSummary.count}</span>
+              </button>
+
+              {/* Account Sign in / Profile */}
+              <button
+                onClick={() => {
+                  if (currentUser) {
+                    setView('orders');
+                  } else {
+                    setAuthModal('login');
+                  }
+                }}
+                className="px-3 py-1.5 rounded-full border border-brass/40 hover:bg-white/10 transition"
+              >
+                {currentUser ? `👤 ${currentUser.name.split(' ')[0]}` : 'Sign in'}
+              </button>
+
+              {/* Admin Console Gate */}
+              <button
+                onClick={() => {
+                  setView('admin');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="px-3 py-1.5 rounded-full bg-brass/20 text-gold border border-brass/50 hover:bg-brass hover:text-ink transition"
+              >
+                Admin
+              </button>
+
+              {/* Overflow Menu */}
+              <div className="relative">
+                <button
+                  onClick={() => setMenuOpen(!menuOpen)}
+                  aria-label="More options"
+                  className="w-9 h-9 rounded-full border border-brass/40 text-lg leading-none flex items-center justify-center hover:bg-white/10 transition"
+                >
+                  ⋮
+                </button>
+
+                {menuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)}></div>
+                    <div className="absolute right-0 top-11 z-50 w-56 bg-white text-ink rounded-xl shadow-2xl border border-ink/10 py-1 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                      {currentUser && (
+                        <div className="px-4 py-2.5 border-b text-xs bg-bone">
+                          <b className="block truncate">{currentUser.name}</b>
+                          <p className="text-ink/60 text-[11px]">+91 {currentUser.mobile}</p>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          if (currentUser) setView('orders');
+                          else setAuthModal('login');
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                      >
+                        {currentUser ? '👤 My Account' : '👤 Sign in / Register'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setView('orders');
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                      >
+                        📦 My Orders ({orders.filter(o => (o.mobile || o.addr?.phone || '').replace(/[^0-9]/g, '').slice(-10) === (currentUser?.mobile || '').replace(/[^0-9]/g, '').slice(-10)).length})
+                      </button>
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setOnlyWishlist(true);
+                          setView('store');
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                      >
+                        ♥ Wishlist ({wishlist.length})
+                      </button>
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          copyShareLink('store');
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                      >
+                        🔗 Share Orayve
+                      </button>
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setInfoTopic('help');
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                      >
+                        ❓ Help & Policies
+                      </button>
+                      {currentUser && (
+                        <div className="border-t border-ink/10">
+                          <button
+                            onClick={() => {
+                              setMenuOpen(false);
+                              setCurrentUser(null);
+                              showToast('Logged out');
+                            }}
+                            className="w-full text-left px-4 py-2.5 hover:bg-rose-50 text-xs font-semibold text-rose-700"
+                          >
+                            ⎋ Log out
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* ==================================================================== */}
@@ -2437,7 +2737,7 @@ export default function App() {
       {/* ADMIN CONSOLE VIEW                                                   */}
       {/* ==================================================================== */}
       {view === 'admin' && (
-        <main className="max-w-6xl mx-auto px-4 py-8 flex-1">
+        <main className="w-full max-w-[1400px] mx-auto px-4 py-8 flex-1 min-w-0">
           {!adminLoggedIn ? (
             <div className="min-h-[60vh] flex items-center justify-center p-4">
               <form
@@ -2445,6 +2745,10 @@ export default function App() {
                   e.preventDefault();
                   if (adminPassInput === ADMIN_PASS || adminPassInput === 'SuperAdmin@2026') {
                     setAdminLoggedIn(true);
+                    try {
+                      localStorage.setItem('orv_admin_auth', 'true');
+                      localStorage.setItem('orv_view', 'admin');
+                    } catch {}
                     showToast('Admin console unlocked');
                   } else {
                     showToast('Wrong passcode', true);
@@ -2489,7 +2793,9 @@ export default function App() {
                     onClick={() => {
                       refreshLiveOrders();
                       refreshLiveProducts();
-                      showToast('Orders & inventory synchronized with database');
+                      refreshLiveUsers();
+                      updateSyncTimestamp();
+                      showToast('Orders, products & users synchronized with database');
                     }}
                     className="px-3.5 py-2 rounded-lg bg-white border border-ink/20 text-xs font-bold hover:bg-bone transition flex items-center gap-1.5 shadow-sm"
                     title="Sync latest records from Neon DB"
@@ -2504,14 +2810,11 @@ export default function App() {
                         adminTab === tab ? 'bg-ink text-bone shadow' : 'bg-white border border-ink/15 hover:bg-bone'
                       }`}
                     >
-                      {tab} {tab === 'orders' ? `(${orders.length})` : ''}
+                      {tab} {tab === 'orders' ? `(${orders.length})` : tab === 'users' ? `(${users.length})` : ''}
                     </button>
                   ))}
                   <button
-                    onClick={() => {
-                      setAdminLoggedIn(false);
-                      setView('store');
-                    }}
+                    onClick={handleAdminLogout}
                     className="px-4 py-2 rounded-lg text-xs font-bold text-rose-700 hover:bg-rose-50 border border-rose-200"
                   >
                     Sign out
@@ -3079,81 +3382,121 @@ export default function App() {
               )}
 
               {/* Tab 5: Users */}
-              {adminTab === 'users' && (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-ink/60">
-                      {users.length} registered users · {users.filter(u => u.banned).length} banned
-                    </span>
-                  </div>
+              {adminTab === 'users' && (() => {
+                const filteredUsers = users.filter(u => {
+                  if (!adminUserSearch) return true;
+                  const s = adminUserSearch.toLowerCase();
+                  return (
+                    (u.name || '').toLowerCase().includes(s) ||
+                    (u.email || '').toLowerCase().includes(s) ||
+                    (u.mobile || '').includes(s)
+                  );
+                });
 
-                  <div className="bg-white rounded-xl border border-ink/10 overflow-x-auto shadow-sm">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-ink text-bone">
-                        <tr>
-                          <th className="p-3">Name</th>
-                          <th className="p-3">Age</th>
-                          <th className="p-3">Mobile</th>
-                          <th className="p-3">Email</th>
-                          <th className="p-3">Status</th>
-                          <th className="p-3 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-ink/10">
-                        {users.map(u => (
-                          <tr key={u.mobile} className={u.banned ? 'bg-rose-50' : ''}>
-                            <td className="p-3 font-semibold">{u.name}</td>
-                            <td className="p-3">{u.age}</td>
-                            <td className="p-3">{u.mobile}</td>
-                            <td className="p-3">{u.email}</td>
-                            <td className="p-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                u.banned ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
-                              }`}>
-                                {u.banned ? 'BANNED' : 'Active'}
-                              </span>
-                            </td>
-                            <td className="p-3 text-right space-x-3">
-                              <button
-                                onClick={async () => {
-                                  const nextBan = !u.banned;
-                                  try {
-                                    await fetch(`/api/admin/users/${u.mobile}/ban`, {
-                                      method: 'PATCH',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ banned: nextBan })
-                                    });
-                                  } catch {}
-                                  setUsers(users.map(x => x.mobile === u.mobile ? { ...x, banned: nextBan } : x));
-                                  if (nextBan && currentUser?.mobile === u.mobile) setCurrentUser(null);
-                                  showToast(nextBan ? 'User banned' : 'User unbanned');
-                                }}
-                                className={`font-bold ${u.banned ? 'text-emerald-700' : 'text-amber-700'}`}
-                              >
-                                {u.banned ? 'Unban' : 'Ban'}
-                              </button>
-                              <button
-                                onClick={async () => {
-                                  if (confirm(`Delete user ${u.name}?`)) {
-                                    try {
-                                      await fetch(`/api/admin/users/${u.mobile}`, { method: 'DELETE' });
-                                    } catch {}
-                                    setUsers(users.filter(x => x.mobile !== u.mobile));
-                                    showToast('User deleted');
-                                  }
-                                }}
-                                className="text-rose-600 font-bold hover:underline"
-                              >
-                                Delete
-                              </button>
-                            </td>
+                return (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap justify-between items-center gap-3 bg-white p-4 rounded-xl border border-ink/10 shadow-sm">
+                      <div>
+                        <b className="text-sm">Registered Customers</b>
+                        <p className="text-xs text-ink/60 mt-0.5">
+                          {users.length} registered users · {users.filter(u => u.banned).length} banned
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={adminUserSearch}
+                          onChange={e => setAdminUserSearch(e.target.value)}
+                          placeholder="Search name, phone, email..."
+                          className="text-xs max-w-xs"
+                        />
+                        <button
+                          onClick={() => {
+                            refreshLiveUsers();
+                            showToast('Users directory refreshed');
+                          }}
+                          className="px-3 py-1.5 rounded-lg border border-ink/20 text-xs font-bold hover:bg-bone transition"
+                        >
+                          🔄 Refresh
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="w-full min-w-0 overflow-x-auto bg-white rounded-xl border border-ink/10 shadow-sm">
+                      <table className="w-full min-w-[640px] text-left text-xs">
+                        <thead className="bg-ink text-bone">
+                          <tr>
+                            <th className="p-3">Customer Name</th>
+                            <th className="p-3">Age</th>
+                            <th className="p-3">Mobile Number</th>
+                            <th className="p-3">Email Address</th>
+                            <th className="p-3">Joined</th>
+                            <th className="p-3">Status</th>
+                            <th className="p-3 text-right">Actions</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-ink/10">
+                          {filteredUsers.length ? filteredUsers.map(u => (
+                            <tr key={u.mobile} className={u.banned ? 'bg-rose-50/60' : ''}>
+                              <td className="p-3 font-semibold text-ink">{u.name}</td>
+                              <td className="p-3 text-ink/80">{u.age || 25}</td>
+                              <td className="p-3 font-mono text-ink/80 whitespace-nowrap">+91 {u.mobile.replace(/[^0-9]/g, '').slice(-10)}</td>
+                              <td className="p-3 text-ink/70 break-all">{u.email || '—'}</td>
+                              <td className="p-3 text-ink/60 whitespace-nowrap">{u.at || '23/11/2026'}</td>
+                              <td className="p-3 whitespace-nowrap">
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                  u.banned ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                                }`}>
+                                  {u.banned ? 'BANNED' : 'Active'}
+                                </span>
+                              </td>
+                              <td className="p-3 text-right space-x-3 whitespace-nowrap">
+                                <button
+                                  onClick={async () => {
+                                    const nextBan = !u.banned;
+                                    try {
+                                      await fetch(`/api/admin/users/${u.mobile}/ban`, {
+                                        method: 'PATCH',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ banned: nextBan })
+                                      });
+                                    } catch {}
+                                    setUsers(users.map(x => x.mobile === u.mobile ? { ...x, banned: nextBan } : x));
+                                    if (nextBan && currentUser?.mobile === u.mobile) setCurrentUser(null);
+                                    showToast(nextBan ? `User ${u.name} banned` : `User ${u.name} unbanned`);
+                                  }}
+                                  className={`font-bold ${u.banned ? 'text-emerald-700 hover:underline' : 'text-amber-700 hover:underline'}`}
+                                >
+                                  {u.banned ? 'Unban' : 'Ban'}
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    if (confirm(`Delete user ${u.name}?`)) {
+                                      try {
+                                        await fetch(`/api/admin/users/${u.mobile}`, { method: 'DELETE' });
+                                      } catch {}
+                                      setUsers(users.filter(x => x.mobile !== u.mobile));
+                                      showToast('User deleted');
+                                    }
+                                  }}
+                                  className="text-rose-600 font-bold hover:underline"
+                                >
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          )) : (
+                            <tr>
+                              <td colSpan="7" className="p-8 text-center text-ink/60">
+                                No users found matching criteria.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Tab 6: Coupons */}
               {adminTab === 'coupons' && (
