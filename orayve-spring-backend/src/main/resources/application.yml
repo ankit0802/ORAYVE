@@ -39,7 +39,7 @@ orayve:
       auth-token: ${TWILIO_AUTH_TOKEN:}
       from-number: ${TWILIO_PHONE_NUMBER:}
     fast2sms:
-      api-key: ${FAST2SMS_API_KEY:}
+      api-key: ${FAST2SMS_API_KEY:paOHxOlfZUVDfRqRPHcIT9HRCXICNeB29zD7fQ6FdovAfSSNYbqf9SuhaIC201g7Rrj1vPmu4Drk4dc3}
 
 springdoc:
   api-docs:
