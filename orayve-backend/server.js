@@ -244,32 +244,15 @@ app.post('/api/auth/send-otp', (req, res) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        variables_values: liveOtp,
-        route: 'otp',
+        route: 'q',
+        message: `Your ORAYVE verification code is ${liveOtp}. Valid for 5 minutes.`,
+        language: 'english',
+        flash: 0,
         numbers: indianDigits
       })
     })
     .then(r => r.json())
-    .then(d => {
-      console.log('[SMS] Fast2SMS OTP Route Result:', d);
-      if (!d.return) {
-        // Fallback to Quick SMS route
-        return fetch('https://www.fast2sms.com/dev/bulkV2', {
-          method: 'POST',
-          headers: {
-            'authorization': fast2smsKey.trim(),
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            route: 'q',
-            message: `Your ORAYVE verification code is ${liveOtp}. Valid for 5 minutes.`,
-            language: 'english',
-            flash: 0,
-            numbers: indianDigits
-          })
-        }).then(r => r.json()).then(qd => console.log('[SMS] Fast2SMS Quick Route Result:', qd));
-      }
-    })
+    .then(d => console.log('[SMS] Fast2SMS Gateway Result:', d))
     .catch(err => console.error('[SMS] Fast2SMS error:', err.message));
   } else if (twilioSid && twilioToken) {
     const toMobile = cleanMobile.startsWith('+') ? cleanMobile : ('+' + cleanMobile);

@@ -139,34 +139,20 @@ public class OtpService {
         // 1. Dispatch via Fast2SMS Gateway (India)
         if (fast2smsApiKey != null && !fast2smsApiKey.isBlank()) {
             try {
-                log.info("[SMS] Dispatching live real SMS via Fast2SMS to {}", digits);
-                String jsonBody = String.format("{\"variables_values\":\"%s\",\"route\":\"otp\",\"numbers\":\"%s\"}", otp, digits);
-                HttpRequest req = HttpRequest.newBuilder()
+                log.info("[SMS] Dispatching live real SMS via Fast2SMS Quick Route to {}", digits);
+                String quickBody = String.format("{\"route\":\"q\",\"message\":\"Your ORAYVE verification code is %s. Valid for 5 minutes.\",\"language\":\"english\",\"flash\":0,\"numbers\":\"%s\"}", otp, digits);
+                HttpRequest qReq = HttpRequest.newBuilder()
                         .uri(URI.create("https://www.fast2sms.com/dev/bulkV2"))
                         .header("authorization", fast2smsApiKey.trim())
                         .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                        .POST(HttpRequest.BodyPublishers.ofString(quickBody))
                         .build();
 
-                HttpResponse<String> resp = HTTP_CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
-                log.info("[SMS] Fast2SMS OTP Route Response: {}", resp.body());
+                HttpResponse<String> qResp = HTTP_CLIENT.send(qReq, HttpResponse.BodyHandlers.ofString());
+                log.info("[SMS] Fast2SMS Gateway Result: {}", qResp.body());
 
-                if (resp.body() != null && resp.body().contains("\"status_code\":200")) {
+                if (qResp.body() != null && (qResp.body().contains("\"return\":true") || qResp.body().contains("\"status_code\":200"))) {
                     smsDispatched = true;
-                } else {
-                    // Fallback to Fast2SMS Quick SMS route
-                    String quickBody = String.format("{\"route\":\"q\",\"message\":\"Your ORAYVE verification code is %s. Valid for 5 minutes.\",\"language\":\"english\",\"flash\":0,\"numbers\":\"%s\"}", otp, digits);
-                    HttpRequest qReq = HttpRequest.newBuilder()
-                            .uri(URI.create("https://www.fast2sms.com/dev/bulkV2"))
-                            .header("authorization", fast2smsApiKey.trim())
-                            .header("Content-Type", "application/json")
-                            .POST(HttpRequest.BodyPublishers.ofString(quickBody))
-                            .build();
-                    HttpResponse<String> qResp = HTTP_CLIENT.send(qReq, HttpResponse.BodyHandlers.ofString());
-                    log.info("[SMS] Fast2SMS Quick Route Response: {}", qResp.body());
-                    if (qResp.body() != null && (qResp.body().contains("\"return\":true") || qResp.body().contains("\"status_code\":200"))) {
-                        smsDispatched = true;
-                    }
                 }
             } catch (Exception e) {
                 log.error("[SMS] Fast2SMS delivery error: {}", e.getMessage());
