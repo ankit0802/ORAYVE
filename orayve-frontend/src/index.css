@@ -11,22 +11,19 @@
   --font-sans: 'Manrope', sans-serif;
 }
 
-/* Black border styling for all text inputs across the application */
-input[type="text"],
-input[type="email"],
-input[type="number"],
-input[type="tel"],
-input[type="password"],
+/* Crisp High-Contrast Black Border for all inputs, textareas, and dropdowns */
+input,
 textarea,
 select {
-  border: 1.5px solid #000000 !important;
+  border: 2px solid #000000 !important;
 }
 
 input:focus,
 textarea:focus,
 select:focus {
   border-color: #000000 !important;
-  box-shadow: 0 0 0 1px #000000 !important;
+  outline: none !important;
+  box-shadow: 0 0 0 2px #B8905C !important;
 }
 
 body {

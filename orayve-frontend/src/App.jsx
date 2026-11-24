@@ -238,6 +238,17 @@ function checkPincodeRule(pin) {
 }
 
 // ============================================================================
+// INDIAN STATES & UNION TERRITORIES
+// ============================================================================
+const INDIAN_STATES = [
+  'Maharashtra', 'Delhi NCR', 'Karnataka', 'Tamil Nadu', 'Uttar Pradesh',
+  'Gujarat', 'Telangana', 'West Bengal', 'Rajasthan', 'Kerala',
+  'Haryana', 'Punjab', 'Madhya Pradesh', 'Bihar', 'Andhra Pradesh',
+  'Odisha', 'Assam', 'Goa', 'Jharkhand', 'Chhattisgarh',
+  'Uttarakhand', 'Himachal Pradesh', 'Jammu & Kashmir', 'Chandigarh', 'Puducherry'
+];
+
+// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
@@ -382,6 +393,10 @@ export default function App() {
   const [authMobileInput, setAuthMobileInput] = useState('');
   const [otpCooldown, setOtpCooldown] = useState(0);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
+
+  // Address Form State
+  const [addrType, setAddrType] = useState('Home');
+  const [showNewAddrForm, setShowNewAddrForm] = useState(false);
 
   useEffect(() => {
     if (otpCooldown > 0) {
@@ -1834,102 +1849,317 @@ export default function App() {
           </div>
 
           {/* Step 1: Address */}
-          {checkoutStep === 1 && (
-            <div className="grid lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-4">
-                <h2 className="serif text-2xl font-bold">Delivery Address</h2>
+          {checkoutStep === 1 && (() => {
+            const userAddrs = currentUser ? addresses.filter(a => a.m === currentUser.mobile) : [];
+            const isAddingNew = showNewAddrForm || userAddrs.length === 0;
 
-                {/* Existing saved addresses */}
-                {currentUser && addresses.filter(a => a.m === currentUser.mobile).map(a => (
-                  <div
-                    key={a.id}
-                    onClick={() => setSelectedAddrId(a.id)}
-                    className={`p-4 rounded-xl border bg-white cursor-pointer transition ${
-                      selectedAddrId === a.id ? 'border-brass ring-2 ring-brass/25' : 'border-ink/15 hover:border-ink/30'
-                    }`}
-                  >
-                    <b className="text-sm">{a.name}</b> <span className="text-xs text-ink/60">{a.phone}</span>
-                    <p className="text-xs mt-1">{a.street}, {a.city} — {a.pin}</p>
+            return (
+              <div className="grid lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 space-y-5">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <h2 className="serif text-2xl font-bold text-ink">Delivery Address</h2>
+                      <p className="text-xs text-ink/70 mt-0.5">Where should we deliver your luxury parcel?</p>
+                    </div>
+                    {userAddrs.length > 0 && !isAddingNew && (
+                      <button
+                        type="button"
+                        onClick={() => setShowNewAddrForm(true)}
+                        className="px-3.5 py-1.5 rounded-lg border-2 border-black bg-white hover:bg-brass hover:text-ink text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+                      >
+                        <span>＋</span> Add New Address
+                      </button>
+                    )}
                   </div>
-                ))}
 
-                {/* Add new address form */}
-                <form
-                  onSubmit={e => {
-                    e.preventDefault();
-                    const fd = new FormData(e.currentTarget);
-                    const newA = {
-                      id: 'a' + Date.now(),
-                      m: currentUser?.mobile,
-                      name: fd.get('name'),
-                      phone: fd.get('phone'),
-                      street: fd.get('street'),
-                      city: fd.get('city') || 'Pune',
-                      pin: fd.get('pin')
-                    };
-                    setAddresses(prev => [...prev, newA]);
-                    setSelectedAddrId(newA.id);
-                    // Post to backend API
-                    fetch('/api/users/addresses', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        mobile: currentUser?.mobile,
-                        name: newA.name,
-                        phone: newA.phone,
-                        street: newA.street,
-                        city: newA.city,
-                        pin: newA.pin
-                      })
-                    }).catch(() => {});
-                    e.currentTarget.reset();
-                    showToast('Address saved');
-                  }}
-                  className="p-5 rounded-xl bg-white border border-brass/40 grid sm:grid-cols-2 gap-3 shadow-sm"
-                >
-                  <h3 className="sm:col-span-2 font-semibold text-sm">Add new address</h3>
-                  <input
-                    required
-                    name="name"
-                    defaultValue={currentUser?.name || ''}
-                    placeholder="Recipient name *"
-                    className="text-xs"
-                  />
-                  <input
-                    required
-                    name="phone"
-                    defaultValue={currentUser?.mobile || ''}
-                    placeholder="Phone *"
-                    pattern="[0-9+ ]{10,15}"
-                    className="text-xs"
-                  />
-                  <input
-                    required
-                    name="street"
-                    placeholder="Street / landmark *"
-                    className="sm:col-span-2 text-xs"
-                  />
-                  <input
-                    name="city"
-                    defaultValue="Bengaluru"
-                    placeholder="City"
-                    className="text-xs"
-                  />
-                  <input
-                    required
-                    name="pin"
-                    placeholder="Pincode *"
-                    pattern="[0-9]{6}"
-                    className="text-xs"
-                  />
-                  <button
-                    type="submit"
-                    className="sm:col-span-2 px-4 py-2 rounded-lg bg-brass text-ink text-xs font-bold hover:opacity-90 transition"
-                  >
-                    Save Address
-                  </button>
-                </form>
-              </div>
+                  {/* Existing Saved Addresses List */}
+                  {userAddrs.length > 0 && (
+                    <div className="space-y-3">
+                      {userAddrs.map(a => (
+                        <div
+                          key={a.id}
+                          onClick={() => setSelectedAddrId(a.id)}
+                          className={`p-4 sm:p-5 rounded-2xl border-2 cursor-pointer transition relative bg-white ${
+                            selectedAddrId === a.id
+                              ? 'border-black ring-2 ring-brass shadow-md bg-stone-50/50'
+                              : 'border-black/20 hover:border-black/60 shadow-xs'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3">
+                              <div className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                                selectedAddrId === a.id ? 'border-black bg-ink text-bone' : 'border-black/40 bg-white'
+                              }`}>
+                                {selectedAddrId === a.id && <span className="w-2 h-2 rounded-full bg-brass"></span>}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-bold text-sm text-ink">{a.name}</span>
+                                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-bone border border-black/20 text-ink">
+                                    {a.type || 'Home'}
+                                  </span>
+                                  {selectedAddrId === a.id && (
+                                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-300">
+                                      ✓ Selected for Delivery
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-ink/80 mt-1.5 leading-relaxed font-medium">
+                                  {a.flat ? `${a.flat}, ` : ''}{a.street}
+                                </p>
+                                <p className="text-xs text-ink/70 mt-0.5 font-medium">
+                                  {a.city}, {a.state || 'India'} — <span className="font-bold text-ink">{a.pin}</span>
+                                </p>
+                                <p className="text-xs text-ink/70 mt-1 flex items-center gap-1.5 font-semibold">
+                                  <span>📞</span> +91 {a.phone}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setAddresses(prev => prev.filter(x => x.id !== a.id));
+                                if (selectedAddrId === a.id) {
+                                  const rem = userAddrs.filter(x => x.id !== a.id);
+                                  setSelectedAddrId(rem[0]?.id || null);
+                                }
+                                showToast('Address removed');
+                              }}
+                              className="text-ink/40 hover:text-rose-600 p-1 transition"
+                              title="Delete address"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Add New Address Form (Open by default if 0 addresses, or toggled) */}
+                  {isAddingNew && (
+                    <form
+                      onSubmit={e => {
+                        e.preventDefault();
+                        const fd = new FormData(e.currentTarget);
+                        const name = (fd.get('name') || '').trim();
+                        const phone = (fd.get('phone') || '').trim();
+                        const flat = (fd.get('flat') || '').trim();
+                        const street = (fd.get('street') || '').trim();
+                        const city = (fd.get('city') || '').trim();
+                        const state = (fd.get('state') || '').trim();
+                        const pin = (fd.get('pin') || '').trim();
+
+                        if (!name) return showToast('Please enter recipient name', true);
+                        if (!phone || phone.replace(/\D/g, '').length < 10) return showToast('Please enter a valid 10-digit mobile number', true);
+                        if (!street) return showToast('Please enter street or locality', true);
+                        if (!city) return showToast('Please enter city', true);
+                        if (!pin || pin.replace(/\D/g, '').length !== 6) return showToast('Please enter a valid 6-digit pincode', true);
+
+                        const fullStreet = flat ? `${flat}, ${street}` : street;
+                        const newA = {
+                          id: 'a' + Date.now(),
+                          m: currentUser?.mobile,
+                          name,
+                          phone: phone.replace(/\D/g, '').slice(-10),
+                          flat,
+                          street: fullStreet,
+                          city,
+                          state: state || 'Maharashtra',
+                          pin,
+                          type: addrType || 'Home'
+                        };
+
+                        setAddresses(prev => [...prev, newA]);
+                        setSelectedAddrId(newA.id);
+                        setShowNewAddrForm(false);
+
+                        // Sync to backend API
+                        fetch('/api/users/addresses', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            mobile: currentUser?.mobile,
+                            name: newA.name,
+                            phone: newA.phone,
+                            street: newA.street,
+                            city: newA.city,
+                            state: newA.state,
+                            pin: newA.pin
+                          })
+                        }).catch(() => {});
+
+                        e.currentTarget.reset();
+                        showToast('Address saved & selected for delivery');
+                      }}
+                      className="p-5 sm:p-7 rounded-2xl bg-white border-2 border-black space-y-4 shadow-md"
+                    >
+                      <div className="flex items-center justify-between border-b border-black/10 pb-3">
+                        <div>
+                          <h3 className="font-bold text-sm text-ink flex items-center gap-2">
+                            <span>📍</span> Add New Delivery Address
+                          </h3>
+                          <p className="text-[11px] text-ink/60 mt-0.5">Please ensure all details are accurate for insured luxury dispatch</p>
+                        </div>
+                        {userAddrs.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setShowNewAddrForm(false)}
+                            className="text-xs font-semibold text-ink/60 hover:text-ink transition"
+                          >
+                            ✕ Cancel
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Section 1: Contact Details */}
+                      <div className="grid sm:grid-cols-2 gap-3.5">
+                        <div>
+                          <label className="block text-[11px] font-bold uppercase tracking-wider text-ink/80 mb-1.5">
+                            Full Name / Recipient <span className="text-rose-600">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            name="name"
+                            defaultValue={currentUser?.name || ''}
+                            placeholder="e.g. Ankit Kumar"
+                            className="w-full text-xs px-3.5 py-2.5 rounded-lg bg-white placeholder:text-ink/40 font-medium"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold uppercase tracking-wider text-ink/80 mb-1.5">
+                            10-Digit Mobile Number <span className="text-rose-600">*</span>
+                          </label>
+                          <div className="relative flex items-center">
+                            <span className="absolute left-3 text-xs font-bold text-ink/70 select-none">🇮🇳 +91</span>
+                            <input
+                              type="tel"
+                              required
+                              name="phone"
+                              defaultValue={currentUser?.mobile ? currentUser.mobile.replace(/\D/g, '').slice(-10) : ''}
+                              maxLength={10}
+                              placeholder="9876543210"
+                              pattern="[0-9]{10}"
+                              className="w-full text-xs pl-16 pr-3.5 py-2.5 rounded-lg bg-white placeholder:text-ink/40 font-medium tracking-wide"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Section 2: Building & Flat Details */}
+                      <div className="grid sm:grid-cols-2 gap-3.5">
+                        <div>
+                          <label className="block text-[11px] font-bold uppercase tracking-wider text-ink/80 mb-1.5">
+                            Flat, House No., Building, Floor <span className="text-rose-600">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            name="flat"
+                            placeholder="e.g. Flat 402, Lotus Towers"
+                            className="w-full text-xs px-3.5 py-2.5 rounded-lg bg-white placeholder:text-ink/40 font-medium"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold uppercase tracking-wider text-ink/80 mb-1.5">
+                            Street, Locality, Area, Landmark <span className="text-rose-600">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            name="street"
+                            placeholder="e.g. 100ft Road, Near Metro Station"
+                            className="w-full text-xs px-3.5 py-2.5 rounded-lg bg-white placeholder:text-ink/40 font-medium"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Section 3: Pincode, City, State */}
+                      <div className="grid sm:grid-cols-3 gap-3.5">
+                        <div>
+                          <label className="block text-[11px] font-bold uppercase tracking-wider text-ink/80 mb-1.5">
+                            Pincode <span className="text-rose-600">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            name="pin"
+                            maxLength={6}
+                            placeholder="e.g. 560038"
+                            pattern="[0-9]{6}"
+                            className="w-full text-xs px-3.5 py-2.5 rounded-lg bg-white placeholder:text-ink/40 font-medium tracking-wider"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold uppercase tracking-wider text-ink/80 mb-1.5">
+                            City / District <span className="text-rose-600">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            name="city"
+                            placeholder="e.g. Bengaluru"
+                            className="w-full text-xs px-3.5 py-2.5 rounded-lg bg-white placeholder:text-ink/40 font-medium"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold uppercase tracking-wider text-ink/80 mb-1.5">
+                            State <span className="text-rose-600">*</span>
+                          </label>
+                          <select
+                            name="state"
+                            defaultValue="Maharashtra"
+                            className="w-full text-xs px-3 py-2.5 rounded-lg bg-white font-medium cursor-pointer"
+                          >
+                            {INDIAN_STATES.map(st => (
+                              <option key={st} value={st}>{st}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Section 4: Address Type Pills */}
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase tracking-wider text-ink/80 mb-2">
+                          Save Address As
+                        </label>
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          {[
+                            { id: 'Home', icon: '🏠', label: 'Home (All Day Delivery)' },
+                            { id: 'Work', icon: '🏢', label: 'Work (10 AM - 6 PM)' },
+                            { id: 'Other', icon: '📍', label: 'Other' }
+                          ].map(t => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => setAddrType(t.id)}
+                              className={`px-3.5 py-2 rounded-lg text-xs font-bold border-2 transition flex items-center gap-1.5 ${
+                                addrType === t.id
+                                  ? 'border-black bg-ink text-bone shadow-xs'
+                                  : 'border-black/30 bg-bone hover:border-black text-ink'
+                              }`}
+                            >
+                              <span>{t.icon}</span>
+                              <span>{t.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Submit Action */}
+                      <div className="pt-2">
+                        <button
+                          type="submit"
+                          className="w-full py-3.5 rounded-xl bg-ink hover:bg-brass text-bone hover:text-ink text-xs font-bold transition duration-200 shadow-md flex items-center justify-center gap-2 uppercase tracking-wider"
+                        >
+                          <span>✓</span> Save Address & Deliver Here
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
 
               {/* Order Summary box */}
               <div className="bg-white p-5 rounded-xl border border-ink/10 h-fit space-y-3 shadow-sm text-xs">
@@ -1965,7 +2195,8 @@ export default function App() {
                 </button>
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* Step 2: Payment */}
           {checkoutStep === 2 && (

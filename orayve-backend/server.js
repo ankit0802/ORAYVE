@@ -438,7 +438,7 @@ app.post('/api/auth/register', async (req, res) => {
 
 // POST /api/users/addresses
 app.post('/api/users/addresses', (req, res) => {
-  const { mobile, name, phone, street, city, pin } = req.body;
+  const { mobile, name, phone, street, city, pin, state } = req.body;
   if (!name || !phone || !street || !pin) return res.status(400).json({ success: false, message: 'Missing address fields' });
 
   const newAddr = {
@@ -448,15 +448,16 @@ app.post('/api/users/addresses', (req, res) => {
     phone,
     street,
     city: city || 'Bengaluru',
+    state: state || 'Maharashtra',
     pin
   };
   ADDRESSES.push(newAddr);
 
   if (pool) {
     pool.query(`
-      INSERT INTO public.user_addresses (mobile, recipient_name, phone, street_line1, city, pincode)
-      VALUES ($1, $2, $3, $4, $5, $6);
-    `, [mobile, name, phone, street, city || 'Bengaluru', pin]).catch(() => {});
+      INSERT INTO public.user_addresses (mobile, recipient_name, phone, street_line1, city, state, pincode)
+      VALUES ($1, $2, $3, $4, $5, $6, $7);
+    `, [mobile, name, phone, street, city || 'Bengaluru', state || 'Maharashtra', pin]).catch(err => console.error('[DB] Address insert error:', err.message));
   }
   res.json({ success: true, message: 'Address saved', data: newAddr });
 });
