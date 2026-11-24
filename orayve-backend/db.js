@@ -170,6 +170,21 @@ export async function initDatabase() {
         unit_price DECIMAL(10, 2) NOT NULL,
         quantity INT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS public.product_reviews (
+        review_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        product_id VARCHAR(64) NOT NULL,
+        product_title VARCHAR(200),
+        user_name VARCHAR(120) NOT NULL,
+        user_mobile VARCHAR(20) NOT NULL,
+        rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
+        headline VARCHAR(200),
+        comment TEXT NOT NULL,
+        photos JSONB DEFAULT '[]'::jsonb,
+        is_verified_purchase BOOLEAN DEFAULT TRUE,
+        helpful_votes INT DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
 
     client.release();
