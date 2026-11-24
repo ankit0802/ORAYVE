@@ -489,7 +489,7 @@ app.post('/api/checkout/place-order', (req, res) => {
     const prod = PRODUCTS.find(p => p.id === item.pid);
     if (!prod) continue;
     const variant = prod.v.find(v => v.id === item.vid) || prod.v[0];
-    const qty = Math.max(1, parseInt(item.q || 1));
+    const qty = Math.max(1, parseInt(item.qty || item.q || 1));
 
     // Verify stock
     if (variant.stock < qty) {
@@ -527,13 +527,28 @@ app.post('/api/checkout/place-order', (req, res) => {
   const orderId = `ORD-${year}-${randNum}`;
   const invNumber = `INV-${year}-${randNum}`;
 
-  // Decrement stock and increment sold counter
+  // Decrement stock and increment sold counter in memory AND Neon PostgreSQL
   for (const item of processedItems) {
     const prod = PRODUCTS.find(p => p.id === item.pid);
     if (prod) {
       const v = prod.v.find(x => x.id === item.vid);
       if (v) v.stock = Math.max(0, v.stock - item.qty);
       prod.sold = (prod.sold || 0) + item.qty;
+    }
+
+    // Persist real-time stock reduction and sold count to Neon PostgreSQL
+    if (pool) {
+      pool.query(`
+        UPDATE public.product_variants 
+        SET stock_quantity = GREATEST(0, stock_quantity - $1) 
+        WHERE sku = $2;
+      `, [item.qty, item.sku]).catch(e => console.error('[DB] Stock update error:', e.message));
+
+      pool.query(`
+        UPDATE public.products 
+        SET total_units_sold = COALESCE(total_units_sold, 0) + $1 
+        WHERE title = $2;
+      `, [item.qty, item.title]).catch(e => console.error('[DB] Sold count update error:', e.message));
     }
   }
 
@@ -554,10 +569,11 @@ app.post('/api/checkout/place-order', (req, res) => {
 
   ORDERS.unshift(orderRecord);
 
+  // Persist order and line items to Neon PostgreSQL
   if (pool) {
     pool.query(`
-      INSERT INTO public.orders (order_number, invoice_number, user_mobile, shipping_address_snapshot, subtotal_amount, discount_amount, final_amount, payment_method, order_status, coupon_code)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9)
+      INSERT INTO public.orders (order_number, invoice_number, user_mobile, shipping_address_snapshot, subtotal_amount, discount_amount, final_amount, payment_method, payment_status, order_status, coupon_code)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PAID', 0, $9)
       RETURNING order_id;
     `, [orderId, invNumber, mobile, JSON.stringify(addr), subtotal, discount, finalTotal, pay, coupon || ''])
     .then(res => {
@@ -567,7 +583,7 @@ app.post('/api/checkout/place-order', (req, res) => {
           pool.query(`
             INSERT INTO public.order_items (order_id, product_title, category_name, color_name, sku, hsn_code, unit_price, quantity)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
-          `, [oId, item.title, item.cat, item.color, item.sku, item.hsn, item.price, item.qty]).catch(() => {});
+          `, [oId, item.title, item.cat, item.color, item.sku, item.hsn, item.price, item.qty]).catch(e => console.error('[DB] Item insert error:', e.message));
         }
       }
     }).catch(e => console.error('[DB] Order insert error:', e.message));
@@ -575,9 +591,85 @@ app.post('/api/checkout/place-order', (req, res) => {
   res.json({ success: true, message: `Order ${orderId} placed successfully!`, data: orderRecord });
 });
 
-// GET /api/orders
-app.get('/api/orders', (req, res) => {
+// GET /api/orders (Fetches all live orders from Neon PostgreSQL or in-memory)
+app.get('/api/orders', async (req, res) => {
   const { mobile } = req.query;
+
+  if (pool) {
+    try {
+      let queryStr = `
+        SELECT 
+          o.order_id,
+          o.order_number as id,
+          o.invoice_number as inv,
+          o.user_mobile as mobile,
+          o.shipping_address_snapshot as addr,
+          o.subtotal_amount as sub,
+          o.discount_amount as disc,
+          o.final_amount as total,
+          o.payment_method as pay,
+          o.order_status as status,
+          o.coupon_code as coupon,
+          o.created_at as at,
+          COALESCE(
+            json_agg(
+              json_build_object(
+                'title', oi.product_title,
+                'cat', oi.category_name,
+                'color', oi.color_name,
+                'sku', oi.sku,
+                'hsn', oi.hsn_code,
+                'price', oi.unit_price,
+                'qty', oi.quantity
+              )
+            ) FILTER (WHERE oi.order_item_id IS NOT NULL), '[]'
+          ) as items
+        FROM public.orders o
+        LEFT JOIN public.order_items oi ON oi.order_id = o.order_id
+      `;
+
+      const params = [];
+      if (mobile) {
+        const cleanDigits = mobile.replace(/[^0-9]/g, '');
+        const last10 = cleanDigits.slice(-10);
+        queryStr += ` WHERE o.user_mobile LIKE $1 OR o.user_mobile = $2`;
+        params.push(`%${last10}`, mobile);
+      }
+
+      queryStr += ` GROUP BY o.order_id ORDER BY o.created_at DESC;`;
+
+      const q = await pool.query(queryStr, params);
+      const dbOrders = q.rows.map(r => {
+        let parsedAddr = r.addr;
+        try {
+          if (typeof r.addr === 'string') parsedAddr = JSON.parse(r.addr);
+        } catch {}
+        return {
+          id: r.id,
+          inv: r.inv,
+          mobile: r.mobile,
+          at: new Date(r.at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
+          status: parseInt(r.status) || 0,
+          pay: r.pay,
+          coupon: r.coupon || '',
+          sub: parseFloat(r.sub),
+          disc: parseFloat(r.disc || 0),
+          total: parseFloat(r.total),
+          addr: parsedAddr,
+          items: r.items || []
+        };
+      });
+
+      if (!mobile && dbOrders.length > 0) {
+        ORDERS = dbOrders;
+      }
+
+      return res.json({ success: true, data: dbOrders });
+    } catch (e) {
+      console.error('[DB] Error fetching orders:', e.message);
+    }
+  }
+
   const list = mobile ? ORDERS.filter(o => o.mobile === mobile) : ORDERS;
   res.json({ success: true, data: list });
 });
@@ -687,23 +779,34 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 // GET /api/admin/analytics
-app.get('/api/admin/analytics', (req, res) => {
-  const revenue = ORDERS.reduce((s, o) => s + o.total, 0);
-  const lowStock = PRODUCTS.flatMap(p => p.v.filter(v => v.stock <= 10).map(v => ({ product: p.title, color: v.color, stock: v.stock })));
+app.get('/api/admin/analytics', async (req, res) => {
+  const revenue = ORDERS.reduce((s, o) => s + (Number(o.total) || 0), 0);
+  const totalOrders = ORDERS.length;
+  const totalUnitsSold = PRODUCTS.reduce((s, p) => s + (Number(p.sold) || 0), 0);
+  const avgOrderValue = totalOrders > 0 ? Math.round(revenue / totalOrders) : 0;
+  const lowStock = PRODUCTS.flatMap(p => (p.v || []).filter(v => (v.stock || 0) <= 10).map(v => ({ 
+    product: p.title, 
+    color: v.color, 
+    sku: v.sku,
+    stock: v.stock 
+  })));
   
   // Category sales breakdown
   const categorySales = {};
   ORDERS.forEach(o => {
-    o.items.forEach(it => {
-      const c = categorySales[it.cat] || (categorySales[it.cat] = { units: 0, revenue: 0 });
-      c.units += it.qty;
-      c.revenue += it.price * it.qty;
+    (o.items || []).forEach(it => {
+      const cat = it.cat || 'Accessories';
+      const c = categorySales[cat] || (categorySales[cat] = { units: 0, revenue: 0 });
+      const q = Number(it.qty || it.q || 1);
+      const pr = Number(it.price || 0);
+      c.units += q;
+      c.revenue += pr * q;
     });
   });
 
   // Products to boost (high views, low conversion < 1.8%)
-  const boost = PRODUCTS.filter(p => p.views >= 1200 && (p.sold / p.views) * 100 < 1.8)
-    .sort((a, b) => (a.sold / a.views) - (b.sold / b.views))
+  const boost = PRODUCTS.filter(p => (p.views || 0) >= 1200 && ((p.sold || 0) / (p.views || 1)) * 100 < 1.8)
+    .sort((a, b) => ((a.sold || 0) / (a.views || 1)) - ((b.sold || 0) / (b.views || 1)))
     .slice(0, 6)
     .map(p => ({ title: p.title, views: p.views, sold: p.sold }));
 
@@ -711,7 +814,9 @@ app.get('/api/admin/analytics', (req, res) => {
     success: true,
     data: {
       revenue,
-      ordersCount: ORDERS.length,
+      ordersCount: totalOrders,
+      totalUnitsSold,
+      avgOrderValue,
       liveProductsCount: PRODUCTS.length,
       lowStockCount: lowStock.length,
       lowStockAlerts: lowStock.slice(0, 15),
@@ -722,12 +827,21 @@ app.get('/api/admin/analytics', (req, res) => {
 });
 
 // PUT /api/admin/orders/:id/status
-app.put('/api/admin/orders/:id/status', (req, res) => {
+app.put('/api/admin/orders/:id/status', async (req, res) => {
   const { status } = req.body;
+  const nextStatus = parseInt(status);
   const order = ORDERS.find(o => o.id === req.params.id);
-  if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
-  order.status = parseInt(status);
-  res.json({ success: true, message: 'Order status updated', data: order });
+  if (order) order.status = nextStatus;
+
+  if (pool) {
+    try {
+      await pool.query('UPDATE public.orders SET order_status = $1 WHERE order_number = $2', [nextStatus, req.params.id]);
+    } catch (e) {
+      console.error('[DB] Update order status error:', e.message);
+    }
+  }
+
+  res.json({ success: true, message: 'Order status updated', data: { id: req.params.id, status: nextStatus } });
 });
 
 // POST /api/admin/products
@@ -980,7 +1094,101 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Hydrate initial orders from Neon PostgreSQL
+async function loadOrdersFromDatabase() {
+  if (!pool) return;
+  try {
+    const q = await pool.query(`
+      SELECT 
+        o.order_id,
+        o.order_number as id,
+        o.invoice_number as inv,
+        o.user_mobile as mobile,
+        o.shipping_address_snapshot as addr,
+        o.subtotal_amount as sub,
+        o.discount_amount as disc,
+        o.final_amount as total,
+        o.payment_method as pay,
+        o.order_status as status,
+        o.coupon_code as coupon,
+        o.created_at as at,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'title', oi.product_title,
+              'cat', oi.category_name,
+              'color', oi.color_name,
+              'sku', oi.sku,
+              'hsn', oi.hsn_code,
+              'price', oi.unit_price,
+              'qty', oi.quantity
+            )
+          ) FILTER (WHERE oi.order_item_id IS NOT NULL), '[]'
+        ) as items
+      FROM public.orders o
+      LEFT JOIN public.order_items oi ON oi.order_id = o.order_id
+      GROUP BY o.order_id
+      ORDER BY o.created_at DESC;
+    `);
+    if (q.rows.length > 0) {
+      ORDERS = q.rows.map(r => {
+        let parsedAddr = r.addr;
+        try {
+          if (typeof r.addr === 'string') parsedAddr = JSON.parse(r.addr);
+        } catch {}
+        return {
+          id: r.id,
+          inv: r.inv,
+          mobile: r.mobile,
+          at: new Date(r.at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
+          status: parseInt(r.status) || 0,
+          pay: r.pay,
+          coupon: r.coupon || '',
+          sub: parseFloat(r.sub),
+          disc: parseFloat(r.disc || 0),
+          total: parseFloat(r.total),
+          addr: parsedAddr,
+          items: r.items || []
+        };
+      });
+      console.log(`[DB] Successfully loaded ${ORDERS.length} orders from Neon PostgreSQL.`);
+    }
+  } catch (e) {
+    console.error('[DB] Failed loading initial orders from Neon:', e.message);
+  }
+}
+
+// Synchronize real-time product stock & total units sold from Neon PostgreSQL
+async function loadInventoryFromDatabase() {
+  if (!pool) return;
+  try {
+    const qV = await pool.query('SELECT sku, stock_quantity FROM public.product_variants;');
+    const stockMap = new Map();
+    qV.rows.forEach(r => stockMap.set(r.sku, r.stock_quantity));
+
+    const qP = await pool.query('SELECT title, total_units_sold FROM public.products;');
+    const soldMap = new Map();
+    qP.rows.forEach(r => soldMap.set(r.title, r.total_units_sold));
+
+    for (const p of PRODUCTS) {
+      if (soldMap.has(p.title)) {
+        p.sold = soldMap.get(p.title);
+      }
+      for (const v of p.v) {
+        if (stockMap.has(v.sku)) {
+          v.stock = stockMap.get(v.sku);
+        }
+      }
+    }
+    console.log('[DB] Synchronized product stock and sales counters from Neon PostgreSQL.');
+  } catch (e) {
+    console.error('[DB] Failed synchronizing inventory from Neon:', e.message);
+  }
+}
+
 app.listen(PORT, async () => {
   console.log(`[ORAYVE] API Server listening on port ${PORT}`);
   await initDatabase();
+  await loadOrdersFromDatabase();
+  await loadInventoryFromDatabase();
 });

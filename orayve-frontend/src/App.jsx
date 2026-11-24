@@ -371,6 +371,8 @@ export default function App() {
   const [adminPassInput, setAdminPassInput] = useState('');
   const [adminTab, setAdminTab] = useState('analytics'); // 'analytics', 'orders', 'products', 'categories', 'users', 'coupons'
   const [adminSearch, setAdminSearch] = useState('');
+  const [adminOrderFilter, setAdminOrderFilter] = useState('ALL');
+  const [adminOrderSearch, setAdminOrderSearch] = useState('');
   const [editingProduct, setEditingProduct] = useState(null);
   const [productImgs, setProductImgs] = useState([]);
   const [editingCategory, setEditingCategory] = useState(null);
@@ -457,8 +459,34 @@ export default function App() {
     } catch {}
   }, [cart, wishlist, orders, addresses, users, currentUser, products, categories, coupons]);
 
-  // Synchronize with live backend if available
+  // Live Database Sync Helper
+  const refreshLiveOrders = () => {
+    fetch('/api/orders')
+      .then(r => r.json())
+      .then(res => {
+        if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+          setOrders(res.data);
+        }
+      })
+      .catch(() => {});
+  };
+
+  const refreshLiveProducts = () => {
+    fetch('/api/catalog/products?limit=260')
+      .then(r => r.json())
+      .then(res => {
+        if (res.success && res.data?.items && res.data.items.length > 0) {
+          setProducts(res.data.items);
+        }
+      })
+      .catch(() => {});
+  };
+
+  // Synchronize with live Neon backend on mount
   useEffect(() => {
+    refreshLiveOrders();
+    refreshLiveProducts();
+
     fetch('/api/catalog/categories')
       .then(r => r.json())
       .then(res => {
@@ -482,6 +510,14 @@ export default function App() {
       })
       .catch(() => {});
   }, []);
+
+  // Re-fetch live orders and stock whenever Admin or Orders view is opened
+  useEffect(() => {
+    if (view === 'admin' || view === 'orders') {
+      refreshLiveOrders();
+      refreshLiveProducts();
+    }
+  }, [view, adminTab]);
 
   // Variant selector helper
   const getActiveVariant = p => {
@@ -684,7 +720,7 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     const addr = addresses.find(a => a.id === selectedAddrId);
     if (!addr) return showToast('Select or add a delivery address', true);
     if (!cartSummary.items.length) return showToast('Your bag is empty', true);
@@ -693,9 +729,10 @@ export default function App() {
     const rand = Math.floor(100000 + Math.random() * 900000);
     const orderId = `ORD-${year}-${rand}`;
     const invId = `INV-${year}-${rand}`;
+    const userMobile = currentUser?.mobile || addr.mobile || addr.phone || addr.m || '9999999999';
 
     const orderData = {
-      mobile: currentUser?.mobile,
+      mobile: userMobile,
       id: orderId,
       inv: invId,
       at: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
@@ -719,13 +756,13 @@ export default function App() {
       }))
     };
 
-    // Decrement stock client-side
+    // Decrement stock client-side immediately
     setProducts(prev => prev.map(p => {
       const match = cartSummary.items.filter(it => it.p.id === p.id);
       if (!match.length) return p;
       return {
         ...p,
-        sold: p.sold + match.reduce((s, it) => s + it.q, 0),
+        sold: (p.sold || 0) + match.reduce((s, it) => s + it.q, 0),
         v: p.v.map(v => {
           const m = match.find(it => it.v.id === v.id);
           return m ? { ...v, stock: Math.max(0, v.stock - m.q) } : v;
@@ -733,23 +770,38 @@ export default function App() {
       };
     }));
 
-    // Post to backend API
-    fetch('/api/checkout/place-order', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        mobile: currentUser?.mobile,
-        addr,
-        items: orderData.items,
-        pay: paymentMethod,
-        coupon: appliedCoupon
-      })
-    }).catch(() => {});
+    // Post order to live backend (Neon PostgreSQL)
+    try {
+      const res = await fetch('/api/checkout/place-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mobile: userMobile,
+          addr,
+          items: orderData.items,
+          pay: paymentMethod,
+          coupon: appliedCoupon
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setOrders(prev => [data.data, ...prev.filter(o => o.id !== data.data.id)]);
+        setLastPlacedOrder(data.data);
+      } else {
+        setOrders(prev => [orderData, ...prev]);
+        setLastPlacedOrder(orderData);
+      }
+    } catch {
+      setOrders(prev => [orderData, ...prev]);
+      setLastPlacedOrder(orderData);
+    }
 
-    setOrders(prev => [orderData, ...prev]);
+    // Refresh live inventory & orders from Neon DB
+    refreshLiveProducts();
+    refreshLiveOrders();
+
     setCart([]);
     setAppliedCoupon('');
-    setLastPlacedOrder(orderData);
     setCheckoutStep(3);
     showToast(`Order ${orderId} confirmed!`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2307,59 +2359,75 @@ export default function App() {
                 </button>
               </div>
 
-              <h1 className="serif text-3xl mb-6 font-bold">
-                Order History ({orders.filter(o => o.mobile === currentUser.mobile).length})
-              </h1>
+              {(() => {
+                const userMob10 = (currentUser.mobile || '').replace(/[^0-9]/g, '').slice(-10);
+                const myOrders = orders.filter(o => {
+                  const oMob10 = (o.mobile || o.addr?.phone || o.addr?.mobile || o.addr?.m || '').replace(/[^0-9]/g, '').slice(-10);
+                  return oMob10 && oMob10 === userMob10;
+                });
 
-              {orders.filter(o => o.mobile === currentUser.mobile).length > 0 ? (
-                <div className="space-y-4">
-                  {orders.filter(o => o.mobile === currentUser.mobile).map(o => (
-                    <div key={o.id} className="bg-white rounded-xl border border-ink/10 p-5 shadow-sm">
-                      <div className="flex flex-wrap justify-between items-center gap-2 pb-3 border-b border-ink/10">
-                        <div>
-                          <b className="text-sm">{o.id}</b>
-                          <span className="text-xs text-ink/55 ml-2">{o.at}</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <b>{inr(o.total)}</b>
-                          <button
-                            onClick={() => setInvoiceModalOrder(o)}
-                            className="px-3 py-1.5 rounded-lg bg-bone border border-brass/40 text-xs font-bold hover:bg-brass hover:text-ink transition"
-                          >
-                            Download Bill
-                          </button>
-                        </div>
-                      </div>
+                return (
+                  <>
+                    <h1 className="serif text-3xl mb-6 font-bold">
+                      Order History ({myOrders.length})
+                    </h1>
 
-                      {/* 4-Stage Visual Order Tracking */}
-                      <div className="grid grid-cols-4 gap-2 py-4">
-                        {STAT.map((s, idx) => (
-                          <div key={s} className="text-center">
-                            <div className={`h-1.5 rounded-full mb-2 ${idx <= o.status ? 'bg-brass' : 'bg-ink/10'}`} />
-                            <p className={`text-[10px] font-bold ${idx <= o.status ? 'text-ink' : 'opacity-40'}`}>
-                              {s}
-                            </p>
+                    {myOrders.length > 0 ? (
+                      <div className="space-y-4">
+                        {myOrders.map(o => (
+                          <div key={o.id} className="bg-white rounded-xl border border-ink/10 p-5 shadow-sm">
+                            <div className="flex flex-wrap justify-between items-center gap-2 pb-3 border-b border-ink/10">
+                              <div>
+                                <b className="text-sm">{o.id}</b>
+                                <span className="text-xs text-ink/55 ml-2">{o.at}</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <b>{inr(o.total)}</b>
+                                <button
+                                  onClick={() => setInvoiceModalOrder(o)}
+                                  className="px-3 py-1.5 rounded-lg bg-bone border border-brass/40 text-xs font-bold hover:bg-brass hover:text-ink transition"
+                                >
+                                  Download Bill
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* 4-Stage Visual Order Tracking */}
+                            <div className="grid grid-cols-4 gap-2 py-4">
+                              {STAT.map((s, idx) => (
+                                <div key={s} className="text-center">
+                                  <div className={`h-1.5 rounded-full mb-2 ${idx <= o.status ? 'bg-brass' : 'bg-ink/10'}`} />
+                                  <p className={`text-[10px] font-bold ${idx <= o.status ? 'text-ink' : 'opacity-40'}`}>
+                                    {s}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Items */}
+                            <div className="space-y-1 pt-2 border-t border-ink/5">
+                              {(o.items || []).map((item, idx) => {
+                                const q = Number(item.qty || item.q || 1);
+                                const p = Number(item.price || 0);
+                                return (
+                                  <div key={idx} className="flex justify-between text-xs text-ink/80">
+                                    <span>{item.title} ({item.color || 'Standard'}) × {q}</span>
+                                    <b>{inr(p * q)}</b>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         ))}
                       </div>
-
-                      {/* Items */}
-                      <div className="space-y-1 pt-2 border-t border-ink/5">
-                        {o.items.map((item, idx) => (
-                          <div key={idx} className="flex justify-between text-xs text-ink/80">
-                            <span>{item.title} ({item.color}) × {item.qty}</span>
-                            <b>{inr(item.price * item.qty)}</b>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="py-16 text-center text-ink/60">
-                  No orders yet — place one from the storefront.
-                </p>
-              )}
+                    ) : (
+                      <p className="py-16 text-center text-ink/60">
+                        No orders yet — place one from the storefront.
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
             </>
           )}
         </main>
@@ -2407,8 +2475,27 @@ export default function App() {
             <div>
               {/* Admin Nav Header */}
               <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-                <h1 className="serif text-3xl font-bold">Admin Console</h1>
-                <div className="flex flex-wrap gap-2">
+                <div>
+                  <h1 className="serif text-3xl font-bold flex items-center gap-3">
+                    Admin Console
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Neon DB Live
+                    </span>
+                  </h1>
+                  <p className="text-xs text-ink/60 mt-1">Real-time Neon PostgreSQL order processing & inventory intelligence</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => {
+                      refreshLiveOrders();
+                      refreshLiveProducts();
+                      showToast('Orders & inventory synchronized with database');
+                    }}
+                    className="px-3.5 py-2 rounded-lg bg-white border border-ink/20 text-xs font-bold hover:bg-bone transition flex items-center gap-1.5 shadow-sm"
+                    title="Sync latest records from Neon DB"
+                  >
+                    <span>🔄</span> Sync Neon DB
+                  </button>
                   {['analytics', 'orders', 'products', 'categories', 'users', 'coupons'].map(tab => (
                     <button
                       key={tab}
@@ -2417,7 +2504,7 @@ export default function App() {
                         adminTab === tab ? 'bg-ink text-bone shadow' : 'bg-white border border-ink/15 hover:bg-bone'
                       }`}
                     >
-                      {tab}
+                      {tab} {tab === 'orders' ? `(${orders.length})` : ''}
                     </button>
                   ))}
                   <button
@@ -2425,7 +2512,7 @@ export default function App() {
                       setAdminLoggedIn(false);
                       setView('store');
                     }}
-                    className="px-4 py-2 rounded-lg text-xs font-bold text-rose-700 hover:bg-rose-50"
+                    className="px-4 py-2 rounded-lg text-xs font-bold text-rose-700 hover:bg-rose-50 border border-rose-200"
                   >
                     Sign out
                   </button>
@@ -2434,45 +2521,98 @@ export default function App() {
 
               {/* Tab 1: Analytics */}
               {adminTab === 'analytics' && (() => {
-                const totalRev = orders.reduce((s, o) => s + o.total, 0);
-                const lowStockList = products.flatMap(p => p.v.filter(v => v.stock <= 10).map(v => ({ p, v })));
-                const boost = products.filter(p => p.views >= 1200 && (p.sold / p.views) * 100 < 1.8).slice(0, 6);
+                const totalRev = orders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+                const totalOrders = orders.length;
+                const totalUnitsSold = products.reduce((s, p) => s + (Number(p.sold) || 0), 0);
+                const avgOrderValue = totalOrders > 0 ? Math.round(totalRev / totalOrders) : 0;
+                const lowStockList = products.flatMap(p => (p.v || []).filter(v => (v.stock || 0) <= 10).map(v => ({ p, v })));
+                const outOfStockList = products.flatMap(p => (p.v || []).filter(v => (v.stock || 0) === 0).map(v => ({ p, v })));
+                const boost = products.filter(p => (p.views || 0) >= 1200 && ((p.sold || 0) / (p.views || 1)) * 100 < 1.8).slice(0, 6);
+
+                // Category breakdown
+                const catMap = {};
+                categories.forEach(c => { catMap[c.name] = { name: c.name, units: 0, rev: 0 }; });
+                orders.forEach(o => {
+                  (o.items || []).forEach(it => {
+                    const cat = it.cat || 'Accessories';
+                    if (!catMap[cat]) catMap[cat] = { name: cat, units: 0, rev: 0 };
+                    const q = Number(it.qty || it.q || 1);
+                    const pr = Number(it.price || 0);
+                    catMap[cat].units += q;
+                    catMap[cat].rev += pr * q;
+                  });
+                });
+                const catStats = Object.values(catMap).sort((a, b) => b.rev - a.rev);
 
                 return (
                   <div className="space-y-6">
+                    {/* KPI Cards */}
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                       {[
-                        ['Revenue', inr(totalRev)],
-                        ['Orders', orders.length],
-                        ['Live Products', products.length],
-                        ['Low-stock SKUs', lowStockList.length]
-                      ].map(([lbl, val]) => (
-                        <div key={lbl} className="bg-white p-5 rounded-xl border border-ink/10 shadow-sm">
-                          <p className="text-xs text-ink/60 font-semibold">{lbl}</p>
-                          <p className="text-2xl font-bold mt-1">{val}</p>
+                        { lbl: 'Total Revenue', val: inr(totalRev), sub: 'Gross revenue from live orders' },
+                        { lbl: 'Total Orders', val: totalOrders, sub: 'Stored in Neon PostgreSQL' },
+                        { lbl: 'Units Sold', val: totalUnitsSold, sub: 'Real-time inventory deduction' },
+                        { lbl: 'Average Order Value (AOV)', val: inr(avgOrderValue), sub: 'Per customer transaction' },
+                        { lbl: 'Live Products', val: products.length, sub: `${products.reduce((s, p) => s + (p.v?.length || 0), 0)} SKU variants active` },
+                        { lbl: 'Low Stock SKUs (≤10)', val: lowStockList.length, sub: `${outOfStockList.length} out of stock`, alert: lowStockList.length > 0 },
+                      ].map(kpi => (
+                        <div key={kpi.lbl} className={`bg-white p-5 rounded-xl border shadow-sm ${kpi.alert ? 'border-amber-300 bg-amber-50/20' : 'border-ink/10'}`}>
+                          <p className="text-xs text-ink/60 font-semibold">{kpi.lbl}</p>
+                          <p className="text-2xl font-bold mt-1 text-ink">{kpi.val}</p>
+                          <p className="text-[11px] text-ink/50 mt-1">{kpi.sub}</p>
                         </div>
                       ))}
                     </div>
 
+                    {/* Analytics Breakdown Grid */}
                     <div className="grid lg:grid-cols-2 gap-6">
+                      {/* Category Revenue Breakdown */}
                       <div className="bg-white p-5 rounded-xl border border-ink/10 shadow-sm">
-                        <h3 className="serif text-lg mb-2 font-bold">Products to boost</h3>
-                        {boost.map(p => (
-                          <div key={p.id} className="text-xs py-1.5 flex justify-between border-b border-ink/5 last:border-0">
-                            <span>{p.title}</span>
-                            <span className="text-ink/60">{p.views} views · {p.sold} sold</span>
-                          </div>
-                        ))}
+                        <div className="flex justify-between items-center mb-3">
+                          <h3 className="serif text-lg font-bold">Category Sales Distribution</h3>
+                          <span className="text-xs text-ink/50">{categories.length} Categories</span>
+                        </div>
+                        <div className="space-y-3">
+                          {catStats.slice(0, 7).map(c => {
+                            const pct = totalRev > 0 ? Math.round((c.rev / totalRev) * 100) : 0;
+                            return (
+                              <div key={c.name} className="text-xs">
+                                <div className="flex justify-between font-semibold mb-1">
+                                  <span>{c.name}</span>
+                                  <span>{inr(c.rev)} ({c.units} units · {pct}%)</span>
+                                </div>
+                                <div className="w-full bg-bone h-2 rounded-full overflow-hidden border border-ink/5">
+                                  <div className="bg-brass h-full rounded-full transition-all duration-500" style={{ width: `${Math.max(4, pct)}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
 
+                      {/* Low Stock Alerts */}
                       <div className="bg-white p-5 rounded-xl border border-ink/10 shadow-sm">
-                        <h3 className="serif text-lg mb-2 font-bold">Low stock alerts</h3>
-                        {lowStockList.slice(0, 10).map(({ p, v }) => (
-                          <div key={v.id} className="text-xs py-1.5 flex justify-between border-b border-ink/5 last:border-0">
-                            <span>{p.title} · {v.color}</span>
-                            <b className="text-amber-700">{v.stock} left</b>
+                        <div className="flex justify-between items-center mb-3">
+                          <h3 className="serif text-lg font-bold">Real-time Stock Alerts</h3>
+                          <span className="text-xs text-amber-700 font-bold">{lowStockList.length} SKUs Alert</span>
+                        </div>
+                        {lowStockList.length > 0 ? (
+                          <div className="divide-y divide-ink/5 max-h-80 overflow-y-auto pr-1">
+                            {lowStockList.slice(0, 15).map(({ p, v }) => (
+                              <div key={v.sku || (p.id + v.color)} className="py-2.5 flex justify-between items-center text-xs">
+                                <div>
+                                  <span className="font-semibold block">{p.title}</span>
+                                  <span className="text-ink/60 text-[11px]">{v.color} · SKU: {v.sku}</span>
+                                </div>
+                                <span className={`px-2 py-0.5 rounded font-bold text-[11px] ${v.stock === 0 ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}`}>
+                                  {v.stock === 0 ? 'OUT OF STOCK' : `${v.stock} left`}
+                                </span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        ) : (
+                          <p className="text-xs text-ink/60 py-8 text-center">All product variants healthy (stock &gt; 10).</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2480,40 +2620,172 @@ export default function App() {
               })()}
 
               {/* Tab 2: Orders */}
-              {adminTab === 'orders' && (
-                <div className="space-y-3">
-                  {orders.length ? orders.map(o => (
-                    <div key={o.id} className="bg-white p-4 rounded-xl border border-ink/10 flex flex-wrap justify-between items-center gap-3 shadow-sm">
-                      <div>
-                        <b className="text-sm">{o.id} · {o.addr.name} ({o.pay})</b>
-                        <p className="text-xs text-ink/70">{o.items.map(i => `${i.title} ×${i.qty}`).join(', ')}</p>
-                        <b className="text-xs text-brass">{inr(o.total)}</b>
-                      </div>
+              {adminTab === 'orders' && (() => {
+                const filteredOrders = orders.filter(o => {
+                  if (adminOrderFilter !== 'ALL' && o.status !== parseInt(adminOrderFilter)) return false;
+                  if (!adminOrderSearch) return true;
+                  const s = adminOrderSearch.toLowerCase();
+                  const idMatch = (o.id || '').toLowerCase().includes(s);
+                  const invMatch = (o.inv || '').toLowerCase().includes(s);
+                  const nameMatch = (o.addr?.name || '').toLowerCase().includes(s);
+                  const mobMatch = (o.mobile || o.addr?.phone || o.addr?.mobile || '').includes(s);
+                  return idMatch || invMatch || nameMatch || mobMatch;
+                });
 
-                      <select
-                        value={o.status}
-                        onChange={e => {
-                          const nextStatus = parseInt(e.target.value);
-                          setOrders(orders.map(x => x.id === o.id ? { ...x, status: nextStatus } : x));
-                          fetch(`/api/admin/orders/${o.id}/status`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json', 'x-admin-passcode': ADMIN_PASS },
-                            body: JSON.stringify({ status: nextStatus })
-                          }).catch(() => {});
-                          showToast('Order status updated');
-                        }}
-                        className="!bg-ink !text-bone font-bold text-xs"
-                      >
-                        {STAT.map((s, idx) => (
-                          <option key={s} value={idx}>{s}</option>
-                        ))}
-                      </select>
+                return (
+                  <div className="space-y-4">
+                    {/* Orders Filter & Search Toolbar */}
+                    <div className="bg-white p-4 rounded-xl border border-ink/10 shadow-sm flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          value={adminOrderSearch}
+                          onChange={e => setAdminOrderSearch(e.target.value)}
+                          placeholder="Search Order ID, Customer Name, Mobile..."
+                          className="text-xs max-w-xs"
+                        />
+                        <select
+                          value={adminOrderFilter}
+                          onChange={e => setAdminOrderFilter(e.target.value)}
+                          className="text-xs !bg-bone !border-ink/20"
+                        >
+                          <option value="ALL">All Statuses ({orders.length})</option>
+                          {STAT.map((s, idx) => (
+                            <option key={s} value={idx}>{s} ({orders.filter(o => o.status === idx).length})</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="text-xs text-ink/60 font-semibold">
+                        Showing {filteredOrders.length} of {orders.length} orders
+                      </div>
                     </div>
-                  )) : (
-                    <p className="text-sm text-ink/60">No orders yet.</p>
-                  )}
-                </div>
-              )}
+
+                    {/* Orders List */}
+                    {filteredOrders.length ? (
+                      <div className="space-y-4">
+                        {filteredOrders.map(o => {
+                          const addr = o.addr || {};
+                          const customerName = addr.name || 'Valued Customer';
+                          const customerPhone = addr.phone || addr.mobile || addr.m || o.mobile || 'N/A';
+                          const fullAddress = [
+                            addr.address || addr.street || addr.street_line1 || '',
+                            addr.city,
+                            addr.state,
+                            addr.pin || addr.pincode
+                          ].filter(Boolean).join(', ');
+
+                          return (
+                            <div key={o.id} className="bg-white rounded-xl border border-ink/10 p-5 shadow-sm space-y-4">
+                              {/* Order Top Bar */}
+                              <div className="flex flex-wrap justify-between items-center gap-3 pb-3 border-b border-ink/10">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <b className="text-sm font-bold text-ink">{o.id}</b>
+                                    <span className="text-[11px] text-ink/50 bg-bone px-2 py-0.5 rounded border border-ink/10 font-mono">
+                                      {o.inv || 'INV-TAX'}
+                                    </span>
+                                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded">
+                                      PAID ({o.pay || 'PREPAID'})
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-ink/60 mt-0.5">{o.at}</p>
+                                </div>
+
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    onClick={() => setInvoiceModalOrder(o)}
+                                    className="px-3 py-1.5 rounded-lg bg-bone border border-brass/40 text-xs font-bold hover:bg-brass hover:text-ink transition"
+                                  >
+                                    🧾 Tax Invoice
+                                  </button>
+
+                                  <select
+                                    value={o.status}
+                                    onChange={e => {
+                                      const nextStatus = parseInt(e.target.value);
+                                      setOrders(orders.map(x => x.id === o.id ? { ...x, status: nextStatus } : x));
+                                      fetch(`/api/admin/orders/${o.id}/status`, {
+                                        method: 'PUT',
+                                        headers: { 'Content-Type': 'application/json', 'x-admin-passcode': ADMIN_PASS },
+                                        body: JSON.stringify({ status: nextStatus })
+                                      }).catch(() => {});
+                                      showToast(`Order ${o.id} marked as ${STAT[nextStatus]}`);
+                                    }}
+                                    className="!bg-ink !text-bone font-bold text-xs"
+                                  >
+                                    {STAT.map((s, idx) => (
+                                      <option key={s} value={idx}>{s}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+
+                              {/* Customer & Shipping Summary */}
+                              <div className="grid md:grid-cols-2 gap-4 text-xs bg-bone/40 p-3.5 rounded-lg border border-ink/5">
+                                <div>
+                                  <p className="text-[10px] uppercase font-bold text-ink/50 tracking-wider">Customer Details</p>
+                                  <p className="font-bold text-ink mt-0.5">{customerName}</p>
+                                  <p className="text-ink/70">📞 +91 {customerPhone.replace(/[^0-9]/g, '').slice(-10)}</p>
+                                  {o.coupon && (
+                                    <p className="text-[11px] text-brass font-bold mt-1">🎟️ Coupon Applied: {o.coupon}</p>
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="text-[10px] uppercase font-bold text-ink/50 tracking-wider">Shipping Destination</p>
+                                  <p className="text-ink/80 mt-0.5">{fullAddress || 'Address on file'}</p>
+                                  <span className="inline-block mt-1 text-[10px] bg-ink/10 px-2 py-0.5 rounded font-bold uppercase">
+                                    {addr.type || 'Standard Delivery'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Line Items */}
+                              <div className="space-y-2 pt-1">
+                                <p className="text-[10px] uppercase font-bold text-ink/50 tracking-wider">Order Items</p>
+                                <div className="divide-y divide-ink/5">
+                                  {(o.items || []).map((item, idx) => {
+                                    const qty = Number(item.qty || item.q || 1);
+                                    const price = Number(item.price || 0);
+                                    return (
+                                      <div key={idx} className="py-1.5 flex justify-between items-center text-xs">
+                                        <div>
+                                          <span className="font-semibold">{item.title}</span>
+                                          <span className="text-ink/60 text-[11px] ml-2">
+                                            ({item.color || 'Standard'}) · SKU: {item.sku || 'N/A'} · HSN: {item.hsn || '71171990'}
+                                          </span>
+                                        </div>
+                                        <div className="text-right">
+                                          <span className="text-ink/70 mr-3">{inr(price)} × {qty}</span>
+                                          <b className="font-bold">{inr(price * qty)}</b>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Pricing Breakdown */}
+                              <div className="pt-3 border-t border-ink/10 flex justify-between items-center text-xs">
+                                <span className="text-ink/60">
+                                  Subtotal: {inr(o.sub || o.total)} {o.disc > 0 ? `· Discount: -${inr(o.disc)}` : ''}
+                                </span>
+                                <div className="text-right">
+                                  <span className="text-ink/60 mr-2">Grand Total:</span>
+                                  <b className="text-base text-brass font-bold">{inr(o.total)}</b>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="bg-white p-12 text-center rounded-xl border border-ink/10">
+                        <p className="text-sm font-semibold text-ink">No orders found matching criteria.</p>
+                        <p className="text-xs text-ink/60 mt-1">Place an order from the storefront or clear your filter.</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Tab 3: Products */}
               {adminTab === 'products' && (
@@ -2651,10 +2923,11 @@ export default function App() {
                     <table className="w-full text-left text-xs">
                       <thead className="bg-ink text-bone">
                         <tr>
-                          <th className="p-3">Product</th>
+                          <th className="p-3">Product & Variants</th>
                           <th className="p-3">Category</th>
-                          <th className="p-3">Price</th>
-                          <th className="p-3">Stock</th>
+                          <th className="p-3">Price Range</th>
+                          <th className="p-3">Sold</th>
+                          <th className="p-3">Inventory Stock</th>
                           <th className="p-3 text-right">Actions</th>
                         </tr>
                       </thead>
@@ -2662,33 +2935,55 @@ export default function App() {
                         {products
                           .filter(p => !adminSearch || (p.title + p.cat).toLowerCase().includes(adminSearch.toLowerCase()))
                           .slice(0, 40)
-                          .map(p => (
-                            <tr key={p.id}>
-                              <td className="p-3 font-semibold">{p.title}</td>
-                              <td className="p-3">{p.cat}</td>
-                              <td className="p-3">{p.v.map(v => inr(v.price)).join(' / ')}</td>
-                              <td className="p-3">{p.v.reduce((s, v) => s + v.stock, 0)}</td>
-                              <td className="p-3 text-right space-x-3">
-                                <button
-                                  onClick={() => setEditingProduct(p)}
-                                  className="text-brass font-bold hover:underline"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    if (confirm('Delete this product?')) {
-                                      setProducts(products.filter(x => x.id !== p.id));
-                                      showToast('Product deleted');
-                                    }
-                                  }}
-                                  className="text-rose-600 font-bold hover:underline"
-                                >
-                                  Delete
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                          .map(p => {
+                            const totStock = (p.v || []).reduce((s, v) => s + (v.stock || 0), 0);
+                            const hasLowStock = (p.v || []).some(v => (v.stock || 0) <= 10);
+                            const isOutOfStock = totStock === 0;
+
+                            return (
+                              <tr key={p.id}>
+                                <td className="p-3">
+                                  <span className="font-semibold block">{p.title}</span>
+                                  <span className="text-ink/60 text-[11px]">
+                                    {(p.v || []).map(v => `${v.color} (${v.stock})`).join(' · ')}
+                                  </span>
+                                </td>
+                                <td className="p-3">{p.cat}</td>
+                                <td className="p-3 font-medium">{(p.v || []).map(v => inr(v.price)).join(' / ')}</td>
+                                <td className="p-3 font-bold text-brass">{p.sold || 0}</td>
+                                <td className="p-3">
+                                  <span className={`inline-block px-2 py-0.5 rounded font-bold text-[11px] ${
+                                    isOutOfStock
+                                      ? 'bg-rose-100 text-rose-800'
+                                      : hasLowStock
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : 'bg-emerald-50 text-emerald-800'
+                                  }`}>
+                                    {totStock} in stock
+                                  </span>
+                                </td>
+                                <td className="p-3 text-right space-x-3">
+                                  <button
+                                    onClick={() => setEditingProduct(p)}
+                                    className="text-brass font-bold hover:underline"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      if (confirm('Delete this product?')) {
+                                        setProducts(products.filter(x => x.id !== p.id));
+                                        showToast('Product deleted');
+                                      }
+                                    }}
+                                    className="text-rose-600 font-bold hover:underline"
+                                  >
+                                    Delete
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
                       </tbody>
                     </table>
                   </div>
