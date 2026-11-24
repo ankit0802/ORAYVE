@@ -387,6 +387,15 @@ export default function App() {
         if (res.success && res.data) setCoupons(res.data);
       })
       .catch(() => {});
+
+    fetch('/api/admin/users')
+      .then(r => r.json())
+      .then(res => {
+        if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+          setUsers(res.data);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Variant selector helper
@@ -1790,6 +1799,19 @@ export default function App() {
                     };
                     setAddresses(prev => [...prev, newA]);
                     setSelectedAddrId(newA.id);
+                    // Post to backend API
+                    fetch('/api/users/addresses', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        mobile: currentUser?.mobile,
+                        name: newA.name,
+                        phone: newA.phone,
+                        street: newA.street,
+                        city: newA.city,
+                        pin: newA.pin
+                      })
+                    }).catch(() => {});
                     e.currentTarget.reset();
                     showToast('Address saved');
                   }}
@@ -2497,8 +2519,15 @@ export default function App() {
                             </td>
                             <td className="p-3 text-right space-x-3">
                               <button
-                                onClick={() => {
+                                onClick={async () => {
                                   const nextBan = !u.banned;
+                                  try {
+                                    await fetch(`/api/admin/users/${u.mobile}/ban`, {
+                                      method: 'PATCH',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ banned: nextBan })
+                                    });
+                                  } catch {}
                                   setUsers(users.map(x => x.mobile === u.mobile ? { ...x, banned: nextBan } : x));
                                   if (nextBan && currentUser?.mobile === u.mobile) setCurrentUser(null);
                                   showToast(nextBan ? 'User banned' : 'User unbanned');
@@ -2508,8 +2537,11 @@ export default function App() {
                                 {u.banned ? 'Unban' : 'Ban'}
                               </button>
                               <button
-                                onClick={() => {
+                                onClick={async () => {
                                   if (confirm(`Delete user ${u.name}?`)) {
+                                    try {
+                                      await fetch(`/api/admin/users/${u.mobile}`, { method: 'DELETE' });
+                                    } catch {}
                                     setUsers(users.filter(x => x.mobile !== u.mobile));
                                     showToast('User deleted');
                                   }
@@ -2739,7 +2771,7 @@ export default function App() {
       {authModal && (
         <div className="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4">
           <form
-            onSubmit={e => {
+            onSubmit={async e => {
               e.preventDefault();
               const fd = new FormData(e.currentTarget);
               const mobile = (fd.get('mobile') || '').trim();
@@ -2748,25 +2780,72 @@ export default function App() {
               if (otp !== '123456') return showToast('Invalid OTP (demo OTP: 123456)', true);
 
               if (authModal === 'login') {
-                const u = users.find(x => x.mobile === mobile);
-                if (!u) return showToast('No account found — please register', true);
-                if (u.banned) return showToast('Account suspended. Contact support.', true);
-                setCurrentUser(u);
-                showToast(`Welcome, ${u.name.split(' ')[0]}`);
+                try {
+                  const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mobile, otp })
+                  }).then(r => r.json());
+
+                  if (res.success && res.data?.user) {
+                    setCurrentUser(res.data.user);
+                    setUsers(prev => prev.some(x => x.mobile === res.data.user.mobile) ? prev : [...prev, res.data.user]);
+                    showToast(res.message || `Welcome, ${res.data.user.name.split(' ')[0]}`);
+                  } else {
+                    const u = users.find(x => x.mobile === mobile);
+                    if (!u) return showToast(res.message || 'No account found — please register', true);
+                    if (u.banned) return showToast('Account suspended. Contact support.', true);
+                    setCurrentUser(u);
+                    showToast(`Welcome, ${u.name.split(' ')[0]}`);
+                  }
+                } catch {
+                  const u = users.find(x => x.mobile === mobile);
+                  if (!u) return showToast('No account found — please register', true);
+                  if (u.banned) return showToast('Account suspended. Contact support.', true);
+                  setCurrentUser(u);
+                  showToast(`Welcome, ${u.name.split(' ')[0]}`);
+                }
               } else {
-                if (users.some(x => x.mobile === mobile)) return showToast('Mobile already registered', true);
+                const name = (fd.get('name') || '').trim();
+                const age = +fd.get('age') || 25;
                 const email = (fd.get('email') || '').trim();
-                const nu = {
-                  name: (fd.get('name') || '').trim(),
-                  age: +fd.get('age') || 25,
-                  email,
-                  mobile,
-                  at: new Date().toLocaleDateString('en-IN'),
-                  banned: false
-                };
-                setUsers([...users, nu]);
-                setCurrentUser(nu);
-                showToast(`Welcome, ${nu.name.split(' ')[0]}`);
+
+                try {
+                  const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, age, email, mobile, otp })
+                  }).then(r => r.json());
+
+                  if (!res.success) {
+                    return showToast(res.message || 'Registration failed', true);
+                  }
+
+                  const registeredUser = res.data?.user || {
+                    name,
+                    age,
+                    email,
+                    mobile,
+                    at: new Date().toLocaleDateString('en-IN'),
+                    banned: false
+                  };
+
+                  setUsers(prev => [...prev.filter(x => x.mobile !== mobile), registeredUser]);
+                  setCurrentUser(registeredUser);
+                  showToast(`Welcome, ${registeredUser.name.split(' ')[0]}`);
+                } catch {
+                  const nu = {
+                    name,
+                    age,
+                    email,
+                    mobile,
+                    at: new Date().toLocaleDateString('en-IN'),
+                    banned: false
+                  };
+                  setUsers(prev => [...prev.filter(x => x.mobile !== mobile), nu]);
+                  setCurrentUser(nu);
+                  showToast(`Welcome, ${nu.name.split(' ')[0]}`);
+                }
               }
 
               setAuthModal(null);

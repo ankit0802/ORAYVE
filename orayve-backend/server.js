@@ -11,7 +11,7 @@ import { encryptAes256Gcm, decryptAes256Gcm } from './crypto.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'orayve-super-secret-jwt-key-2026';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'orayve@2026';
 
@@ -199,32 +199,66 @@ app.post('/api/auth/send-otp', (req, res) => {
 });
 
 // POST /api/auth/login
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { mobile, otp } = req.body;
   if (otp !== '123456') return res.status(400).json({ success: false, message: 'Invalid OTP (use demo: 123456)' });
 
-  const user = USERS.find(u => u.mobile === mobile.trim());
+  const m = (mobile || '').trim();
+  let user = USERS.find(u => u.mobile === m);
+
+  // Check Neon DB if available
+  if (pool) {
+    try {
+      const q = await pool.query(
+        'SELECT full_name as name, age, email, mobile_number as mobile, is_banned as banned, role FROM public.users WHERE mobile_number = $1',
+        [m]
+      );
+      if (q.rows.length > 0) {
+        user = q.rows[0];
+      }
+    } catch (e) {
+      console.error('[DB] User login lookup error:', e.message);
+    }
+  }
+
   if (!user) return res.status(404).json({ success: false, message: 'No account found — please register' });
   if (user.banned) return res.status(403).json({ success: false, message: 'Account suspended. Contact support.' });
 
-  const token = jwt.sign({ mobile: user.mobile, name: user.name, role: 'USER' }, JWT_SECRET, { expiresIn: '7d' });
+  const token = jwt.sign({ mobile: user.mobile, name: user.name, role: user.role || 'USER' }, JWT_SECRET, { expiresIn: '7d' });
   res.json({ success: true, message: `Welcome, ${user.name}`, data: { user, token } });
 });
 
 // POST /api/auth/register
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
   const { name, age, email, mobile, otp } = req.body;
   if (otp !== '123456') return res.status(400).json({ success: false, message: 'Invalid OTP (use demo: 123456)' });
   if (!name || !age || !email || !mobile) return res.status(400).json({ success: false, message: 'All fields are required' });
 
   const m = mobile.trim();
-  if (USERS.some(u => u.mobile === m)) return res.status(409).json({ success: false, message: 'Mobile already registered' });
-  if (USERS.some(u => u.email.toLowerCase() === email.trim().toLowerCase())) return res.status(409).json({ success: false, message: 'Email already registered' });
+  const em = email.trim();
+
+  // Check duplicate in Neon DB
+  if (pool) {
+    try {
+      const existing = await pool.query(
+        'SELECT 1 FROM public.users WHERE mobile_number = $1 OR email = $2',
+        [m, em]
+      );
+      if (existing.rows.length > 0) {
+        return res.status(409).json({ success: false, message: 'Mobile or email already registered' });
+      }
+    } catch (e) {
+      console.error('[DB] Error checking duplicate user:', e.message);
+    }
+  } else {
+    if (USERS.some(u => u.mobile === m)) return res.status(409).json({ success: false, message: 'Mobile already registered' });
+    if (USERS.some(u => u.email.toLowerCase() === em.toLowerCase())) return res.status(409).json({ success: false, message: 'Email already registered' });
+  }
 
   const newUser = {
     name: name.trim(),
     age: parseInt(age),
-    email: email.trim(),
+    email: em,
     mobile: m,
     at: new Date().toLocaleDateString('en-IN'),
     banned: false
@@ -233,17 +267,24 @@ app.post('/api/auth/register', (req, res) => {
 
   // Sync to Neon PostgreSQL
   if (pool) {
-    pool.query(`
-      INSERT INTO public.users (full_name, age, email, mobile_number, role, is_banned)
-      VALUES ($1, $2, $3, $4, 'ROLE_USER', FALSE)
-      ON CONFLICT (mobile_number) DO UPDATE SET full_name = EXCLUDED.full_name;
-    `, [newUser.name, newUser.age, newUser.email, newUser.mobile]).catch(e => console.error('[DB] User insert error:', e.message));
+    try {
+      await pool.query(`
+        INSERT INTO public.users (full_name, age, email, mobile_number, role, is_banned)
+        VALUES ($1, $2, $3, $4, 'ROLE_USER', FALSE)
+        ON CONFLICT (mobile_number) DO UPDATE 
+        SET full_name = EXCLUDED.full_name, email = EXCLUDED.email, age = EXCLUDED.age;
+      `, [newUser.name, newUser.age, newUser.email, newUser.mobile]);
 
-    pool.query(`
-      INSERT INTO auth_schema.users (full_name, age, email, mobile_number, role, is_banned)
-      VALUES ($1, $2, $3, $4, 'ROLE_USER', FALSE)
-      ON CONFLICT (mobile_number) DO UPDATE SET full_name = EXCLUDED.full_name;
-    `, [newUser.name, newUser.age, newUser.email, newUser.mobile]).catch(() => {});
+      await pool.query(`
+        INSERT INTO auth_schema.users (full_name, age, email, mobile_number, role, is_banned)
+        VALUES ($1, $2, $3, $4, 'ROLE_USER', FALSE)
+        ON CONFLICT (mobile_number) DO UPDATE 
+        SET full_name = EXCLUDED.full_name, email = EXCLUDED.email, age = EXCLUDED.age;
+      `, [newUser.name, newUser.age, newUser.email, newUser.mobile]);
+      console.log(`[DB] Successfully registered user in Neon DB: ${newUser.name} (${newUser.mobile})`);
+    } catch (e) {
+      console.error('[DB] User insert error:', e.message);
+    }
   }
 
   const token = jwt.sign({ mobile: newUser.mobile, name: newUser.name, role: 'USER' }, JWT_SECRET, { expiresIn: '7d' });
@@ -662,42 +703,94 @@ app.delete('/api/admin/categories/:name', (req, res) => {
 });
 
 // Users CRUD (Admin)
-app.get('/api/admin/users', (req, res) => {
+app.get('/api/admin/users', async (req, res) => {
+  if (pool) {
+    try {
+      const q = await pool.query(`
+        SELECT full_name as name, COALESCE(age, 25) as age, COALESCE(email, '') as email, 
+               mobile_number as mobile, COALESCE(is_banned, FALSE) as banned, 
+               COALESCE(to_char(created_at, 'DD/MM/YYYY'), '23/11/2026') as at 
+        FROM public.users 
+        ORDER BY created_at DESC;
+      `);
+      if (q.rows.length > 0) {
+        return res.json({ success: true, data: q.rows });
+      }
+    } catch (e) {
+      console.error('[DB] Error fetching users:', e.message);
+    }
+  }
   res.json({ success: true, data: USERS });
 });
 
-app.post('/api/admin/users', (req, res) => {
+app.post('/api/admin/users', async (req, res) => {
   const { name, age, email, mobile } = req.body;
   if (!name || !age || !email || !mobile) return res.status(400).json({ success: false, message: 'All fields required' });
-  if (USERS.some(u => u.mobile === mobile.trim())) return res.status(409).json({ success: false, message: 'Mobile exists' });
-  const nu = { name: name.trim(), age: parseInt(age), email: email.trim(), mobile: mobile.trim(), at: new Date().toLocaleDateString('en-IN'), banned: false };
-  USERS.push(nu);
+  const m = mobile.trim();
+  const em = email.trim();
+
   if (pool) {
-    pool.query(`
-      INSERT INTO public.users (full_name, age, email, mobile_number, role, is_banned)
-      VALUES ($1, $2, $3, $4, 'ROLE_USER', FALSE)
-      ON CONFLICT (mobile_number) DO NOTHING;
-    `, [nu.name, nu.age, nu.email, nu.mobile]).catch(() => {});
+    try {
+      const existing = await pool.query('SELECT 1 FROM public.users WHERE mobile_number = $1 OR email = $2', [m, em]);
+      if (existing.rows.length > 0) return res.status(409).json({ success: false, message: 'User already exists' });
+      await pool.query(`
+        INSERT INTO public.users (full_name, age, email, mobile_number, role, is_banned)
+        VALUES ($1, $2, $3, $4, 'ROLE_USER', FALSE)
+        ON CONFLICT (mobile_number) DO NOTHING;
+      `, [name.trim(), parseInt(age), em, m]);
+      await pool.query(`
+        INSERT INTO auth_schema.users (full_name, age, email, mobile_number, role, is_banned)
+        VALUES ($1, $2, $3, $4, 'ROLE_USER', FALSE)
+        ON CONFLICT (mobile_number) DO NOTHING;
+      `, [name.trim(), parseInt(age), em, m]);
+    } catch (e) {
+      console.error('[DB] Admin user create error:', e.message);
+    }
+  } else {
+    if (USERS.some(u => u.mobile === m)) return res.status(409).json({ success: false, message: 'Mobile exists' });
   }
+
+  const nu = { name: name.trim(), age: parseInt(age), email: em, mobile: m, at: new Date().toLocaleDateString('en-IN'), banned: false };
+  USERS.push(nu);
   res.json({ success: true, message: 'User created', data: nu });
 });
 
-app.patch('/api/admin/users/:mobile/ban', (req, res) => {
-  const u = USERS.find(u => u.mobile === req.params.mobile);
-  if (!u) return res.status(404).json({ success: false, message: 'User not found' });
-  u.banned = req.body.banned !== undefined ? !!req.body.banned : !u.banned;
-  if (pool) {
-    pool.query('UPDATE public.users SET is_banned = $1 WHERE mobile_number = $2;', [u.banned, req.params.mobile]).catch(() => {});
+app.patch('/api/admin/users/:mobile/ban', async (req, res) => {
+  const m = req.params.mobile;
+  let bannedVal = req.body.banned !== undefined ? !!req.body.banned : true;
+
+  const u = USERS.find(u => u.mobile === m);
+  if (u) {
+    u.banned = req.body.banned !== undefined ? !!req.body.banned : !u.banned;
+    bannedVal = u.banned;
   }
-  res.json({ success: true, message: u.banned ? 'User banned' : 'User unbanned', data: u });
+
+  if (pool) {
+    try {
+      await pool.query('UPDATE public.users SET is_banned = $1 WHERE mobile_number = $2;', [bannedVal, m]);
+      await pool.query('UPDATE auth_schema.users SET is_banned = $1 WHERE mobile_number = $2;', [bannedVal, m]);
+    } catch (e) {
+      console.error('[DB] Admin user ban error:', e.message);
+    }
+  }
+
+  res.json({ success: true, message: bannedVal ? 'User banned' : 'User unbanned', data: { mobile: m, banned: bannedVal } });
 });
 
-app.delete('/api/admin/users/:mobile', (req, res) => {
-  USERS = USERS.filter(u => u.mobile !== req.params.mobile);
-  ADDRESSES = ADDRESSES.filter(a => a.m !== req.params.mobile);
+app.delete('/api/admin/users/:mobile', async (req, res) => {
+  const m = req.params.mobile;
+  USERS = USERS.filter(u => u.mobile !== m);
+  ADDRESSES = ADDRESSES.filter(a => a.m !== m);
+
   if (pool) {
-    pool.query('DELETE FROM public.users WHERE mobile_number = $1;', [req.params.mobile]).catch(() => {});
+    try {
+      await pool.query('DELETE FROM public.users WHERE mobile_number = $1;', [m]);
+      await pool.query('DELETE FROM auth_schema.users WHERE mobile_number = $1;', [m]);
+    } catch (e) {
+      console.error('[DB] Admin user delete error:', e.message);
+    }
   }
+
   res.json({ success: true, message: 'User deleted' });
 });
 
