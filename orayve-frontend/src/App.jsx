@@ -413,10 +413,7 @@ export default function App() {
       }).then(r => r.json());
 
       if (res.success) {
-        showToast(res.message || `Live OTP sent to ${selectedCountry.code} ${cleanDigits}`);
-        if (res.data?.otp) {
-          setTimeout(() => showToast(`Live OTP: ${res.data.otp}`), 600);
-        }
+        showToast(res.message || `OTP sent to ${selectedCountry.code} ${cleanDigits}. Please check your phone.`);
         setOtpCooldown(30);
       } else {
         showToast(res.message || 'Failed to send OTP', true);

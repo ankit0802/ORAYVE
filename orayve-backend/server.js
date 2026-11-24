@@ -226,16 +226,58 @@ app.post('/api/auth/send-otp', (req, res) => {
   const liveOtp = String(Math.floor(100000 + Math.random() * 900000));
   LIVE_OTPS.set(cleanMobile, { otp: liveOtp, exp: Date.now() + 5 * 60 * 1000 });
 
+  // Dispatch live carrier SMS if API keys are configured in .env
+  const fast2smsKey = process.env.FAST2SMS_API_KEY;
+  const twilioSid = process.env.TWILIO_ACCOUNT_SID;
+  const twilioToken = process.env.TWILIO_AUTH_TOKEN;
+  const twilioFrom = process.env.TWILIO_PHONE_NUMBER;
+  let smsCarrierStatus = 'PENDING GATEWAY (Set FAST2SMS_API_KEY or TWILIO in .env)';
+
+  if (fast2smsKey) {
+    let indianDigits = digits;
+    if (indianDigits.startsWith('91') && indianDigits.length === 12) indianDigits = indianDigits.substring(2);
+    smsCarrierStatus = 'DISPATCHED VIA FAST2SMS';
+    fetch('https://www.fast2sms.com/dev/bulkV2', {
+      method: 'POST',
+      headers: {
+        'authorization': fast2smsKey.trim(),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        variables_values: liveOtp,
+        route: 'otp',
+        numbers: indianDigits
+      })
+    }).then(r => r.json()).then(d => console.log('[SMS] Fast2SMS Gateway Result:', d)).catch(err => console.error('[SMS] Fast2SMS error:', err.message));
+  } else if (twilioSid && twilioToken) {
+    const toMobile = cleanMobile.startsWith('+') ? cleanMobile : ('+' + cleanMobile);
+    smsCarrierStatus = 'DISPATCHED VIA TWILIO';
+    const auth = Buffer.from(`${twilioSid.trim()}:${twilioToken.trim()}`).toString('base64');
+    const form = new URLSearchParams();
+    form.append('To', toMobile);
+    form.append('From', twilioFrom || '');
+    form.append('Body', `Your ORAYVE verification code is: ${liveOtp}. Valid for 5 minutes.`);
+    fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid.trim()}/Messages.json`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: form.toString()
+    }).then(r => r.json()).then(d => console.log('[SMS] Twilio Gateway Result:', d.sid || d.message)).catch(err => console.error('[SMS] Twilio error:', err.message));
+  }
+
   console.log(`\n=======================================================`);
-  console.log(`  [ORAYVE LIVE SMS] Sent to: ${cleanMobile}`);
+  console.log(`  [ORAYVE LIVE SMS] Recipient: ${cleanMobile}`);
   console.log(`  [LIVE OTP CODE] : ${liveOtp} (Valid for 5 minutes)`);
+  console.log(`  [CARRIER STATUS]: ${smsCarrierStatus}`);
   console.log(`  [TIMESTAMP]     : ${new Date().toISOString()}`);
   console.log(`=======================================================\n`);
 
   res.json({
     success: true,
-    message: `Live OTP sent to ${cleanMobile}`,
-    data: { mobile: cleanMobile, countryCode: countryCode || '+91', expiresIn: 300, otp: liveOtp }
+    message: `OTP sent to ${cleanMobile}. Please check your phone.`,
+    data: { mobile: cleanMobile, countryCode: countryCode || '+91', expiresIn: 300 }
   });
 });
 

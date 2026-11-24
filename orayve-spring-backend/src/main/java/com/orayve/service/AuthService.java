@@ -53,7 +53,6 @@ public class AuthService {
         result.put("mobile", fullMobile);
         result.put("countryCode", countryCode);
         result.put("expiresIn", 300);
-        result.put("otp", liveOtp); // returned for live frontend toast & dev display
 
         return result;
     }
