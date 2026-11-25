@@ -190,6 +190,26 @@ export async function initDatabase() {
       ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS return_info JSONB DEFAULT NULL;
       ALTER TABLE order_schema.orders ADD COLUMN IF NOT EXISTS cancel_info JSONB DEFAULT NULL;
       ALTER TABLE order_schema.orders ADD COLUMN IF NOT EXISTS return_info JSONB DEFAULT NULL;
+
+      CREATE TABLE IF NOT EXISTS public.user_wallets (
+        wallet_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_mobile VARCHAR(20) UNIQUE NOT NULL,
+        balance_points INT DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS public.wallet_transactions (
+        transaction_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_mobile VARCHAR(20) NOT NULL,
+        type VARCHAR(20) NOT NULL,
+        points INT NOT NULL,
+        amount DECIMAL(10, 2) NOT NULL,
+        order_id VARCHAR(50),
+        description TEXT NOT NULL,
+        status VARCHAR(20) DEFAULT 'SUCCESS',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
 
     client.release();

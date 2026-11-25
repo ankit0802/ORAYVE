@@ -923,6 +923,101 @@ app.get('/api/admin/analytics', async (req, res) => {
   });
 });
 
+// Helper to credit points to User's Aura Wallet
+async function creditWallet(mobile, points, orderId, description) {
+  if (!mobile || !points) return;
+  const cleanMob = mobile.replace(/[^0-9]/g, '').slice(-10);
+  const pts = Math.round(Number(points));
+  if (pts <= 0) return;
+
+  if (pool) {
+    try {
+      await pool.query(`
+        INSERT INTO public.user_wallets (user_mobile, balance_points, updated_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (user_mobile) 
+        DO UPDATE SET balance_points = public.user_wallets.balance_points + $2, updated_at = NOW();
+      `, [cleanMob, pts]);
+
+      await pool.query(`
+        INSERT INTO public.wallet_transactions (user_mobile, type, points, amount, order_id, description, status)
+        VALUES ($1, 'CREDIT', $2, $3, $4, $5, 'SUCCESS');
+      `, [cleanMob, pts, pts, orderId || null, description || 'Aura Points Credited']);
+    } catch (e) {
+      console.error('[DB] creditWallet error:', e.message);
+    }
+  }
+}
+
+// GET /api/wallet (Fetches user's Aura Credit Points and full passbook history)
+app.get('/api/wallet', async (req, res) => {
+  const { mobile } = req.query;
+  if (!mobile) {
+    return res.status(400).json({ success: false, message: 'Mobile number required' });
+  }
+
+  const cleanMob = mobile.replace(/[^0-9]/g, '').slice(-10);
+
+  if (pool) {
+    try {
+      let walletQ = await pool.query('SELECT balance_points FROM public.user_wallets WHERE user_mobile = $1', [cleanMob]);
+      if (walletQ.rows.length === 0) {
+        // Initialize new wallet with 500 welcome points
+        await pool.query('INSERT INTO public.user_wallets (user_mobile, balance_points) VALUES ($1, 500) ON CONFLICT DO NOTHING;', [cleanMob]);
+        await pool.query(`
+          INSERT INTO public.wallet_transactions (user_mobile, type, points, amount, description, status)
+          VALUES ($1, 'CREDIT', 500, 500, 'Welcome to ORAYVE Aura Club Membership Bonus', 'SUCCESS');
+        `, [cleanMob]);
+        walletQ = await pool.query('SELECT balance_points FROM public.user_wallets WHERE user_mobile = $1', [cleanMob]);
+      }
+
+      const balance = walletQ.rows.length ? parseInt(walletQ.rows[0].balance_points) : 500;
+
+      const txQ = await pool.query(`
+        SELECT transaction_id as id, type, points, amount, order_id as "orderId",
+               description, status, to_char(created_at, 'DD Mon YYYY, HH:MI AM') as date
+        FROM public.wallet_transactions
+        WHERE user_mobile = $1
+        ORDER BY created_at DESC;
+      `, [cleanMob]);
+
+      return res.json({
+        success: true,
+        data: {
+          mobile: cleanMob,
+          points: balance,
+          currencyValue: balance,
+          rate: '1 Aura Point = ₹1.00',
+          transactions: txQ.rows
+        }
+      });
+    } catch (e) {
+      console.error('[DB] Wallet fetch error:', e.message);
+    }
+  }
+
+  res.json({
+    success: true,
+    data: {
+      mobile: cleanMob,
+      points: 500,
+      currencyValue: 500,
+      rate: '1 Aura Point = ₹1.00',
+      transactions: [
+        {
+          id: 'tx_init',
+          type: 'CREDIT',
+          points: 500,
+          amount: 500,
+          description: 'Welcome to ORAYVE Aura Club Membership Bonus',
+          status: 'SUCCESS',
+          date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+        }
+      ]
+    }
+  });
+});
+
 // POST /api/orders/:id/cancel (User requests cancellation before delivery)
 app.post('/api/orders/:id/cancel', async (req, res) => {
   const { reason, comments, refundMethod } = req.body;
@@ -931,7 +1026,7 @@ app.post('/api/orders/:id/cancel', async (req, res) => {
   let order = ORDERS.find(o => o.id === orderId);
   if (!order && pool) {
     try {
-      const q = await pool.query('SELECT order_number as id, order_status as status, cancel_info as "cancelInfo" FROM public.orders WHERE order_number = $1;', [orderId]);
+      const q = await pool.query('SELECT order_number as id, user_mobile as mobile, final_amount as total, order_status as status, cancel_info as "cancelInfo" FROM public.orders WHERE order_number = $1;', [orderId]);
       if (q.rows.length) order = q.rows[0];
     } catch (e) {}
   }
@@ -944,15 +1039,22 @@ app.post('/api/orders/:id/cancel', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Delivered orders cannot be cancelled directly. Please submit a Return or Replacement request.' });
   }
 
+  const isWalletRefund = String(refundMethod || '').toUpperCase().includes('WALLET');
+  const targetRefundMethod = isWalletRefund
+    ? 'Orayve Aura Wallet (Instant Credit)'
+    : 'Original Payment Source (Bank/UPI within 3-5 days)';
+
+  // If wallet refund selected, refund is initiated INSTANTLY
+  const nextStatus = isWalletRefund ? 5 : 4; // 5 = REFUND_INITIATED, 4 = CANCEL_REQUESTED
+
   const cancelData = {
     requestedAt: new Date().toISOString(),
     reason: reason || 'Customer requested order cancellation',
     comments: comments || '',
-    refundMethod: refundMethod || 'Original Payment Source (Bank/UPI)',
-    status: 'IN_PROCESS'
+    refundMethod: targetRefundMethod,
+    status: isWalletRefund ? 'REFUND_CREDITED' : 'IN_PROCESS',
+    refundInitiatedAt: isWalletRefund ? new Date().toISOString() : null
   };
-
-  const nextStatus = 4; // CANCEL_REQUESTED
 
   if (order) {
     order.status = nextStatus;
@@ -970,9 +1072,18 @@ app.post('/api/orders/:id/cancel', async (req, res) => {
     }
   }
 
+  // If wallet refund: credit points to user's wallet immediately!
+  if (isWalletRefund) {
+    const refundPoints = Math.round(Number(order.total || 0));
+    const userMob = order.mobile || order.addr?.phone || order.addr?.mobile;
+    await creditWallet(userMob, refundPoints, orderId, `Instant Cancellation Refund for Order #${orderId}`);
+  }
+
   res.json({
     success: true,
-    message: 'Cancellation request received. Verification is in process.',
+    message: isWalletRefund
+      ? `Cancellation processed. ₹${order.total} has been refunded instantly to your Orayve Aura Wallet!`
+      : 'Cancellation request received. Verification is in process.',
     data: { id: orderId, status: nextStatus, cancelInfo: cancelData }
   });
 });
@@ -985,7 +1096,7 @@ app.post('/api/orders/:id/return', async (req, res) => {
   let order = ORDERS.find(o => o.id === orderId);
   if (!order && pool) {
     try {
-      const q = await pool.query('SELECT order_number as id, order_status as status, return_info as "returnInfo" FROM public.orders WHERE order_number = $1;', [orderId]);
+      const q = await pool.query('SELECT order_number as id, user_mobile as mobile, final_amount as total, order_status as status, return_info as "returnInfo" FROM public.orders WHERE order_number = $1;', [orderId]);
       if (q.rows.length) order = q.rows[0];
     } catch (e) {}
   }
@@ -995,6 +1106,11 @@ app.post('/api/orders/:id/return', async (req, res) => {
   }
 
   const isReplace = (type || '').toUpperCase() === 'REPLACE';
+  const isWalletRefund = !isReplace && String(refundMethod || '').toUpperCase().includes('WALLET');
+  const targetRefundMethod = isWalletRefund
+    ? 'Orayve Aura Wallet (Instant Credit upon pickup)'
+    : 'Original Payment Source (Bank/UPI within 3-5 days)';
+
   const nextStatus = isReplace ? 9 : 6; // REPLACEMENT_REQUESTED (9) or RETURN_REQUESTED (6)
 
   const returnData = {
@@ -1004,7 +1120,7 @@ app.post('/api/orders/:id/return', async (req, res) => {
     condition: condition || 'Unused, tags and luxury packaging intact',
     comments: comments || '',
     items: Array.isArray(items) && items.length ? items : (order.items || []),
-    refundMethod: refundMethod || 'Original Payment Source (Bank/UPI)',
+    refundMethod: isReplace ? 'Exchange Variant' : targetRefundMethod,
     replacementVariant: replacementVariant || 'Same Colorway Replacement',
     photos: Array.isArray(photos) ? photos : [],
     status: 'IN_PROCESS'
@@ -1121,6 +1237,15 @@ app.put('/api/admin/orders/:id/status', async (req, res) => {
       await pool.query(updateSql, params);
     } catch (e) {
       console.error('[DB] Update order status error:', e.message);
+    }
+  }
+
+  // If status is refunded (5 or 8) and refundMethod is wallet, credit points immediately!
+  if (order && (nextStatus === 5 || nextStatus === 8)) {
+    const isWallet = String(order?.cancelInfo?.refundMethod || order?.returnInfo?.refundMethod || '').toUpperCase().includes('WALLET');
+    if (isWallet) {
+      const userMob = order.mobile || order.addr?.phone || order.addr?.mobile;
+      creditWallet(userMob, order.total, order.id, `${nextStatus === 5 ? 'Cancellation' : 'Return'} Refund for Order #${order.id}`).catch(() => {});
     }
   }
 

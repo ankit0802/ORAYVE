@@ -507,6 +507,7 @@ export default function App() {
   const [cancelModalOrder, setCancelModalOrder] = useState(null);
   const [cancelReason, setCancelReason] = useState('Found a better price elsewhere');
   const [cancelComments, setCancelComments] = useState('');
+  const [cancelRefundMethod, setCancelRefundMethod] = useState('WALLET'); // 'WALLET' | 'ORIGINAL'
   const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
 
   const [returnModalOrder, setReturnModalOrder] = useState(null);
@@ -515,11 +516,103 @@ export default function App() {
   const [returnCondition, setReturnCondition] = useState('Unused, with all original tags & luxury box intact');
   const [returnComments, setReturnComments] = useState('');
   const [returnSelectedItems, setReturnSelectedItems] = useState([]);
-  const [returnRefundPref, setReturnRefundPref] = useState('ORIGINAL'); // 'ORIGINAL' | 'WALLET'
+  const [returnRefundPref, setReturnRefundPref] = useState('WALLET'); // 'WALLET' | 'ORIGINAL'
   const [returnReplacementVariant, setReturnReplacementVariant] = useState('Same product & colorway replacement');
   const [returnPhotos, setReturnPhotos] = useState([]);
   const [returnPhotoInput, setReturnPhotoInput] = useState('');
   const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
+
+  // Orayve Aura Wallet State (1 INR = 1 Aura Credit Point)
+  const [walletPoints, setWalletPoints] = useState(() => {
+    try {
+      const saved = localStorage.getItem('orv_wallet_pts');
+      return saved ? parseInt(saved, 10) : 500;
+    } catch {
+      return 500;
+    }
+  });
+  const [walletTransactions, setWalletTransactions] = useState(() => {
+    try {
+      const saved = localStorage.getItem('orv_wallet_txs');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [
+      {
+        id: 'tx_welcome',
+        type: 'CREDIT',
+        points: 500,
+        amount: 500,
+        orderId: null,
+        description: 'Welcome to ORAYVE Aura Club Membership Bonus',
+        status: 'SUCCESS',
+        date: 'Membership Activated'
+      }
+    ];
+  });
+  const [showWalletPassbook, setShowWalletPassbook] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('orv_wallet_pts', String(walletPoints));
+      localStorage.setItem('orv_wallet_txs', JSON.stringify(walletTransactions));
+    } catch {}
+  }, [walletPoints, walletTransactions]);
+
+  const fetchUserWallet = async (phone) => {
+    const cleanMob = (phone || currentUser?.mobile || '').replace(/[^0-9]/g, '').slice(-10);
+    if (!cleanMob) return;
+    try {
+      const res = await fetch(`/api/wallet?mobile=${cleanMob}`);
+      const data = await res.json();
+      if (data.success) {
+        setWalletPoints(data.balancePoints);
+        setWalletTransactions(data.transactions || []);
+      }
+    } catch (err) {
+      console.warn('Wallet fetch error:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (currentUser?.mobile) {
+      fetchUserWallet(currentUser.mobile);
+    }
+  }, [currentUser?.mobile]);
+
+  // Audio effect: Pleasant luxury chime on order placement
+  const playOrderSuccessSound = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+      // Harmonious luxury chime: ascending major chord C5 -> E5 -> G5 -> C6
+      const chord = [
+        { freq: 523.25, time: 0.0, dur: 0.35, gain: 0.18 }, // C5
+        { freq: 659.25, time: 0.12, dur: 0.40, gain: 0.20 }, // E5
+        { freq: 783.99, time: 0.24, dur: 0.50, gain: 0.22 }, // G5
+        { freq: 1046.50, time: 0.36, dur: 0.90, gain: 0.28 } // C6
+      ];
+
+      chord.forEach(n => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(n.freq, ctx.currentTime + n.time);
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime + n.time);
+        gain.gain.exponentialRampToValueAtTime(n.gain, ctx.currentTime + n.time + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + n.time + n.dur);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + n.time);
+        osc.stop(ctx.currentTime + n.time + n.dur);
+      });
+    } catch (err) {
+      console.log('Order audio effect:', err);
+    }
+  };
 
   useEffect(() => {
     try {
@@ -1190,6 +1283,7 @@ export default function App() {
     setCancelModalOrder(order);
     setCancelReason('Found a better price elsewhere');
     setCancelComments('');
+    setCancelRefundMethod('WALLET');
   };
 
   const handleConfirmCancel = async (e) => {
@@ -1197,26 +1291,51 @@ export default function App() {
     if (!cancelModalOrder) return;
     setIsSubmittingCancel(true);
 
+    const isWallet = cancelRefundMethod === 'WALLET';
+    const targetRefundMethod = isWallet
+      ? 'Orayve Aura Wallet (Instant Credit)'
+      : 'Original Payment Source (Bank/UPI within 3-5 days)';
+
     const cancelPayload = {
       reason: cancelReason,
       comments: cancelComments.trim(),
-      refundMethod: 'Original Payment Source (Bank/UPI)'
+      refundMethod: cancelRefundMethod
     };
 
     const newCancelInfo = {
       requestedAt: new Date().toISOString(),
       reason: cancelReason,
       comments: cancelComments.trim(),
-      refundMethod: 'Original Payment Source (Bank/UPI)',
-      status: 'IN_PROCESS'
+      refundMethod: targetRefundMethod,
+      status: isWallet ? 'REFUND_CREDITED' : 'IN_PROCESS',
+      refundInitiatedAt: isWallet ? new Date().toISOString() : null
     };
 
     // Update frontend state immediately
     setOrders(prev => prev.map(o => o.id === cancelModalOrder.id ? {
       ...o,
-      status: 4, // CANCEL_REQUESTED
+      status: isWallet ? 5 : 4, // 5 = REFUND_INITIATED, 4 = CANCEL_REQUESTED
       cancelInfo: newCancelInfo
     } : o));
+
+    // If wallet refund selected, credit user's wallet immediately!
+    if (isWallet) {
+      const refundPoints = Math.round(Number(cancelModalOrder.total || 0));
+      setWalletPoints(prev => prev + refundPoints);
+      setWalletTransactions(prev => [
+        {
+          id: 'tx_' + Date.now(),
+          type: 'CREDIT',
+          points: refundPoints,
+          amount: refundPoints,
+          orderId: cancelModalOrder.id,
+          description: `Instant Cancellation Refund for Order #${cancelModalOrder.id}`,
+          status: 'SUCCESS',
+          date: 'Just now'
+        },
+        ...prev
+      ]);
+    }
 
     try {
       await fetch(`/api/orders/${cancelModalOrder.id}/cancel`, {
@@ -1230,7 +1349,11 @@ export default function App() {
 
     setIsSubmittingCancel(false);
     setCancelModalOrder(null);
-    showToast('Cancellation request submitted. Verification in process.');
+    if (isWallet) {
+      showToast(`Order cancelled. ₹${cancelModalOrder.total} refunded instantly to your Orayve Aura Wallet!`);
+    } else {
+      showToast('Cancellation request submitted. Verification in process (Refund in 3-5 days).');
+    }
   };
 
   const openReturnModal = (order, type = 'RETURN') => {
@@ -1243,7 +1366,7 @@ export default function App() {
     setReturnCondition('Unused, with all original tags & luxury box intact');
     setReturnComments('');
     setReturnSelectedItems(order.items ? [...order.items] : []);
-    setReturnRefundPref('ORIGINAL');
+    setReturnRefundPref('WALLET');
     setReturnReplacementVariant('Same product & colorway replacement');
     setReturnPhotos([]);
     setReturnPhotoInput('');
@@ -1290,6 +1413,11 @@ export default function App() {
 
     const isReplace = returnModalType === 'REPLACE';
     const nextStatus = isReplace ? 9 : 6; // REPLACEMENT_REQUESTED or RETURN_REQUESTED
+    const isWallet = !isReplace && returnRefundPref === 'WALLET';
+
+    const targetRefundMethod = isWallet
+      ? 'Orayve Aura Wallet (Instant Credit upon pickup)'
+      : 'Original Payment Source (Bank/UPI within 3-5 days)';
 
     const returnPayload = {
       type: returnModalType,
@@ -1297,7 +1425,7 @@ export default function App() {
       condition: returnCondition,
       comments: returnComments.trim(),
       items: returnSelectedItems,
-      refundMethod: returnRefundPref === 'WALLET' ? 'Orayve Luxury Store Credit' : 'Original Payment Source (Bank/UPI)',
+      refundMethod: isWallet ? 'WALLET' : 'ORIGINAL',
       replacementVariant: returnReplacementVariant,
       photos: returnPhotos
     };
@@ -1305,6 +1433,7 @@ export default function App() {
     const newReturnInfo = {
       ...returnPayload,
       requestedAt: new Date().toISOString(),
+      refundMethod: targetRefundMethod,
       status: 'IN_PROCESS'
     };
 
@@ -1327,7 +1456,13 @@ export default function App() {
 
     setIsSubmittingReturn(false);
     setReturnModalOrder(null);
-    showToast(`${isReplace ? 'Replacement' : 'Return'} request submitted. Pickup assignment in process.`);
+    if (isReplace) {
+      showToast('Replacement request submitted. Pickup assignment in process.');
+    } else if (isWallet) {
+      showToast(`Return submitted. ₹${returnModalOrder.total} will be refunded instantly to your Aura Wallet upon pickup!`);
+    } else {
+      showToast('Return submitted. Refund will be credited to original payment source within 3-5 business days.');
+    }
   };
 
   const handleSimulateTime = async (orderId, advanceHours) => {
@@ -1647,6 +1782,7 @@ export default function App() {
     setCart([]);
     setAppliedCoupon('');
     setCheckoutStep(3);
+    playOrderSuccessSound();
     showToast(`Order ${orderId} confirmed!`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -1986,6 +2122,17 @@ export default function App() {
                 <span>{wishlist.length}</span>
               </button>
 
+              {/* Aura Wallet Pill Button */}
+              <button
+                onClick={() => setShowWalletPassbook(true)}
+                title="Orayve Aura Wallet · 1 Pt = ₹1"
+                className="px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-gold/60 text-gold hover:bg-gold/25 transition flex items-center gap-1.5 shadow-xs"
+              >
+                <span className="text-amber-300 font-bold">✦</span>
+                <span className="font-bold">{walletPoints.toLocaleString('en-IN')}</span>
+                <span className="text-[10px] text-bone/80 hidden sm:inline">Aura Pts</span>
+              </button>
+
               {/* Bag Button */}
               <button
                 onClick={() => {
@@ -2061,6 +2208,21 @@ export default function App() {
                         className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
                       >
                         📦 My Orders ({orders.filter(o => (o.mobile || o.addr?.phone || '').replace(/[^0-9]/g, '').slice(-10) === (currentUser?.mobile || '').replace(/[^0-9]/g, '').slice(-10)).length})
+                      </button>
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setShowWalletPassbook(true);
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-amber-50 text-xs font-semibold text-amber-900 flex items-center justify-between"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="text-amber-500 font-bold">✦</span>
+                          <span>Aura Wallet &amp; Passbook</span>
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                          {walletPoints.toLocaleString('en-IN')} Pts
+                        </span>
                       </button>
                       <button
                         onClick={() => {
@@ -2232,6 +2394,35 @@ export default function App() {
                     </button>
                   );
                 })}
+              </div>
+            </div>
+          </div>
+
+          {/* ORAYVE Aura Club Membership Privilege Banner */}
+          <div className="max-w-[1400px] mx-auto px-4 pt-4 pb-2">
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-stone-900 via-neutral-900 to-amber-950/90 border border-brass/40 p-4 sm:p-5 text-bone shadow-lg">
+              <div className="absolute -right-8 -bottom-8 w-44 h-44 bg-amber-500/10 rounded-full blur-2xl pointer-events-none"></div>
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
+                <div className="space-y-1">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brass/25 border border-brass/40 text-gold text-[10px] font-extrabold tracking-wider uppercase">
+                    <span>✦</span> ORAYVE AURA CLUB · 1 PT = ₹1
+                  </div>
+                  <h3 className="serif text-lg sm:text-xl font-bold text-bone">
+                    Your Aura Credit Balance: <span className="text-gold font-sans font-extrabold">{walletPoints.toLocaleString('en-IN')} Pts</span>
+                    <span className="text-xs text-bone/60 font-sans font-normal ml-2">({inr(walletPoints)} Value)</span>
+                  </h3>
+                  <p className="text-xs text-bone/70 max-w-xl leading-relaxed">
+                    Enjoy zero-delay shopping, 100% instant refund credits into your Aura Wallet on returns &amp; cancellations, and exclusive tier benefits.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  <button
+                    onClick={() => setShowWalletPassbook(true)}
+                    className="w-full md:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-brass to-gold text-ink font-bold text-xs hover:brightness-110 shadow-md flex items-center justify-center gap-2 transition whitespace-nowrap"
+                  >
+                    <span>✦ View Aura Passbook &amp; History</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -3587,30 +3778,90 @@ export default function App() {
             </div>
           )}
 
-          {/* Step 3: Confirmed */}
+          {/* Step 3: Confirmed with Animated Tick & Celebration */}
           {checkoutStep === 3 && lastPlacedOrder && (
-            <div className="max-w-xl mx-auto bg-white rounded-2xl border border-brass/40 p-8 text-center shadow-lg">
-              <p className="text-5xl">✅</p>
-              <p className="text-[11px] uppercase tracking-[.25em] text-brass font-bold mt-3">Order Confirmed</p>
-              <h2 className="serif text-3xl mt-1 font-bold">Thank you for choosing Orayve</h2>
-              <p className="text-sm mt-2">Order ID: <b>{lastPlacedOrder.id}</b></p>
-              <p className="text-xs text-ink/60 mt-1">Protected by our 7-Day Return &amp; Replacement Policy</p>
+            <div className="max-w-xl mx-auto bg-white rounded-3xl border border-brass/40 p-8 sm:p-10 text-center shadow-2xl relative overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+              {/* Luxury Ambient Glow */}
+              <div className="absolute -top-16 -left-16 w-48 h-48 bg-amber-400/15 rounded-full blur-3xl pointer-events-none"></div>
+              <div className="absolute -bottom-16 -right-16 w-48 h-48 bg-amber-600/10 rounded-full blur-3xl pointer-events-none"></div>
 
-              <div className="mt-6 flex justify-center gap-3">
+              {/* Animated Moving Tick Ring with Ripple Waves */}
+              <div className="relative w-28 h-28 mx-auto my-2 flex items-center justify-center">
+                {/* Expanding pulse ripple wave */}
+                <div className="absolute inset-0 rounded-full bg-brass/25 animate-ping opacity-40"></div>
+                {/* Outer concentric pulsing ring */}
+                <div className="absolute -inset-2.5 rounded-full border-2 border-brass/40 animate-pulse"></div>
+                
+                {/* Main metallic gold badge with tick */}
+                <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-amber-600 via-amber-400 to-yellow-200 shadow-xl flex items-center justify-center relative z-10 transform hover:scale-105 transition">
+                  <svg
+                    className="w-14 h-14 text-stone-950 animate-in zoom-in spin-in-12 duration-500"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={3.2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+
+                {/* Sparkling celebratory star icons */}
+                <span className="absolute -top-1 -right-1 text-xl animate-bounce">✨</span>
+                <span className="absolute -bottom-1 -left-1 text-base text-gold animate-pulse">✦</span>
+              </div>
+
+              {/* Animated Status Pill */}
+              <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-100/90 border border-amber-300 text-amber-900 text-[11px] font-extrabold tracking-widest uppercase mt-3 shadow-xs">
+                <span>✓</span> Tick! It&apos;s Done · Order Confirmed
+              </div>
+
+              <h2 className="serif text-2xl sm:text-3xl mt-2 font-bold text-ink">
+                Thank you for choosing Orayve
+              </h2>
+              <p className="text-sm font-semibold text-ink/80 mt-1">
+                Order ID: <b className="font-mono text-ink text-base">#{lastPlacedOrder.id}</b>
+              </p>
+              <p className="text-xs text-ink/60 mt-1">
+                A confirmation has been logged. Protected by our <b>7-Day Return &amp; Replacement Policy</b>.
+              </p>
+
+              {/* Aura Wallet Perk Badge */}
+              <div className="my-5 p-3.5 rounded-2xl bg-gradient-to-r from-amber-50 to-stone-50 border border-amber-200 text-left flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold text-base shrink-0">
+                    ✦
+                  </div>
+                  <div>
+                    <b className="text-ink text-[11px]">Orayve Aura Club Member</b>
+                    <p className="text-[10px] text-ink/60">Your current wallet balance is {walletPoints.toLocaleString('en-IN')} Aura Points ({inr(walletPoints)})</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowWalletPassbook(true)}
+                  className="px-2.5 py-1 rounded-lg bg-white border border-amber-300 text-[10px] font-bold text-amber-900 hover:bg-amber-100 transition whitespace-nowrap"
+                >
+                  View Passbook
+                </button>
+              </div>
+
+              <div className="mt-6 flex flex-wrap justify-center gap-3">
                 <button
                   onClick={() => setInvoiceModalOrder(lastPlacedOrder)}
-                  className="px-5 py-2.5 rounded-xl bg-ink text-bone text-xs font-bold hover:bg-brass hover:text-ink transition"
+                  className="px-6 py-2.5 rounded-xl bg-ink text-bone text-xs font-bold hover:bg-brass hover:text-ink shadow-md transition flex items-center gap-2"
                 >
-                  GST Invoice
+                  <span>🧾</span>
+                  <span>GST Tax Invoice</span>
                 </button>
                 <button
                   onClick={() => {
                     setView('orders');
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
-                  className="px-5 py-2.5 rounded-xl border border-ink/25 text-xs font-bold hover:bg-bone transition"
+                  className="px-6 py-2.5 rounded-xl border border-ink/25 text-xs font-bold hover:bg-bone transition flex items-center gap-2"
                 >
-                  Order History
+                  <span>📦</span>
+                  <span>Track in My Orders</span>
                 </button>
               </div>
             </div>
@@ -4979,14 +5230,28 @@ export default function App() {
 
               {/* Tab 4: Categories */}
               {adminTab === 'categories' && (
-                <div className="space-y-4">
-                  <button
-                    onClick={() => setEditingCategory({})}
-                    className="px-4 py-2 rounded-lg bg-brass text-ink text-xs font-bold"
-                  >
-                    + Add category
-                  </button>
+                <div className="space-y-5">
+                  {/* Executive Header & Stats */}
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-ink/10 shadow-sm">
+                    <div>
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brass/20 text-brass text-[10px] font-extrabold uppercase tracking-wider mb-1">
+                        <span>🏷️</span> Catalog Taxonomy
+                      </div>
+                      <h3 className="serif text-xl font-bold text-ink">Product Categories</h3>
+                      <p className="text-xs text-ink/60 mt-0.5">
+                        {categories.length} active categories · {products.length} catalog items linked
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setEditingCategory({})}
+                      className="px-5 py-2.5 rounded-xl bg-ink text-bone hover:bg-brass hover:text-ink font-bold text-xs shadow-md transition flex items-center gap-2"
+                    >
+                      <span className="text-gold">+</span>
+                      <span>Add New Category</span>
+                    </button>
+                  </div>
 
+                  {/* Add / Edit Category Form */}
                   {editingCategory && (
                     <form
                       onSubmit={e => {
@@ -5000,67 +5265,113 @@ export default function App() {
                           setCategories([...categories, { name, hsn }]);
                         }
                         setEditingCategory(null);
-                        showToast('Category saved');
+                        showToast('Category saved successfully');
                       }}
-                      className="bg-white p-5 rounded-xl border border-brass/40 flex flex-wrap gap-3 text-xs"
+                      className="bg-white p-6 rounded-2xl border-2 border-brass/50 shadow-lg space-y-4 animate-in fade-in duration-200"
                     >
-                      <input
-                        required
-                        name="name"
-                        defaultValue={editingCategory.old || ''}
-                        placeholder="Category name *"
-                      />
-                      <input
-                        name="hsn"
-                        defaultValue={categories.find(c => c.name === editingCategory.old)?.hsn || ''}
-                        placeholder="HSN code"
-                      />
-                      <button type="submit" className="px-4 py-2 rounded-lg bg-ink text-bone font-bold">
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditingCategory(null)}
-                        className="px-4 py-2 rounded-lg border"
-                      >
-                        Cancel
-                      </button>
+                      <div className="flex items-center justify-between pb-3 border-b border-ink/10">
+                        <b className="text-sm text-ink flex items-center gap-2">
+                          <span>🏷️</span> {editingCategory.old ? `Edit Category: ${editingCategory.old}` : 'Create New Collection Category'}
+                        </b>
+                        <span className="text-[10px] text-ink/50 uppercase tracking-wider">HSN &amp; Taxonomy</span>
+                      </div>
+
+                      <div className="grid sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[11px] font-bold text-ink/80 mb-1.5">
+                            Category Display Name <span className="text-rose-600">*</span>
+                          </label>
+                          <input
+                            required
+                            name="name"
+                            defaultValue={editingCategory.old || ''}
+                            placeholder="e.g. Leather Wallets, Silk Ties, Oxford Shoes"
+                            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-ink/20 focus:border-brass focus:ring-1 focus:ring-brass"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-ink/80 mb-1.5">
+                            HSN Code (GST Classification) <span className="text-rose-600">*</span>
+                          </label>
+                          <input
+                            required
+                            name="hsn"
+                            defaultValue={categories.find(c => c.name === editingCategory.old)?.hsn || ''}
+                            placeholder="e.g. 42023120, 62151000, 64035990"
+                            className="w-full text-xs font-mono px-3.5 py-2.5 rounded-xl border border-ink/20 focus:border-brass focus:ring-1 focus:ring-brass"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-ink/10">
+                        <button
+                          type="button"
+                          onClick={() => setEditingCategory(null)}
+                          className="px-4 py-2 rounded-xl border border-ink/20 font-bold hover:bg-bone text-xs"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-6 py-2 rounded-xl bg-ink text-bone font-bold text-xs hover:bg-brass hover:text-ink shadow-md transition"
+                        >
+                          Save Category
+                        </button>
+                      </div>
                     </form>
                   )}
 
-                  <div className="bg-white rounded-xl border border-ink/10 divide-y divide-ink/10 shadow-sm">
-                    {categories.map(c => (
-                      <div key={c.name} className="p-4 flex flex-wrap justify-between items-center gap-2 text-sm">
-                        <div>
-                          <b>{c.name}</b>{' '}
-                          <span className="text-xs text-ink/60">
-                            HSN {c.hsn} · {products.filter(p => p.cat === c.name).length} products
-                          </span>
+                  {/* Categories Grid */}
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {categories.map(c => {
+                      const count = products.filter(p => p.cat === c.name).length;
+                      return (
+                        <div
+                          key={c.name}
+                          className="bg-white p-5 rounded-2xl border border-ink/10 shadow-sm hover:shadow-md transition flex flex-col justify-between space-y-4 group"
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <h4 className="font-bold text-sm text-ink group-hover:text-brass transition">
+                                {c.name}
+                              </h4>
+                              <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-full bg-bone text-ink/70 border border-ink/10 shrink-0">
+                                HSN {c.hsn || '—'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-[10px] font-bold">
+                                {count} {count === 1 ? 'Product' : 'Products'} Active
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="pt-3 border-t border-ink/10 flex items-center justify-between text-xs">
+                            <button
+                              onClick={() => setEditingCategory({ old: c.name })}
+                              className="px-3 py-1.5 rounded-lg border border-brass/40 text-brass font-bold hover:bg-brass hover:text-ink transition text-[11px]"
+                            >
+                              Edit / Rename
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (products.some(p => p.cat === c.name)) {
+                                  return showToast(`Cannot delete: ${count} products are currently linked to ${c.name}. Move or delete products first.`, true);
+                                }
+                                if (confirm(`Permanently delete category "${c.name}"?`)) {
+                                  setCategories(categories.filter(x => x.name !== c.name));
+                                  showToast(`Category "${c.name}" deleted.`);
+                                }
+                              }}
+                              className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 font-bold hover:bg-rose-50 transition text-[11px]"
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
-                        <div className="space-x-3 text-xs">
-                          <button
-                            onClick={() => setEditingCategory({ old: c.name })}
-                            className="text-brass font-bold hover:underline"
-                          >
-                            Rename / Edit
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (products.some(p => p.cat === c.name)) {
-                                return showToast('Delete or move its products first', true);
-                              }
-                              if (confirm(`Delete category ${c.name}?`)) {
-                                setCategories(categories.filter(x => x.name !== c.name));
-                                showToast('Category deleted');
-                              }
-                            }}
-                            className="text-rose-600 font-bold hover:underline"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -5184,14 +5495,28 @@ export default function App() {
 
               {/* Tab 6: Coupons */}
               {adminTab === 'coupons' && (
-                <div className="space-y-4">
-                  <button
-                    onClick={() => setEditingCoupon({})}
-                    className="px-4 py-2 rounded-lg bg-brass text-ink text-xs font-bold"
-                  >
-                    + Add coupon
-                  </button>
+                <div className="space-y-5">
+                  {/* Executive Header & Stats */}
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-ink/10 shadow-sm">
+                    <div>
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brass/20 text-brass text-[10px] font-extrabold uppercase tracking-wider mb-1">
+                        <span>🎟️</span> Promotional Campaigns
+                      </div>
+                      <h3 className="serif text-xl font-bold text-ink">Discount Coupons &amp; Vouchers</h3>
+                      <p className="text-xs text-ink/60 mt-0.5">
+                        {coupons.filter(c => c.on).length} active campaigns · {coupons.filter(c => !c.on).length} paused
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setEditingCoupon({})}
+                      className="px-5 py-2.5 rounded-xl bg-ink text-bone hover:bg-brass hover:text-ink font-bold text-xs shadow-md transition flex items-center gap-2"
+                    >
+                      <span className="text-gold">+</span>
+                      <span>Create New Voucher</span>
+                    </button>
+                  </div>
 
+                  {/* Add / Edit Coupon Form */}
                   {editingCoupon && (
                     <form
                       onSubmit={e => {
@@ -5214,49 +5539,187 @@ export default function App() {
                           setCoupons([...coupons, nc]);
                         }
                         setEditingCoupon(null);
-                        showToast('Coupon saved');
+                        showToast(`Coupon ${code} saved successfully`);
                       }}
-                      className="bg-white p-5 rounded-xl border border-brass/40 grid sm:grid-cols-6 gap-3 text-xs"
+                      className="bg-white p-6 rounded-2xl border-2 border-brass/50 shadow-lg space-y-4 animate-in fade-in duration-200"
                     >
-                      <input required name="code" defaultValue={editingCoupon.old || ''} placeholder="CODE *" className="uppercase" />
-                      <select name="type" defaultValue="P">
-                        <option value="P">% off</option>
-                        <option value="F">Flat ₹ off</option>
-                      </select>
-                      <input required name="val" type="number" min="1" placeholder="Value *" />
-                      <input name="max" type="number" placeholder="Max ₹ cap" />
-                      <input name="min" type="number" placeholder="Min order ₹" />
-                      <label className="flex items-center gap-1">
-                        <input type="checkbox" name="on" defaultChecked />
-                        <span>Active</span>
-                      </label>
-                      <div className="sm:col-span-6 flex gap-2">
-                        <button type="submit" className="px-4 py-2 rounded-lg bg-ink text-bone font-bold">Save</button>
-                        <button type="button" onClick={() => setEditingCoupon(null)} className="px-4 py-2 rounded-lg border">Cancel</button>
+                      <div className="flex items-center justify-between pb-3 border-b border-ink/10">
+                        <b className="text-sm text-ink flex items-center gap-2">
+                          <span>🎟️</span> {editingCoupon.old ? `Edit Voucher: ${editingCoupon.old}` : 'Configure New Promotional Voucher'}
+                        </b>
+                        <span className="text-[10px] text-ink/50 uppercase tracking-wider">Promotions Engine</span>
+                      </div>
+
+                      <div className="grid sm:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-[11px] font-bold text-ink/80 mb-1.5">
+                            Voucher Code <span className="text-rose-600">*</span>
+                          </label>
+                          <input
+                            required
+                            name="code"
+                            defaultValue={editingCoupon.old || ''}
+                            placeholder="e.g. LUXURY20, ELEVATE500"
+                            className="w-full text-xs font-mono font-bold uppercase tracking-wider px-3.5 py-2.5 rounded-xl border border-ink/20 focus:border-brass focus:ring-1 focus:ring-brass"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-ink/80 mb-1.5">
+                            Discount Mechanism <span className="text-rose-600">*</span>
+                          </label>
+                          <select
+                            name="type"
+                            defaultValue={editingCoupon.old ? coupons.find(c => c.code === editingCoupon.old)?.type : 'P'}
+                            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-ink/20 focus:border-brass focus:ring-1 focus:ring-brass cursor-pointer"
+                          >
+                            <option value="P">Percentage Discount (% Off)</option>
+                            <option value="F">Flat Rupee Amount (₹ Flat Off)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-ink/80 mb-1.5">
+                            Discount Rate / Amount <span className="text-rose-600">*</span>
+                          </label>
+                          <input
+                            required
+                            type="number"
+                            min="1"
+                            name="val"
+                            defaultValue={editingCoupon.old ? coupons.find(c => c.code === editingCoupon.old)?.val : 15}
+                            placeholder="e.g. 15 (for 15%) or 200 (for ₹200)"
+                            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-ink/20 focus:border-brass focus:ring-1 focus:ring-brass"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-ink/80 mb-1.5">
+                            Maximum ₹ Discount Cap
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            name="max"
+                            defaultValue={editingCoupon.old ? coupons.find(c => c.code === editingCoupon.old)?.max : 500}
+                            placeholder="e.g. 500 (Max discount allowed)"
+                            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-ink/20 focus:border-brass focus:ring-1 focus:ring-brass"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-ink/80 mb-1.5">
+                            Minimum Order Value (₹)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            name="min"
+                            defaultValue={editingCoupon.old ? coupons.find(c => c.code === editingCoupon.old)?.min : 500}
+                            placeholder="e.g. 500 (Minimum cart subtotal)"
+                            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-ink/20 focus:border-brass focus:ring-1 focus:ring-brass"
+                          />
+                        </div>
+
+                        <div className="flex items-center pt-6">
+                          <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              name="on"
+                              defaultChecked={editingCoupon.old ? coupons.find(c => c.code === editingCoupon.old)?.on : true}
+                              className="w-4 h-4 text-brass focus:ring-brass rounded"
+                            />
+                            <span className="text-xs font-bold text-ink">Campaign Active &amp; Published</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-ink/10">
+                        <button
+                          type="button"
+                          onClick={() => setEditingCoupon(null)}
+                          className="px-4 py-2 rounded-xl border border-ink/20 font-bold hover:bg-bone text-xs"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-6 py-2 rounded-xl bg-ink text-bone font-bold text-xs hover:bg-brass hover:text-ink shadow-md transition"
+                        >
+                          Save Voucher
+                        </button>
                       </div>
                     </form>
                   )}
 
-                  <div className="grid sm:grid-cols-2 gap-4">
+                  {/* Luxury Voucher Cards Grid */}
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {coupons.map((c, idx) => (
-                      <div key={c.code} className="bg-white p-4 rounded-xl border border-ink/10 shadow-sm flex flex-col justify-between">
-                        <div className="flex justify-between items-center">
+                      <div
+                        key={c.code}
+                        className={`bg-white rounded-2xl border p-5 shadow-sm transition hover:shadow-md flex flex-col justify-between space-y-4 relative overflow-hidden ${
+                          c.on ? 'border-brass/50 bg-gradient-to-b from-amber-50/20 to-white' : 'border-ink/10 opacity-75'
+                        }`}
+                      >
+                        {/* Perforated edge indicator */}
+                        <div className="flex items-start justify-between gap-3">
                           <div>
-                            <b className="text-sm">{c.code}</b>
-                            <p className="text-xs text-ink/60">
-                              {c.type === 'P' ? `${c.val}% off (max ${inr(c.max)})` : `${inr(c.val)} off`} · Min {inr(c.min)}
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-base font-extrabold tracking-wider bg-ink text-gold px-2.5 py-1 rounded-lg">
+                                {c.code}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(c.code);
+                                  showToast(`Copied voucher code ${c.code}`);
+                                }}
+                                className="text-ink/50 hover:text-ink text-xs"
+                                title="Copy code"
+                              >
+                                📋
+                              </button>
+                            </div>
+                            <p className="font-bold text-sm text-ink mt-2">
+                              {c.type === 'P' ? `${c.val}% OFF` : `${inr(c.val)} FLAT OFF`}
+                              {c.type === 'P' && c.max && c.max < 1000000 ? ` (up to ${inr(c.max)})` : ''}
+                            </p>
+                            <p className="text-xs text-ink/60 mt-0.5">
+                              Minimum order value: <b>{inr(c.min)}</b>
                             </p>
                           </div>
+
                           <button
                             onClick={() => {
                               setCoupons(coupons.map((x, i) => i === idx ? { ...x, on: !x.on } : x));
                               showToast(`Coupon ${c.code} ${!c.on ? 'activated' : 'paused'}`);
                             }}
-                            className={`px-3 py-1 rounded-full text-xs font-bold transition ${
-                              c.on ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-700'
+                            className={`px-3 py-1 rounded-full text-[10px] font-extrabold tracking-wider uppercase transition shadow-xs ${
+                              c.on ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-gray-100 text-gray-600 border border-gray-300'
                             }`}
                           >
-                            {c.on ? 'Active' : 'Paused'}
+                            {c.on ? '● Active' : '○ Paused'}
+                          </button>
+                        </div>
+
+                        {/* Perforated divider look */}
+                        <div className="border-t border-dashed border-ink/20 pt-3 flex items-center justify-between text-xs">
+                          <button
+                            onClick={() => setEditingCoupon({ old: c.code })}
+                            className="px-3 py-1.5 rounded-lg border border-brass/40 text-brass font-bold hover:bg-brass hover:text-ink transition text-[11px]"
+                          >
+                            Edit Voucher
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Delete coupon "${c.code}"?`)) {
+                                setCoupons(coupons.filter(x => x.code !== c.code));
+                                showToast(`Coupon "${c.code}" removed.`);
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 font-bold hover:bg-rose-50 transition text-[11px]"
+                          >
+                            Delete
                           </button>
                         </div>
                       </div>
@@ -6115,13 +6578,93 @@ export default function App() {
                 />
               </div>
 
-              <div className="p-3.5 rounded-xl bg-bone/70 border border-ink/10 space-y-1 text-[11px] text-ink/70">
-                <p className="font-bold text-ink">ℹ️ Cancellation &amp; Refund Policy:</p>
-                <p>
-                  • Once submitted, the order enters <b>Verification in process</b> to verify fulfillment stoppage.
+              {/* Refund Method Selection */}
+              <div>
+                <label className="block text-[11px] font-bold text-ink/80 mb-1.5">
+                  Select Refund Destination *
+                </label>
+                <div className="grid sm:grid-cols-2 gap-2.5">
+                  <label
+                    className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition ${
+                      cancelRefundMethod === 'WALLET'
+                        ? 'border-brass bg-amber-50/60 ring-1 ring-brass/40 shadow-xs'
+                        : 'border-ink/15 hover:bg-bone'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="cancelRefundMethod"
+                      checked={cancelRefundMethod === 'WALLET'}
+                      onChange={() => setCancelRefundMethod('WALLET')}
+                      className="text-brass focus:ring-brass mt-0.5"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-ink flex items-center gap-1">
+                        <span className="text-amber-500 font-bold">✦</span> Orayve Aura Wallet
+                      </span>
+                      <span className="text-[10px] font-bold text-emerald-700 block mt-0.5">
+                        ⚡ Instant Credit ({inr(cancelModalOrder.total)})
+                      </span>
+                      <span className="text-[10px] text-ink/50 block">Reflected immediately in passbook (1 Pt = ₹1)</span>
+                    </div>
+                  </label>
+
+                  <label
+                    className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition ${
+                      cancelRefundMethod === 'ORIGINAL'
+                        ? 'border-brass bg-amber-50/60 ring-1 ring-brass/40 shadow-xs'
+                        : 'border-ink/15 hover:bg-bone'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="cancelRefundMethod"
+                      checked={cancelRefundMethod === 'ORIGINAL'}
+                      onChange={() => setCancelRefundMethod('ORIGINAL')}
+                      className="text-brass focus:ring-brass mt-0.5"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-ink flex items-center gap-1">
+                        <span>🏦</span> Original Payment Source
+                      </span>
+                      <span className="text-[10px] font-bold text-amber-700 block mt-0.5">
+                        3 to 5 business days
+                      </span>
+                      <span className="text-[10px] text-ink/50 block">Credited back to bank/UPI source</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Dynamic Notification Card */}
+              <div className={`p-3.5 rounded-xl border space-y-1 text-xs transition ${
+                cancelRefundMethod === 'WALLET'
+                  ? 'bg-amber-50/80 border-amber-300 text-amber-950'
+                  : 'bg-stone-50 border-ink/15 text-ink/80'
+              }`}>
+                <p className="font-bold flex items-center gap-1.5 text-xs">
+                  {cancelRefundMethod === 'WALLET' ? (
+                    <>
+                      <span className="text-amber-500 font-bold">✦</span>
+                      <span>Instant Aura Wallet Refund Selected</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>🏦</span>
+                      <span>Original Payment Source Refund Selected</span>
+                    </>
+                  )}
                 </p>
-                <p>
-                  • After checking (approx. 1 hour), <b>Refund will be initiated</b> automatically back to your payment source within 3–5 business days.
+                <p className="text-[11px] leading-relaxed">
+                  {cancelRefundMethod === 'WALLET' ? (
+                    <>
+                      Refund of <b>{inr(cancelModalOrder.total)}</b> will be credited <b>INSTANTLY</b> to your <b>Orayve Aura Wallet</b> as <b>{Math.round(cancelModalOrder.total)} Aura Points</b> upon confirmation (1 Pt = ₹1). You can use it immediately!
+                    </>
+                  ) : (
+                    <>
+                      Fulfillment stoppage check in process (approx. 1 hr). Refund of <b>{inr(cancelModalOrder.total)}</b> will be credited back to your original payment source (Bank/UPI/Card) within <b>3 to 5 business days</b>.
+                    </>
+                  )}
                 </p>
               </div>
 
@@ -6293,46 +6836,94 @@ export default function App() {
                   />
                 </div>
               ) : (
-                <div>
-                  <label className="block text-[11px] font-bold text-ink/80 mb-1">
-                    Refund Destination *
-                  </label>
-                  <div className="grid sm:grid-cols-2 gap-2">
-                    <label
-                      className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition ${
-                        returnRefundPref === 'ORIGINAL' ? 'border-brass bg-brass/10 font-bold' : 'border-ink/15 hover:bg-bone'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="refundPref"
-                        checked={returnRefundPref === 'ORIGINAL'}
-                        onChange={() => setReturnRefundPref('ORIGINAL')}
-                        className="text-brass focus:ring-brass"
-                      />
-                      <div>
-                        <span className="text-[11px] text-ink block">Original Payment Source</span>
-                        <span className="text-[10px] text-ink/50">Credited within 3-5 business days</span>
-                      </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-ink/80 mb-1.5">
+                      Select Refund Destination *
                     </label>
+                    <div className="grid sm:grid-cols-2 gap-2.5">
+                      <label
+                        className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition ${
+                          returnRefundPref === 'WALLET'
+                            ? 'border-brass bg-amber-50/60 ring-1 ring-brass/40 shadow-xs'
+                            : 'border-ink/15 hover:bg-bone'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="refundPref"
+                          checked={returnRefundPref === 'WALLET'}
+                          onChange={() => setReturnRefundPref('WALLET')}
+                          className="text-brass focus:ring-brass mt-0.5"
+                        />
+                        <div>
+                          <span className="text-xs font-bold text-ink flex items-center gap-1">
+                            <span className="text-amber-500 font-bold">✦</span> Orayve Aura Wallet
+                          </span>
+                          <span className="text-[10px] font-bold text-emerald-700 block mt-0.5">
+                            ⚡ Instant Credit on Pickup ({inr(returnModalOrder.total)})
+                          </span>
+                          <span className="text-[10px] text-ink/50 block">Reflected immediately as {Math.round(returnModalOrder.total)} Aura Pts</span>
+                        </div>
+                      </label>
 
-                    <label
-                      className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition ${
-                        returnRefundPref === 'WALLET' ? 'border-brass bg-brass/10 font-bold' : 'border-ink/15 hover:bg-bone'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="refundPref"
-                        checked={returnRefundPref === 'WALLET'}
-                        onChange={() => setReturnRefundPref('WALLET')}
-                        className="text-brass focus:ring-brass"
-                      />
-                      <div>
-                        <span className="text-[11px] text-ink block">Orayve Store Credit</span>
-                        <span className="text-[10px] text-ink/50">Instant wallet credit on pickup</span>
-                      </div>
-                    </label>
+                      <label
+                        className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition ${
+                          returnRefundPref === 'ORIGINAL'
+                            ? 'border-brass bg-amber-50/60 ring-1 ring-brass/40 shadow-xs'
+                            : 'border-ink/15 hover:bg-bone'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="refundPref"
+                          checked={returnRefundPref === 'ORIGINAL'}
+                          onChange={() => setReturnRefundPref('ORIGINAL')}
+                          className="text-brass focus:ring-brass mt-0.5"
+                        />
+                        <div>
+                          <span className="text-xs font-bold text-ink flex items-center gap-1">
+                            <span>🏦</span> Original Payment Source
+                          </span>
+                          <span className="text-[10px] font-bold text-amber-700 block mt-0.5">
+                            3 to 5 business days
+                          </span>
+                          <span className="text-[10px] text-ink/50 block">Credited back to bank/UPI source</span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Dynamic Return Message */}
+                  <div className={`p-3.5 rounded-xl border space-y-1 text-xs transition ${
+                    returnRefundPref === 'WALLET'
+                      ? 'bg-amber-50/80 border-amber-300 text-amber-950'
+                      : 'bg-stone-50 border-ink/15 text-ink/80'
+                  }`}>
+                    <p className="font-bold flex items-center gap-1.5 text-xs">
+                      {returnRefundPref === 'WALLET' ? (
+                        <>
+                          <span className="text-amber-500 font-bold">✦</span>
+                          <span>Instant Aura Wallet Refund on Pickup</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>🏦</span>
+                          <span>Original Payment Source Refund</span>
+                        </>
+                      )}
+                    </p>
+                    <p className="text-[11px] leading-relaxed">
+                      {returnRefundPref === 'WALLET' ? (
+                        <>
+                          Refund of <b>{inr(returnModalOrder.total)}</b> will be credited <b>INSTANTLY</b> into your <b>Orayve Aura Wallet</b> as <b>{Math.round(returnModalOrder.total)} Aura Points</b> as soon as the item is picked up by our courier partner!
+                        </>
+                      ) : (
+                        <>
+                          Once product pickup is completed and verified, refund of <b>{inr(returnModalOrder.total)}</b> will be credited back to your <b>original payment source</b> within <b>3 to 5 business days</b>.
+                        </>
+                      )}
+                    </p>
                   </div>
                 </div>
               )}
@@ -6429,6 +7020,134 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* ORAYVE AURA WALLET PASSBOOK MODAL                                    */}
+      {/* ==================================================================== */}
+      {showWalletPassbook && (
+        <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-brass/40 my-8 space-y-4 animate-in zoom-in-95 duration-150 relative overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-ink/10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-600 via-amber-400 to-yellow-200 flex items-center justify-center text-stone-950 font-extrabold text-lg shadow-md">
+                  ✦
+                </div>
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-extrabold tracking-wider uppercase">
+                    <span>✦</span> ORAYVE AURA CLUB
+                  </div>
+                  <h3 className="font-bold text-base text-ink mt-0.5">
+                    Aura Wallet &amp; Passbook
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowWalletPassbook(false)}
+                className="w-7 h-7 rounded-full border border-ink/20 flex items-center justify-center text-ink/60 hover:text-ink hover:bg-bone font-bold text-xs transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Wallet Balance Hero Card */}
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-stone-900 via-neutral-900 to-amber-950/90 text-bone shadow-md border border-brass/40 relative overflow-hidden">
+              <div className="absolute right-0 top-0 translate-x-4 -translate-y-4 w-36 h-36 bg-amber-500/10 rounded-full blur-xl pointer-events-none"></div>
+              <div className="flex justify-between items-start relative z-10">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wider text-gold/80 font-bold">Total Available Points</p>
+                  <div className="flex items-baseline gap-2 mt-1">
+                    <span className="serif text-3xl sm:text-4xl font-extrabold text-gold">
+                      {walletPoints.toLocaleString('en-IN')}
+                    </span>
+                    <span className="text-sm font-semibold text-bone/80">Aura Pts</span>
+                  </div>
+                  <p className="text-xs text-bone/70 mt-1">
+                    Passbook Value: <b className="text-bone">{inr(walletPoints)}</b> (Fixed 1 Pt = ₹1)
+                  </p>
+                </div>
+                <span className="px-2.5 py-1 rounded-full bg-gold/20 text-gold border border-gold/40 text-[10px] font-extrabold uppercase tracking-wider">
+                  Instant Refund Active
+                </span>
+              </div>
+              <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-[11px] text-bone/70">
+                <span>Account: {currentUser?.mobile ? `+91 ${currentUser.mobile}` : 'Verified Member'}</span>
+                <span>✦ Instant 1:1 Credit</span>
+              </div>
+            </div>
+
+            {/* Transaction Passbook List */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between pt-1">
+                <h4 className="text-xs font-bold text-ink uppercase tracking-wider flex items-center gap-1.5">
+                  <span>📜</span> Transaction Statement ({walletTransactions.length})
+                </h4>
+                <span className="text-[10px] text-ink/50">From account start to date</span>
+              </div>
+
+              <div className="max-h-64 overflow-y-auto space-y-2 pr-1 divide-y divide-ink/10 border border-ink/10 rounded-2xl p-3 bg-stone-50/50">
+                {walletTransactions && walletTransactions.length > 0 ? (
+                  walletTransactions.map((tx, idx) => {
+                    const isCredit = tx.type === 'CREDIT';
+                    return (
+                      <div key={tx.id || idx} className="pt-2.5 first:pt-0 flex items-center justify-between gap-3">
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${
+                            isCredit ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                          }`}>
+                            {isCredit ? '↓' : '↑'}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-ink truncate">
+                              {tx.description || (isCredit ? 'Aura Points Credited' : 'Aura Points Redeemed')}
+                            </p>
+                            <div className="flex items-center gap-2 text-[10px] text-ink/50 mt-0.5">
+                              <span>{tx.date || 'Recent'}</span>
+                              {tx.orderId && (
+                                <span className="font-mono bg-white border border-ink/10 px-1.5 py-0.2 rounded text-ink/70">
+                                  #{tx.orderId}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className={`text-xs font-bold ${isCredit ? 'text-emerald-700' : 'text-rose-700'}`}>
+                            {isCredit ? '+' : '-'}{Number(tx.points || tx.amount || 0).toLocaleString('en-IN')} Pts
+                          </p>
+                          <p className="text-[10px] text-ink/50">
+                            {isCredit ? '+' : '-'}{inr(tx.amount || tx.points || 0)}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="py-8 text-center text-xs text-ink/50">
+                    <p className="text-2xl mb-1">🪙</p>
+                    <p>No transactions yet.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-3 border-t border-ink/10 flex items-center justify-between gap-2">
+              <p className="text-[10px] text-ink/60">
+                ✦ 1 Aura Point = ₹1. Points never expire and apply to all orders.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowWalletPassbook(false)}
+                className="px-4 py-2 rounded-xl bg-ink text-bone font-bold text-xs hover:bg-brass hover:text-ink transition whitespace-nowrap"
+              >
+                Close Passbook
+              </button>
+            </div>
           </div>
         </div>
       )}
