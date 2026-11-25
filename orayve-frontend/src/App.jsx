@@ -2097,7 +2097,7 @@ export default function App() {
                 if (view !== 'store') setView('store');
               }}
               placeholder="Search 260 wallets, watches, shoes, ties, rings..."
-              className="order-last sm:order-none flex-1 min-w-full sm:min-w-0 sm:max-w-md !bg-white/10 !border-brass/40 !rounded-full !px-4 py-2 text-bone placeholder-bone/50 focus:outline-none focus:ring-1 focus:ring-gold"
+              className="header-search order-last sm:order-none flex-1 min-w-full sm:min-w-0 sm:max-w-md !bg-white/10 !border-brass/40 !rounded-full !px-4 py-2 text-bone placeholder-bone/50 focus:outline-none focus:ring-1 focus:ring-gold"
             />
 
             {/* Header Action Buttons */}
@@ -2861,8 +2861,11 @@ export default function App() {
                 </div>
 
                 {/* Pincode Checker Form */}
-                <div className="mt-2 p-3 rounded-xl bg-white border border-ink/10 shadow-sm">
-                  <p className="font-bold text-xs mb-1.5">Check delivery to a pincode</p>
+                <div className="mt-2.5 p-3.5 rounded-2xl bg-white border border-ink/10 shadow-sm space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm">🚚</span>
+                    <p className="font-bold text-xs text-ink">Check Doorstep Express Delivery</p>
+                  </div>
                   <form
                     onSubmit={e => {
                       e.preventDefault();
@@ -2876,20 +2879,23 @@ export default function App() {
                       onChange={e => setPincodeInput(e.target.value)}
                       maxLength={6}
                       inputMode="numeric"
-                      placeholder="Enter 6-digit pincode"
-                      className="flex-1 text-xs"
+                      placeholder="Enter 6-digit delivery pincode..."
+                      className="flex-1 text-xs font-mono font-semibold tracking-wider placeholder:font-sans placeholder:tracking-normal"
                     />
                     <button
                       type="submit"
-                      className="px-4 rounded-lg bg-ink text-bone text-xs font-bold hover:bg-brass hover:text-ink transition"
+                      className="px-5 py-2.5 rounded-xl bg-ink text-bone text-xs font-bold hover:bg-brass hover:text-ink transition shrink-0 shadow-sm"
                     >
-                      Check
+                      Check Pincode
                     </button>
                   </form>
                   {pincodeResult && (
-                    <p className={`mt-2 text-xs font-semibold ${pincodeResult.ok ? 'text-emerald-700' : 'text-rose-700'}`}>
-                      {pincodeResult.msg}
-                    </p>
+                    <div className={`mt-2 p-2 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                      pincodeResult.ok ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
+                    }`}>
+                      <span>{pincodeResult.ok ? '✓' : '✕'}</span>
+                      <span>{pincodeResult.msg}</span>
+                    </div>
                   )}
                 </div>
               </div>
@@ -3296,17 +3302,22 @@ export default function App() {
               {/* Order Summary Sidebar */}
               <div className="bg-white p-4 rounded-xl border border-ink/10 space-y-3 text-xs shadow-sm">
                 <div>
-                  <p className="font-bold mb-1.5">Coupon <span className="font-normal text-ink/60">(try WELCOME15 or ORAYVE200)</span></p>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="font-bold text-xs text-ink flex items-center gap-1.5">
+                      <span>🎟️</span> Promotional Voucher
+                    </p>
+                    <span className="text-[10px] text-brass font-bold">WELCOME15 · ORAYVE200</span>
+                  </div>
                   <div className="flex gap-2">
                     <input
                       value={couponInput}
                       onChange={e => setCouponInput(e.target.value.toUpperCase())}
-                      placeholder="Coupon code"
-                      className="flex-1 uppercase text-xs"
+                      placeholder="ENTER COUPON CODE..."
+                      className="flex-1 uppercase text-xs font-mono font-bold tracking-wider"
                     />
                     <button
                       onClick={() => applyCouponCode(couponInput)}
-                      className="px-4 rounded-lg bg-ink text-gold font-bold hover:bg-brass hover:text-ink transition"
+                      className="px-5 py-2.5 rounded-xl bg-ink text-gold font-bold hover:bg-brass hover:text-ink transition shadow-sm shrink-0 text-xs"
                     >
                       Apply
                     </button>
@@ -3531,12 +3542,15 @@ export default function App() {
                         e.currentTarget.reset();
                         showToast('Address saved & selected for delivery');
                       }}
-                      className="p-5 sm:p-7 rounded-2xl bg-white border-2 border-black space-y-4 shadow-md"
+                      className="p-6 sm:p-8 rounded-3xl bg-white border border-brass/40 space-y-5 shadow-xl"
                     >
-                      <div className="flex items-center justify-between border-b border-black/10 pb-3">
+                      <div className="flex items-center justify-between border-b border-ink/10 pb-3">
                         <div>
-                          <h3 className="font-bold text-sm text-ink flex items-center gap-2">
-                            <span>📍</span> Add New Delivery Address
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brass/20 text-brass text-[10px] font-extrabold uppercase tracking-wider mb-1">
+                            <span>📍</span> Dispatch Destination
+                          </div>
+                          <h3 className="font-bold text-base text-ink">
+                            Add New Delivery Address
                           </h3>
                           <p className="text-[11px] text-ink/60 mt-0.5">Please ensure all details are accurate for insured luxury dispatch</p>
                         </div>
@@ -3544,7 +3558,7 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => setShowNewAddrForm(false)}
-                            className="text-xs font-semibold text-ink/60 hover:text-ink transition"
+                            className="text-xs font-bold text-ink/60 hover:text-ink transition px-3 py-1.5 rounded-lg border border-ink/15 hover:bg-bone"
                           >
                             ✕ Cancel
                           </button>
@@ -3552,10 +3566,10 @@ export default function App() {
                       </div>
 
                       {/* Section 1: Contact Details */}
-                      <div className="grid sm:grid-cols-2 gap-3.5">
+                      <div className="grid sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-[11px] font-bold uppercase tracking-wider text-ink/80 mb-1.5">
-                            Full Name / Recipient <span className="text-rose-600">*</span>
+                            Full Name / Recipient <span className="text-rose-600 font-bold">*</span>
                           </label>
                           <input
                             type="text"
@@ -3563,15 +3577,15 @@ export default function App() {
                             name="name"
                             defaultValue={currentUser?.name || ''}
                             placeholder="e.g. Ankit Kumar"
-                            className="w-full text-xs px-3.5 py-2.5 rounded-lg bg-white placeholder:text-ink/40 font-medium"
+                            className="w-full text-xs font-medium"
                           />
                         </div>
                         <div>
                           <label className="block text-[11px] font-bold uppercase tracking-wider text-ink/80 mb-1.5">
-                            10-Digit Mobile Number <span className="text-rose-600">*</span>
+                            10-Digit Mobile Number <span className="text-rose-600 font-bold">*</span>
                           </label>
                           <div className="relative flex items-center">
-                            <span className="absolute left-3 text-xs font-bold text-ink/70 select-none">🇮🇳 +91</span>
+                            <span className="absolute left-3.5 text-xs font-bold text-ink/70 select-none z-10">🇮🇳 +91</span>
                             <input
                               type="tel"
                               required
@@ -3580,45 +3594,45 @@ export default function App() {
                               maxLength={10}
                               placeholder="9876543210"
                               pattern="[0-9]{10}"
-                              className="w-full text-xs pl-16 pr-3.5 py-2.5 rounded-lg bg-white placeholder:text-ink/40 font-medium tracking-wide"
+                              className="w-full text-xs !pl-18 font-medium tracking-wide"
                             />
                           </div>
                         </div>
                       </div>
 
                       {/* Section 2: Building & Flat Details */}
-                      <div className="grid sm:grid-cols-2 gap-3.5">
+                      <div className="grid sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-[11px] font-bold uppercase tracking-wider text-ink/80 mb-1.5">
-                            Flat, House No., Building, Floor <span className="text-rose-600">*</span>
+                            Flat, House No., Building, Floor <span className="text-rose-600 font-bold">*</span>
                           </label>
                           <input
                             type="text"
                             required
                             name="flat"
                             placeholder="e.g. Flat 402, Lotus Towers"
-                            className="w-full text-xs px-3.5 py-2.5 rounded-lg bg-white placeholder:text-ink/40 font-medium"
+                            className="w-full text-xs font-medium"
                           />
                         </div>
                         <div>
                           <label className="block text-[11px] font-bold uppercase tracking-wider text-ink/80 mb-1.5">
-                            Street, Locality, Area, Landmark <span className="text-rose-600">*</span>
+                            Street, Locality, Area, Landmark <span className="text-rose-600 font-bold">*</span>
                           </label>
                           <input
                             type="text"
                             required
                             name="street"
                             placeholder="e.g. 100ft Road, Near Metro Station"
-                            className="w-full text-xs px-3.5 py-2.5 rounded-lg bg-white placeholder:text-ink/40 font-medium"
+                            className="w-full text-xs font-medium"
                           />
                         </div>
                       </div>
 
                       {/* Section 3: Pincode, City, State */}
-                      <div className="grid sm:grid-cols-3 gap-3.5">
+                      <div className="grid sm:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-[11px] font-bold uppercase tracking-wider text-ink/80 mb-1.5">
-                            Pincode <span className="text-rose-600">*</span>
+                            Pincode <span className="text-rose-600 font-bold">*</span>
                           </label>
                           <input
                             type="text"
@@ -3627,29 +3641,29 @@ export default function App() {
                             maxLength={6}
                             placeholder="e.g. 560038"
                             pattern="[0-9]{6}"
-                            className="w-full text-xs px-3.5 py-2.5 rounded-lg bg-white placeholder:text-ink/40 font-medium tracking-wider"
+                            className="w-full text-xs font-mono font-medium tracking-wider"
                           />
                         </div>
                         <div>
                           <label className="block text-[11px] font-bold uppercase tracking-wider text-ink/80 mb-1.5">
-                            City / District <span className="text-rose-600">*</span>
+                            City / District <span className="text-rose-600 font-bold">*</span>
                           </label>
                           <input
                             type="text"
                             required
                             name="city"
                             placeholder="e.g. Bengaluru"
-                            className="w-full text-xs px-3.5 py-2.5 rounded-lg bg-white placeholder:text-ink/40 font-medium"
+                            className="w-full text-xs font-medium"
                           />
                         </div>
                         <div>
                           <label className="block text-[11px] font-bold uppercase tracking-wider text-ink/80 mb-1.5">
-                            State <span className="text-rose-600">*</span>
+                            State <span className="text-rose-600 font-bold">*</span>
                           </label>
                           <select
                             name="state"
                             defaultValue="Maharashtra"
-                            className="w-full text-xs px-3 py-2.5 rounded-lg bg-white font-medium cursor-pointer"
+                            className="w-full text-xs font-medium cursor-pointer"
                           >
                             {INDIAN_STATES.map(st => (
                               <option key={st} value={st}>{st}</option>
@@ -3673,10 +3687,10 @@ export default function App() {
                               key={t.id}
                               type="button"
                               onClick={() => setAddrType(t.id)}
-                              className={`px-3.5 py-2 rounded-lg text-xs font-bold border-2 transition flex items-center gap-1.5 ${
+                              className={`px-4 py-2 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${
                                 addrType === t.id
-                                  ? 'border-black bg-ink text-bone shadow-xs'
-                                  : 'border-black/30 bg-bone hover:border-black text-ink'
+                                  ? 'border-brass bg-ink text-gold shadow-sm'
+                                  : 'border-ink/20 bg-bone/50 hover:bg-bone text-ink'
                               }`}
                             >
                               <span>{t.icon}</span>
@@ -3690,9 +3704,9 @@ export default function App() {
                       <div className="pt-2">
                         <button
                           type="submit"
-                          className="w-full py-3.5 rounded-xl bg-ink hover:bg-brass text-bone hover:text-ink text-xs font-bold transition duration-200 shadow-md flex items-center justify-center gap-2 uppercase tracking-wider"
+                          className="w-full py-3.5 rounded-xl bg-ink hover:bg-brass text-bone hover:text-ink text-xs font-bold transition duration-200 shadow-lg flex items-center justify-center gap-2 uppercase tracking-wider"
                         >
-                          <span>✓</span> Save Address & Deliver Here
+                          <span>✓</span> Save Address &amp; Deliver Here
                         </button>
                       </div>
                     </form>
@@ -4271,24 +4285,38 @@ export default function App() {
                     showToast('Wrong passcode', true);
                   }
                 }}
-                className="w-full max-w-sm bg-white rounded-2xl p-7 space-y-3 shadow-xl border border-ink/10"
+                className="w-full max-w-sm bg-white rounded-3xl p-8 space-y-4 shadow-2xl border border-brass/40 text-left"
               >
-                <h2 className="serif text-xl font-bold">Admin Console</h2>
-                <input
-                  type="password"
-                  value={adminPassInput}
-                  onChange={e => setAdminPassInput(e.target.value)}
-                  placeholder="Admin passcode"
-                  className="w-full text-xs"
-                />
+                <div className="text-center space-y-1 pb-2 border-b border-ink/10">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-600 to-amber-300 mx-auto flex items-center justify-center text-stone-950 font-bold text-xl shadow-md">
+                    🛡️
+                  </div>
+                  <h2 className="serif text-xl font-bold text-ink mt-2">Executive Admin Portal</h2>
+                  <p className="text-[11px] text-ink/60">Enter your administrative master credential</p>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-ink/80 mb-1.5 uppercase tracking-wider">
+                    Passcode Key <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={adminPassInput}
+                    onChange={e => setAdminPassInput(e.target.value)}
+                    placeholder="Enter security key..."
+                    className="w-full text-xs font-mono font-bold"
+                  />
+                </div>
+
                 <button
                   type="submit"
-                  className="w-full py-2.5 rounded-xl bg-ink text-bone font-bold text-sm hover:bg-brass hover:text-ink transition"
+                  className="w-full py-3 rounded-xl bg-ink text-bone font-bold text-xs uppercase tracking-wider hover:bg-brass hover:text-ink transition shadow-md"
                 >
-                  Sign In
+                  Unlock Admin Console →
                 </button>
-                <p className="text-[10px] text-ink/60">
-                  Demo passcode: {ADMIN_PASS}
+                <p className="text-[10px] text-ink/50 text-center">
+                  Protected session · Demo passcode: {ADMIN_PASS}
                 </p>
               </form>
             </div>
@@ -4458,17 +4486,17 @@ export default function App() {
                   <div className="space-y-4">
                     {/* Orders Filter & Search Toolbar */}
                     <div className="bg-white p-4 rounded-xl border border-ink/10 shadow-sm flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2.5">
                         <input
                           value={adminOrderSearch}
                           onChange={e => setAdminOrderSearch(e.target.value)}
-                          placeholder="Search Order ID, Customer Name, Mobile..."
-                          className="text-xs max-w-xs"
+                          placeholder="Search Order ID, Customer, Mobile..."
+                          className="text-xs w-72 max-w-full font-medium"
                         />
                         <select
                           value={adminOrderFilter}
                           onChange={e => setAdminOrderFilter(e.target.value)}
-                          className="text-xs !bg-bone !border-ink/20"
+                          className="text-xs font-semibold cursor-pointer"
                         >
                           <option value="ALL">All Statuses ({orders.length})</option>
                           {STAT.map((s, idx) => (
@@ -5404,7 +5432,7 @@ export default function App() {
                           value={adminUserSearch}
                           onChange={e => setAdminUserSearch(e.target.value)}
                           placeholder="Search name, phone, email..."
-                          className="text-xs max-w-xs"
+                          className="text-xs w-64 max-w-full font-medium"
                         />
                         <button
                           onClick={() => {
@@ -5951,31 +5979,34 @@ export default function App() {
                 proceedToCheckout();
               }
             }}
-            className="bg-bone rounded-2xl w-full max-w-sm p-6 space-y-3.5 shadow-2xl border-2 border-black"
+            className="bg-white rounded-3xl w-full max-w-sm p-7 space-y-4 shadow-2xl border border-brass/40"
           >
-            <div className="flex justify-between items-center pb-1 border-b border-black/10">
-              <h2 className="serif text-2xl font-bold">{authModal === 'login' ? 'Welcome back' : 'Create account'}</h2>
+            <div className="flex justify-between items-center pb-2 border-b border-ink/10">
+              <div>
+                <span className="text-[10px] tracking-wider uppercase font-extrabold text-brass">Orayve Membership</span>
+                <h2 className="serif text-2xl font-bold text-ink mt-0.5">{authModal === 'login' ? 'Welcome Back' : 'Create Account'}</h2>
+              </div>
               <button 
                 type="button" 
                 onClick={() => { setAuthModal(null); setIsCountryDropdownOpen(false); }} 
-                className="text-sm font-bold p-1 hover:text-brass transition"
+                className="w-7 h-7 rounded-full border border-ink/20 flex items-center justify-center text-ink/60 hover:text-ink hover:bg-bone font-bold text-xs transition"
               >
                 ✕
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-1 p-1 bg-ink/10 rounded-xl text-xs font-bold border border-black/20">
+            <div className="grid grid-cols-2 gap-1 p-1 bg-bone rounded-xl text-xs font-bold border border-ink/10">
               <button
                 type="button"
                 onClick={() => setAuthModal('login')}
-                className={`py-2 rounded-lg transition ${authModal === 'login' ? 'bg-ink text-bone shadow' : 'text-ink/80 hover:text-ink'}`}
+                className={`py-2 rounded-lg transition ${authModal === 'login' ? 'bg-ink text-bone shadow-xs' : 'text-ink/70 hover:text-ink'}`}
               >
-                Login
+                Sign In
               </button>
               <button
                 type="button"
                 onClick={() => setAuthModal('reg')}
-                className={`py-2 rounded-lg transition ${authModal === 'reg' ? 'bg-ink text-bone shadow' : 'text-ink/80 hover:text-ink'}`}
+                className={`py-2 rounded-lg transition ${authModal === 'reg' ? 'bg-ink text-bone shadow-xs' : 'text-ink/70 hover:text-ink'}`}
               >
                 Register
               </button>
@@ -5984,18 +6015,18 @@ export default function App() {
             {authModal === 'reg' && (
               <>
                 <div>
-                  <label className="block text-[11px] font-bold text-ink mb-1">Full Name *</label>
+                  <label className="block text-[11px] font-bold text-ink/80 mb-1">Full Name <span className="text-rose-600">*</span></label>
                   <input 
                     required 
                     name="name" 
                     placeholder="e.g. Neha Sharma" 
-                    className="w-full text-xs px-3.5 py-2.5 rounded-xl border-2 border-black bg-white text-ink placeholder:text-ink/40 focus:outline-none focus:ring-2 focus:ring-black/20 focus:border-black transition shadow-sm" 
+                    className="w-full text-xs font-medium" 
                   />
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-2.5">
                   <div className="col-span-1">
-                    <label className="block text-[11px] font-bold text-ink mb-1">Age *</label>
+                    <label className="block text-[11px] font-bold text-ink/80 mb-1">Age <span className="text-rose-600">*</span></label>
                     <input 
                       required 
                       name="age" 
@@ -6003,17 +6034,17 @@ export default function App() {
                       min="1" 
                       max="120" 
                       defaultValue={25}
-                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border-2 border-black bg-white text-ink placeholder:text-ink/40 focus:outline-none focus:ring-2 focus:ring-black/20 focus:border-black transition shadow-sm" 
+                      className="w-full text-xs font-medium text-center" 
                     />
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-[11px] font-bold text-ink mb-1">Email Address *</label>
+                    <label className="block text-[11px] font-bold text-ink/80 mb-1">Email Address <span className="text-rose-600">*</span></label>
                     <input 
                       required 
                       name="email" 
                       type="email" 
                       placeholder="name@domain.com" 
-                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border-2 border-black bg-white text-ink placeholder:text-ink/40 focus:outline-none focus:ring-2 focus:ring-black/20 focus:border-black transition shadow-sm" 
+                      className="w-full text-xs font-medium" 
                     />
                   </div>
                 </div>
@@ -6022,8 +6053,8 @@ export default function App() {
 
             {/* Mobile input with dynamic country flag & dial code dropdown */}
             <div>
-              <label className="block text-[11px] font-bold text-ink mb-1">
-                Unique Mobile Number *
+              <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                Mobile Number <span className="text-rose-600">*</span>
               </label>
               <div className="relative">
                 <div className="flex gap-2">
@@ -6032,7 +6063,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
-                      className="h-full px-3 py-2.5 rounded-xl border-2 border-black bg-white text-ink text-xs font-bold flex items-center gap-1.5 hover:bg-ink/5 transition shadow-sm"
+                      className="h-full px-3 py-2.5 rounded-xl border border-ink/20 bg-white text-ink text-xs font-bold flex items-center gap-1.5 hover:bg-bone transition shadow-xs"
                       title="Select country code"
                     >
                       <span className="text-base">{selectedCountry.flag}</span>
@@ -6042,13 +6073,13 @@ export default function App() {
 
                     {/* Country Dropdown Menu */}
                     {isCountryDropdownOpen && (
-                      <div className="absolute left-0 top-full mt-1.5 w-64 max-h-56 overflow-y-auto bg-white rounded-xl border-2 border-black shadow-2xl z-50 p-2">
+                      <div className="absolute left-0 top-full mt-1.5 w-64 max-h-56 overflow-y-auto bg-white rounded-2xl border border-brass/40 shadow-2xl z-50 p-2.5">
                         <input
                           type="text"
                           placeholder="Search country or code..."
                           value={countrySearch}
                           onChange={e => setCountrySearch(e.target.value)}
-                          className="w-full text-xs px-2.5 py-1.5 mb-2 rounded-lg border-2 border-black focus:outline-none"
+                          className="w-full text-xs px-2.5 py-1.5 mb-2 rounded-lg"
                         />
                         <div className="max-h-40 overflow-y-auto divide-y divide-ink/10">
                           {COUNTRY_CODES.filter(c => 
@@ -6063,8 +6094,8 @@ export default function App() {
                                 setIsCountryDropdownOpen(false);
                                 setCountrySearch('');
                               }}
-                              className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between hover:bg-ink/10 transition ${
-                                selectedCountry.country === c.country ? 'bg-ink/10 font-bold' : ''
+                              className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between hover:bg-bone transition ${
+                                selectedCountry.country === c.country ? 'bg-bone font-bold text-brass' : ''
                               }`}
                             >
                               <span className="flex items-center gap-2">
@@ -6079,7 +6110,7 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* Mobile Input with Black Border */}
+                  {/* Mobile Input */}
                   <input
                     required
                     name="mobile"
@@ -6088,7 +6119,7 @@ export default function App() {
                     value={authMobileInput}
                     onChange={e => setAuthMobileInput(e.target.value)}
                     placeholder={selectedCountry.placeholder || "Enter mobile number *"}
-                    className="flex-1 text-xs px-3.5 py-2.5 rounded-xl border-2 border-black bg-white text-ink placeholder:text-ink/40 focus:outline-none focus:ring-2 focus:ring-black/20 focus:border-black transition shadow-sm"
+                    className="flex-1 text-xs font-medium tracking-wide"
                   />
                 </div>
               </div>
@@ -6096,8 +6127,8 @@ export default function App() {
 
             {/* OTP verification with Real Send OTP Button */}
             <div>
-              <label className="block text-[11px] font-bold text-ink mb-1">
-                One-Time Password (OTP) *
+              <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                One-Time Verification OTP <span className="text-rose-600">*</span>
               </label>
               <div className="flex gap-2">
                 <input
@@ -6105,16 +6136,16 @@ export default function App() {
                   name="otp"
                   maxLength={6}
                   placeholder="6-digit OTP"
-                  className="flex-1 text-xs px-3.5 py-2.5 rounded-xl border-2 border-black bg-white text-ink placeholder:text-ink/40 focus:outline-none focus:ring-2 focus:ring-black/20 focus:border-black transition shadow-sm font-mono tracking-widest text-center font-bold"
+                  className="flex-1 text-xs font-mono tracking-widest text-center font-bold"
                 />
                 <button
                   type="button"
                   disabled={isSendingOtp || otpCooldown > 0}
                   onClick={handleSendOtp}
-                  className={`px-4 py-2.5 rounded-xl text-xs font-bold transition shadow border-2 border-black ${
+                  className={`px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm border ${
                     otpCooldown > 0 || isSendingOtp
-                      ? 'bg-ink/20 text-ink/60 cursor-not-allowed'
-                      : 'bg-ink text-gold hover:bg-brass hover:text-ink'
+                      ? 'bg-ink/10 text-ink/40 cursor-not-allowed border-ink/10'
+                      : 'bg-ink text-gold hover:bg-brass hover:text-ink border-ink'
                   }`}
                 >
                   {isSendingOtp ? 'Sending...' : otpCooldown > 0 ? `Resend (${otpCooldown}s)` : 'Send OTP'}
@@ -6124,12 +6155,12 @@ export default function App() {
 
             <button
               type="submit"
-              className="w-full py-3 rounded-xl bg-ink text-bone font-bold text-sm hover:bg-brass hover:text-ink transition shadow-lg border-2 border-black mt-2"
+              className="w-full py-3 rounded-xl bg-ink text-bone font-bold text-xs hover:bg-brass hover:text-ink transition shadow-lg mt-2 uppercase tracking-wider"
             >
-              {authModal === 'login' ? 'Login with OTP' : 'Complete Registration'}
+              {authModal === 'login' ? 'Sign In with OTP' : 'Complete Registration'}
             </button>
-            <p className="text-[10px] text-ink/60 text-center">
-              Real cryptographically secure 6-digit OTP with live verification.
+            <p className="text-[10px] text-ink/50 text-center">
+              Secured with cryptographically verified OTP and Neon DB synchronization.
             </p>
           </form>
         </div>

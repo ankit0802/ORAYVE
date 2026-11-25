@@ -11,19 +11,100 @@
   --font-sans: 'Manrope', sans-serif;
 }
 
-/* Crisp High-Contrast Black Border for all inputs, textareas, and dropdowns */
-input,
+/* ========================================================================== */
+/* Standard Luxury Form Controls & Text Box System                             */
+/* ========================================================================== */
+
+/* Default standard styling for text inputs, textareas, and select menus */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
 textarea,
 select {
-  border: 2px solid #000000 !important;
+  border: 1.5px solid #1C1B29 !important;
+  border-radius: 0.75rem !important;
+  background-color: #FFFFFF !important;
+  color: #1C1B29 !important;
+  padding: 0.625rem 0.875rem !important;
+  font-size: 0.8125rem !important;
+  line-height: 1.25rem !important;
+  font-weight: 500 !important;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04) !important;
+  transition: border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease !important;
 }
 
-input:focus,
+/* Focused state with luxury warm brass glow and solid contrast */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):focus,
 textarea:focus,
 select:focus {
-  border-color: #000000 !important;
+  border-color: #B8905C !important;
   outline: none !important;
-  box-shadow: 0 0 0 2px #B8905C !important;
+  box-shadow: 0 0 0 3px rgba(184, 144, 92, 0.28) !important;
+  background-color: #FFFFFF !important;
+}
+
+/* Subtle, legible placeholder typography */
+input::placeholder,
+textarea::placeholder {
+  color: rgba(28, 27, 41, 0.45) !important;
+  font-weight: 400 !important;
+}
+
+/* Disabled input state */
+input:disabled,
+textarea:disabled,
+select:disabled {
+  background-color: rgba(28, 27, 41, 0.05) !important;
+  border-color: rgba(28, 27, 41, 0.2) !important;
+  color: rgba(28, 27, 41, 0.5) !important;
+  cursor: not-allowed !important;
+}
+
+/* Header Search Bar Exemption for Dark Background */
+#q,
+input.header-search {
+  border: 1.5px solid rgba(214, 185, 140, 0.45) !important;
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: #F3EFE7 !important;
+  border-radius: 9999px !important;
+}
+
+#q:focus,
+input.header-search:focus {
+  border-color: #D6B98C !important;
+  background-color: rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 0 0 3px rgba(214, 185, 140, 0.3) !important;
+}
+
+#q::placeholder,
+input.header-search::placeholder {
+  color: rgba(243, 239, 231, 0.5) !important;
+}
+
+/* High-standard checkboxes & radio buttons */
+input[type="checkbox"],
+input[type="radio"] {
+  border: 1.5px solid #1C1B29 !important;
+  accent-color: #B8905C !important;
+  cursor: pointer !important;
+  width: 1rem !important;
+  height: 1rem !important;
+  vertical-align: middle !important;
+}
+
+input[type="checkbox"] {
+  border-radius: 0.25rem !important;
+}
+
+input[type="radio"] {
+  border-radius: 9999px !important;
+}
+
+/* Color swatch inputs */
+input[type="color"] {
+  border: 1.5px solid #1C1B29 !important;
+  border-radius: 0.5rem !important;
+  padding: 2px !important;
+  background-color: #FFFFFF !important;
+  cursor: pointer !important;
 }
 
 body {
