@@ -611,6 +611,8 @@ app.get('/api/orders', async (req, res) => {
           o.order_status as status,
           o.coupon_code as coupon,
           o.created_at as at,
+          o.cancel_info as "cancelInfo",
+          o.return_info as "returnInfo",
           COALESCE(
             json_agg(
               json_build_object(
@@ -639,24 +641,79 @@ app.get('/api/orders', async (req, res) => {
       queryStr += ` GROUP BY o.order_id ORDER BY o.created_at DESC;`;
 
       const q = await pool.query(queryStr, params);
+      const nowMs = Date.now();
+
       const dbOrders = q.rows.map(r => {
         let parsedAddr = r.addr;
         try {
           if (typeof r.addr === 'string') parsedAddr = JSON.parse(r.addr);
         } catch {}
+
+        let cancelInfo = r.cancelInfo;
+        try {
+          if (typeof cancelInfo === 'string') cancelInfo = JSON.parse(cancelInfo);
+        } catch {}
+
+        let returnInfo = r.returnInfo;
+        try {
+          if (typeof returnInfo === 'string') returnInfo = JSON.parse(returnInfo);
+        } catch {}
+
+        let currentStatus = parseInt(r.status) || 0;
+        let needsDbSync = false;
+
+        // Auto-progression: 1 hr after cancellation requested -> Refund Initiated
+        if (currentStatus === 4 && cancelInfo && cancelInfo.requestedAt) {
+          const elapsedMs = nowMs - new Date(cancelInfo.requestedAt).getTime();
+          if (elapsedMs >= 1 * 60 * 60 * 1000) {
+            currentStatus = 5; // REFUND_INITIATED
+            cancelInfo.status = 'REFUND_INITIATED';
+            cancelInfo.refundInitiatedAt = new Date().toISOString();
+            needsDbSync = true;
+          }
+        }
+
+        // Auto-progression: 2 hrs after return/replace requested -> Pickup Scheduled
+        if (currentStatus === 6 && returnInfo && returnInfo.requestedAt) {
+          const elapsedMs = nowMs - new Date(returnInfo.requestedAt).getTime();
+          if (elapsedMs >= 2 * 60 * 60 * 1000) {
+            currentStatus = 7; // PICKUP_SCHEDULED
+            returnInfo.status = 'PICKUP_SCHEDULED';
+            returnInfo.pickupScheduledAt = new Date().toISOString();
+            needsDbSync = true;
+          }
+        } else if (currentStatus === 9 && returnInfo && returnInfo.requestedAt) {
+          const elapsedMs = nowMs - new Date(returnInfo.requestedAt).getTime();
+          if (elapsedMs >= 2 * 60 * 60 * 1000) {
+            currentStatus = 10; // REPLACEMENT_PICKUP
+            returnInfo.status = 'PICKUP_SCHEDULED';
+            returnInfo.pickupScheduledAt = new Date().toISOString();
+            needsDbSync = true;
+          }
+        }
+
+        if (needsDbSync) {
+          pool.query(
+            'UPDATE public.orders SET order_status = $1, cancel_info = $2, return_info = $3 WHERE order_number = $4',
+            [currentStatus, cancelInfo ? JSON.stringify(cancelInfo) : null, returnInfo ? JSON.stringify(returnInfo) : null, r.id]
+          ).catch(e => console.error('[DB] Auto-progression update error:', e.message));
+        }
+
         return {
           id: r.id,
           inv: r.inv,
           mobile: r.mobile,
           at: new Date(r.at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
-          status: parseInt(r.status) || 0,
+          status: currentStatus,
           pay: r.pay,
           coupon: r.coupon || '',
           sub: parseFloat(r.sub),
           disc: parseFloat(r.disc || 0),
           total: parseFloat(r.total),
           addr: parsedAddr,
-          items: r.items || []
+          items: r.items || [],
+          cancelInfo,
+          returnInfo
         };
       });
 
@@ -669,6 +726,30 @@ app.get('/api/orders', async (req, res) => {
       console.error('[DB] Error fetching orders:', e.message);
     }
   }
+
+  // Fallback for in-memory orders
+  const nowMs = Date.now();
+  ORDERS.forEach(order => {
+    if (order.status === 4 && order.cancelInfo?.requestedAt) {
+      const elapsedMs = nowMs - new Date(order.cancelInfo.requestedAt).getTime();
+      if (elapsedMs >= 1 * 60 * 60 * 1000) {
+        order.status = 5;
+        order.cancelInfo.status = 'REFUND_INITIATED';
+      }
+    } else if (order.status === 6 && order.returnInfo?.requestedAt) {
+      const elapsedMs = nowMs - new Date(order.returnInfo.requestedAt).getTime();
+      if (elapsedMs >= 2 * 60 * 60 * 1000) {
+        order.status = 7;
+        order.returnInfo.status = 'PICKUP_SCHEDULED';
+      }
+    } else if (order.status === 9 && order.returnInfo?.requestedAt) {
+      const elapsedMs = nowMs - new Date(order.returnInfo.requestedAt).getTime();
+      if (elapsedMs >= 2 * 60 * 60 * 1000) {
+        order.status = 10;
+        order.returnInfo.status = 'PICKUP_SCHEDULED';
+      }
+    }
+  });
 
   const list = mobile ? ORDERS.filter(o => o.mobile === mobile) : ORDERS;
   res.json({ success: true, data: list });
@@ -842,22 +923,208 @@ app.get('/api/admin/analytics', async (req, res) => {
   });
 });
 
-// PUT /api/admin/orders/:id/status
-app.put('/api/admin/orders/:id/status', async (req, res) => {
-  const { status } = req.body;
-  const nextStatus = parseInt(status);
-  const order = ORDERS.find(o => o.id === req.params.id);
-  if (order) order.status = nextStatus;
+// POST /api/orders/:id/cancel (User requests cancellation before delivery)
+app.post('/api/orders/:id/cancel', async (req, res) => {
+  const { reason, comments, refundMethod } = req.body;
+  const orderId = req.params.id;
+
+  let order = ORDERS.find(o => o.id === orderId);
+  if (!order && pool) {
+    try {
+      const q = await pool.query('SELECT order_number as id, order_status as status, cancel_info as "cancelInfo" FROM public.orders WHERE order_number = $1;', [orderId]);
+      if (q.rows.length) order = q.rows[0];
+    } catch (e) {}
+  }
+
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Order not found' });
+  }
+
+  if (order.status >= 3) {
+    return res.status(400).json({ success: false, message: 'Delivered orders cannot be cancelled directly. Please submit a Return or Replacement request.' });
+  }
+
+  const cancelData = {
+    requestedAt: new Date().toISOString(),
+    reason: reason || 'Customer requested order cancellation',
+    comments: comments || '',
+    refundMethod: refundMethod || 'Original Payment Source (Bank/UPI)',
+    status: 'IN_PROCESS'
+  };
+
+  const nextStatus = 4; // CANCEL_REQUESTED
+
+  if (order) {
+    order.status = nextStatus;
+    order.cancelInfo = cancelData;
+  }
 
   if (pool) {
     try {
-      await pool.query('UPDATE public.orders SET order_status = $1 WHERE order_number = $2', [nextStatus, req.params.id]);
+      await pool.query(
+        'UPDATE public.orders SET order_status = $1, cancel_info = $2 WHERE order_number = $3;',
+        [nextStatus, JSON.stringify(cancelData), orderId]
+      );
+    } catch (e) {
+      console.error('[DB] Order cancel update error:', e.message);
+    }
+  }
+
+  res.json({
+    success: true,
+    message: 'Cancellation request received. Verification is in process.',
+    data: { id: orderId, status: nextStatus, cancelInfo: cancelData }
+  });
+});
+
+// POST /api/orders/:id/return (User requests return or replacement after delivery)
+app.post('/api/orders/:id/return', async (req, res) => {
+  const { type, reason, condition, comments, items, refundMethod, replacementVariant, photos } = req.body;
+  const orderId = req.params.id;
+
+  let order = ORDERS.find(o => o.id === orderId);
+  if (!order && pool) {
+    try {
+      const q = await pool.query('SELECT order_number as id, order_status as status, return_info as "returnInfo" FROM public.orders WHERE order_number = $1;', [orderId]);
+      if (q.rows.length) order = q.rows[0];
+    } catch (e) {}
+  }
+
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Order not found' });
+  }
+
+  const isReplace = (type || '').toUpperCase() === 'REPLACE';
+  const nextStatus = isReplace ? 9 : 6; // REPLACEMENT_REQUESTED (9) or RETURN_REQUESTED (6)
+
+  const returnData = {
+    type: isReplace ? 'REPLACE' : 'RETURN',
+    requestedAt: new Date().toISOString(),
+    reason: reason || (isReplace ? 'Exchange requested' : 'Return requested'),
+    condition: condition || 'Unused, tags and luxury packaging intact',
+    comments: comments || '',
+    items: Array.isArray(items) && items.length ? items : (order.items || []),
+    refundMethod: refundMethod || 'Original Payment Source (Bank/UPI)',
+    replacementVariant: replacementVariant || 'Same Colorway Replacement',
+    photos: Array.isArray(photos) ? photos : [],
+    status: 'IN_PROCESS'
+  };
+
+  if (order) {
+    order.status = nextStatus;
+    order.returnInfo = returnData;
+  }
+
+  if (pool) {
+    try {
+      await pool.query(
+        'UPDATE public.orders SET order_status = $1, return_info = $2 WHERE order_number = $3;',
+        [nextStatus, JSON.stringify(returnData), orderId]
+      );
+    } catch (e) {
+      console.error('[DB] Order return update error:', e.message);
+    }
+  }
+
+  res.json({
+    success: true,
+    message: `${isReplace ? 'Replacement' : 'Return'} request submitted. Pickup assignment is in process.`,
+    data: { id: orderId, status: nextStatus, returnInfo: returnData }
+  });
+});
+
+// POST /api/orders/:id/simulate-time (Fast-forward simulation for testing)
+app.post('/api/orders/:id/simulate-time', async (req, res) => {
+  const { advanceHours = 1 } = req.body;
+  const orderId = req.params.id;
+
+  const order = ORDERS.find(o => o.id === orderId);
+  if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+
+  const msToSubtract = Number(advanceHours) * 60 * 60 * 1000;
+
+  if (order.cancelInfo && order.cancelInfo.requestedAt) {
+    const oldTime = new Date(order.cancelInfo.requestedAt).getTime();
+    order.cancelInfo.requestedAt = new Date(oldTime - msToSubtract).toISOString();
+  }
+  if (order.returnInfo && order.returnInfo.requestedAt) {
+    const oldTime = new Date(order.returnInfo.requestedAt).getTime();
+    order.returnInfo.requestedAt = new Date(oldTime - msToSubtract).toISOString();
+  }
+
+  // Check transitions
+  if (order.status === 4 && order.cancelInfo) {
+    order.status = 5; // REFUND_INITIATED
+    order.cancelInfo.status = 'REFUND_INITIATED';
+    order.cancelInfo.refundInitiatedAt = new Date().toISOString();
+  } else if (order.status === 6 && order.returnInfo) {
+    order.status = 7; // PICKUP_SCHEDULED
+    order.returnInfo.status = 'PICKUP_SCHEDULED';
+    order.returnInfo.pickupScheduledAt = new Date().toISOString();
+  } else if (order.status === 7 && order.returnInfo) {
+    order.status = 8; // RETURN_REFUNDED
+    order.returnInfo.status = 'REFUND_INITIATED';
+    order.returnInfo.refundInitiatedAt = new Date().toISOString();
+  } else if (order.status === 9 && order.returnInfo) {
+    order.status = 10; // REPLACE_PICKUP
+    order.returnInfo.status = 'PICKUP_SCHEDULED';
+    order.returnInfo.pickupScheduledAt = new Date().toISOString();
+  } else if (order.status === 10 && order.returnInfo) {
+    order.status = 11; // REPLACE_DELIVERED
+    order.returnInfo.status = 'COMPLETED';
+    order.returnInfo.deliveredAt = new Date().toISOString();
+  }
+
+  if (pool) {
+    try {
+      await pool.query(
+        'UPDATE public.orders SET order_status = $1, cancel_info = $2, return_info = $3 WHERE order_number = $4;',
+        [order.status, order.cancelInfo ? JSON.stringify(order.cancelInfo) : null, order.returnInfo ? JSON.stringify(order.returnInfo) : null, orderId]
+      );
+    } catch (e) {
+      console.error('[DB] Time simulation update error:', e.message);
+    }
+  }
+
+  res.json({ success: true, message: `Fast-forwarded by ${advanceHours} hour(s)`, data: order });
+});
+
+// PUT /api/admin/orders/:id/status
+app.put('/api/admin/orders/:id/status', async (req, res) => {
+  const { status, cancelInfo, returnInfo } = req.body;
+  const nextStatus = parseInt(status);
+  const order = ORDERS.find(o => o.id === req.params.id);
+  if (order) {
+    order.status = nextStatus;
+    if (cancelInfo !== undefined) order.cancelInfo = cancelInfo;
+    if (returnInfo !== undefined) order.returnInfo = returnInfo;
+  }
+
+  if (pool) {
+    try {
+      let updateSql = 'UPDATE public.orders SET order_status = $1';
+      const params = [nextStatus];
+      let pIdx = 2;
+
+      if (cancelInfo !== undefined) {
+        updateSql += `, cancel_info = $${pIdx++}`;
+        params.push(cancelInfo ? JSON.stringify(cancelInfo) : null);
+      }
+      if (returnInfo !== undefined) {
+        updateSql += `, return_info = $${pIdx++}`;
+        params.push(returnInfo ? JSON.stringify(returnInfo) : null);
+      }
+
+      updateSql += ` WHERE order_number = $${pIdx};`;
+      params.push(req.params.id);
+
+      await pool.query(updateSql, params);
     } catch (e) {
       console.error('[DB] Update order status error:', e.message);
     }
   }
 
-  res.json({ success: true, message: 'Order status updated', data: { id: req.params.id, status: nextStatus } });
+  res.json({ success: true, message: 'Order status updated', data: { id: req.params.id, status: nextStatus, cancelInfo, returnInfo } });
 });
 
 // POST /api/admin/products

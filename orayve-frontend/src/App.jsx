@@ -107,7 +107,36 @@ const OFFERS = {
   'Gents Wrist Watches': ['Chronograph Sale · Top Rated', '⌚ Top Rated']
 };
 
-const STAT = ['ORDER PLACED', 'IN TRANSIT', 'OUT FOR DELIVERY', 'DELIVERED'];
+const STAT = [
+  'ORDER PLACED',               // 0
+  'IN TRANSIT',                  // 1
+  'OUT FOR DELIVERY',            // 2
+  'DELIVERED',                   // 3
+  'CANCELLATION IN PROCESS',     // 4
+  'REFUND INITIATED',            // 5
+  'RETURN IN PROCESS',           // 6
+  'PICKUP SCHEDULED',            // 7
+  'RETURN REFUND INITIATED',     // 8
+  'REPLACEMENT IN PROCESS',      // 9
+  'REPLACEMENT PICKUP',          // 10
+  'REPLACEMENT DELIVERED'        // 11
+];
+
+const STAT_DETAILS = {
+  0: { label: 'ORDER PLACED', badge: 'bg-blue-100 text-blue-800 border-blue-200', desc: 'Order confirmed and registered in fulfillment queue.' },
+  1: { label: 'IN TRANSIT', badge: 'bg-indigo-100 text-indigo-800 border-indigo-200', desc: 'Package in transit with Blue Dart / Delhivery courier partner.' },
+  2: { label: 'OUT FOR DELIVERY', badge: 'bg-amber-100 text-amber-800 border-amber-200', desc: 'Courier delivery executive is en route to your address today.' },
+  3: { label: 'DELIVERED', badge: 'bg-emerald-100 text-emerald-800 border-emerald-200', desc: 'Delivered successfully in luxury packaging.' },
+  4: { label: 'CANCELLATION IN PROCESS', badge: 'bg-amber-100 text-amber-800 border-amber-300', desc: 'Cancellation in process for checking. Verification in progress.' },
+  5: { label: 'REFUND INITIATED', badge: 'bg-purple-100 text-purple-800 border-purple-200', desc: 'Refund initiated. Amount will be credited back to payment source within 3 to 5 business days.' },
+  6: { label: 'RETURN IN PROCESS', badge: 'bg-amber-100 text-amber-800 border-amber-300', desc: 'Return in process. Quality check & pickup assignment under review.' },
+  7: { label: 'PICKUP SCHEDULED', badge: 'bg-cyan-100 text-cyan-800 border-cyan-200', desc: 'Pickup scheduled. Courier agent will pick up the item from your address.' },
+  8: { label: 'REFUND INITIATED', badge: 'bg-purple-100 text-purple-800 border-purple-200', desc: 'Item received & verified. Refund initiated to payment source within 3 to 5 business days.' },
+  9: { label: 'REPLACEMENT IN PROCESS', badge: 'bg-amber-100 text-amber-800 border-amber-300', desc: 'Replacement in process. New variant exchange is being processed.' },
+  10: { label: 'REPLACEMENT PICKUP', badge: 'bg-cyan-100 text-cyan-800 border-cyan-200', desc: 'Replacement pickup scheduled. Item exchange will be carried out at doorstep.' },
+  11: { label: 'REPLACEMENT DELIVERED', badge: 'bg-emerald-100 text-emerald-800 border-emerald-200', desc: 'Replacement item delivered successfully.' }
+};
+
 const ADMIN_PASS = 'orayve@2026';
 const PAGE_SIZE = 24;
 
@@ -473,6 +502,24 @@ export default function App() {
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [activePhotoModalUrl, setActivePhotoModalUrl] = useState(null);
   const [reviewFilterStars, setReviewFilterStars] = useState('ALL');
+
+  // Order Cancellation & Return / Replacement States
+  const [cancelModalOrder, setCancelModalOrder] = useState(null);
+  const [cancelReason, setCancelReason] = useState('Found a better price elsewhere');
+  const [cancelComments, setCancelComments] = useState('');
+  const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
+
+  const [returnModalOrder, setReturnModalOrder] = useState(null);
+  const [returnModalType, setReturnModalType] = useState('RETURN'); // 'RETURN' | 'REPLACE'
+  const [returnReason, setReturnReason] = useState('Size / Dimension not suitable');
+  const [returnCondition, setReturnCondition] = useState('Unused, with all original tags & luxury box intact');
+  const [returnComments, setReturnComments] = useState('');
+  const [returnSelectedItems, setReturnSelectedItems] = useState([]);
+  const [returnRefundPref, setReturnRefundPref] = useState('ORIGINAL'); // 'ORIGINAL' | 'WALLET'
+  const [returnReplacementVariant, setReturnReplacementVariant] = useState('Same product & colorway replacement');
+  const [returnPhotos, setReturnPhotos] = useState([]);
+  const [returnPhotoInput, setReturnPhotoInput] = useState('');
+  const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
 
   useEffect(() => {
     try {
@@ -1131,6 +1178,225 @@ export default function App() {
     setIsSubmittingReview(false);
     setReviewModalProduct(null);
     showToast('Thank you! Your verified review has been published.');
+  };
+
+  // ----------------------------------------------------------------------
+  // Order Cancellation & Return / Replacement Actions
+  // ----------------------------------------------------------------------
+  const openCancelModal = (order) => {
+    if (order.status >= 3) {
+      return showToast('Delivered orders cannot be cancelled directly. Please use the Return or Replace option.', true);
+    }
+    setCancelModalOrder(order);
+    setCancelReason('Found a better price elsewhere');
+    setCancelComments('');
+  };
+
+  const handleConfirmCancel = async (e) => {
+    if (e) e.preventDefault();
+    if (!cancelModalOrder) return;
+    setIsSubmittingCancel(true);
+
+    const cancelPayload = {
+      reason: cancelReason,
+      comments: cancelComments.trim(),
+      refundMethod: 'Original Payment Source (Bank/UPI)'
+    };
+
+    const newCancelInfo = {
+      requestedAt: new Date().toISOString(),
+      reason: cancelReason,
+      comments: cancelComments.trim(),
+      refundMethod: 'Original Payment Source (Bank/UPI)',
+      status: 'IN_PROCESS'
+    };
+
+    // Update frontend state immediately
+    setOrders(prev => prev.map(o => o.id === cancelModalOrder.id ? {
+      ...o,
+      status: 4, // CANCEL_REQUESTED
+      cancelInfo: newCancelInfo
+    } : o));
+
+    try {
+      await fetch(`/api/orders/${cancelModalOrder.id}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cancelPayload)
+      });
+    } catch (err) {
+      console.warn('Backend cancel sync warning:', err);
+    }
+
+    setIsSubmittingCancel(false);
+    setCancelModalOrder(null);
+    showToast('Cancellation request submitted. Verification in process.');
+  };
+
+  const openReturnModal = (order, type = 'RETURN') => {
+    if (order.status !== 3 && order.status !== 11) {
+      return showToast('Return or replacement is only available for delivered orders.', true);
+    }
+    setReturnModalOrder(order);
+    setReturnModalType(type);
+    setReturnReason(type === 'REPLACE' ? 'Exchange for another colorway / size' : 'Size / Dimension not suitable');
+    setReturnCondition('Unused, with all original tags & luxury box intact');
+    setReturnComments('');
+    setReturnSelectedItems(order.items ? [...order.items] : []);
+    setReturnRefundPref('ORIGINAL');
+    setReturnReplacementVariant('Same product & colorway replacement');
+    setReturnPhotos([]);
+    setReturnPhotoInput('');
+  };
+
+  const handleReturnPhotosUpload = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const readPromises = files.map(file => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (event) => resolve(event.target.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+      });
+    });
+
+    Promise.all(readPromises).then(results => {
+      const valid = results.filter(Boolean);
+      if (valid.length) {
+        setReturnPhotos(prev => [...prev, ...valid]);
+        showToast(`${valid.length} photo(s) attached as proof`);
+      }
+    });
+    e.target.value = '';
+  };
+
+  const handleAddReturnPhotoUrl = () => {
+    const url = returnPhotoInput.trim();
+    if (!url) return;
+    setReturnPhotos(prev => [...prev, url]);
+    setReturnPhotoInput('');
+    showToast('Photo URL attached');
+  };
+
+  const handleRemoveReturnPhoto = (idx) => {
+    setReturnPhotos(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleConfirmReturn = async (e) => {
+    if (e) e.preventDefault();
+    if (!returnModalOrder) return;
+    setIsSubmittingReturn(true);
+
+    const isReplace = returnModalType === 'REPLACE';
+    const nextStatus = isReplace ? 9 : 6; // REPLACEMENT_REQUESTED or RETURN_REQUESTED
+
+    const returnPayload = {
+      type: returnModalType,
+      reason: returnReason,
+      condition: returnCondition,
+      comments: returnComments.trim(),
+      items: returnSelectedItems,
+      refundMethod: returnRefundPref === 'WALLET' ? 'Orayve Luxury Store Credit' : 'Original Payment Source (Bank/UPI)',
+      replacementVariant: returnReplacementVariant,
+      photos: returnPhotos
+    };
+
+    const newReturnInfo = {
+      ...returnPayload,
+      requestedAt: new Date().toISOString(),
+      status: 'IN_PROCESS'
+    };
+
+    // Update frontend state immediately
+    setOrders(prev => prev.map(o => o.id === returnModalOrder.id ? {
+      ...o,
+      status: nextStatus,
+      returnInfo: newReturnInfo
+    } : o));
+
+    try {
+      await fetch(`/api/orders/${returnModalOrder.id}/return`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(returnPayload)
+      });
+    } catch (err) {
+      console.warn('Backend return sync warning:', err);
+    }
+
+    setIsSubmittingReturn(false);
+    setReturnModalOrder(null);
+    showToast(`${isReplace ? 'Replacement' : 'Return'} request submitted. Pickup assignment in process.`);
+  };
+
+  const handleSimulateTime = async (orderId, advanceHours) => {
+    try {
+      const res = await fetch(`/api/orders/${orderId}/simulate-time`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ advanceHours })
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setOrders(prev => prev.map(o => o.id === orderId ? data.data : o));
+        showToast(`Simulation: Advanced by ${advanceHours} hr(s). Order status updated!`);
+      }
+    } catch (err) {
+      // In-memory local simulation fallback
+      setOrders(prev => prev.map(o => {
+        if (o.id !== orderId) return o;
+        let nextSt = o.status;
+        let cInfo = o.cancelInfo ? { ...o.cancelInfo } : null;
+        let rInfo = o.returnInfo ? { ...o.returnInfo } : null;
+
+        if (o.status === 4) {
+          nextSt = 5;
+          if (cInfo) cInfo.status = 'REFUND_INITIATED';
+        } else if (o.status === 6) {
+          nextSt = 7;
+          if (rInfo) rInfo.status = 'PICKUP_SCHEDULED';
+        } else if (o.status === 7) {
+          nextSt = 8;
+          if (rInfo) rInfo.status = 'REFUND_INITIATED';
+        } else if (o.status === 9) {
+          nextSt = 10;
+          if (rInfo) rInfo.status = 'PICKUP_SCHEDULED';
+        } else if (o.status === 10) {
+          nextSt = 11;
+          if (rInfo) rInfo.status = 'COMPLETED';
+        }
+        return { ...o, status: nextSt, cancelInfo: cInfo, returnInfo: rInfo };
+      }));
+      showToast(`Simulation: Advanced by ${advanceHours} hr(s). Order status updated!`);
+    }
+  };
+
+  const handleAdminOrderStatus = async (orderId, nextStatus, customCancelInfo, customReturnInfo) => {
+    setOrders(prev => prev.map(o => {
+      if (o.id !== orderId) return o;
+      return {
+        ...o,
+        status: nextStatus,
+        cancelInfo: customCancelInfo !== undefined ? customCancelInfo : o.cancelInfo,
+        returnInfo: customReturnInfo !== undefined ? customReturnInfo : o.returnInfo
+      };
+    }));
+
+    try {
+      await fetch(`/api/admin/orders/${orderId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'x-admin-passcode': ADMIN_PASS },
+        body: JSON.stringify({
+          status: nextStatus,
+          cancelInfo: customCancelInfo,
+          returnInfo: customReturnInfo
+        })
+      });
+      showToast(`Order status updated to ${STAT[nextStatus] || 'Updated'}`);
+    } catch (err) {
+      showToast(`Order status updated to ${STAT[nextStatus] || 'Updated'}`);
+    }
   };
 
   // Carousel interactive loop (auto left->right, pause on hover, wheel, drag)
@@ -3400,52 +3666,323 @@ export default function App() {
                     </h1>
 
                     {myOrders.length > 0 ? (
-                      <div className="space-y-4">
-                        {myOrders.map(o => (
-                          <div key={o.id} className="bg-white rounded-xl border border-ink/10 p-5 shadow-sm">
-                            <div className="flex flex-wrap justify-between items-center gap-2 pb-3 border-b border-ink/10">
-                              <div>
-                                <b className="text-sm">{o.id}</b>
-                                <span className="text-xs text-ink/55 ml-2">{o.at}</span>
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <b>{inr(o.total)}</b>
-                                <button
-                                  onClick={() => setInvoiceModalOrder(o)}
-                                  className="px-3 py-1.5 rounded-lg bg-bone border border-brass/40 text-xs font-bold hover:bg-brass hover:text-ink transition"
-                                >
-                                  Download Bill
-                                </button>
-                              </div>
-                            </div>
+                      <div className="space-y-5">
+                        {myOrders.map(o => {
+                          const currentStat = STAT_DETAILS[o.status] || { label: STAT[o.status] || 'PROCESSING', badge: 'bg-blue-100 text-blue-800 border-blue-200', desc: 'Order is under processing.' };
+                          const canCancel = o.status < 3;
+                          const canReturnOrReplace = o.status === 3;
+                          const isCancelledFlow = o.status === 4 || o.status === 5;
+                          const isReturnFlow = o.status === 6 || o.status === 7 || o.status === 8;
+                          const isReplaceFlow = o.status === 9 || o.status === 10 || o.status === 11;
 
-                            {/* 4-Stage Visual Order Tracking */}
-                            <div className="grid grid-cols-4 gap-2 py-4">
-                              {STAT.map((s, idx) => (
-                                <div key={s} className="text-center">
-                                  <div className={`h-1.5 rounded-full mb-2 ${idx <= o.status ? 'bg-brass' : 'bg-ink/10'}`} />
-                                  <p className={`text-[10px] font-bold ${idx <= o.status ? 'text-ink' : 'opacity-40'}`}>
-                                    {s}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* Items */}
-                            <div className="space-y-1 pt-2 border-t border-ink/5">
-                              {(o.items || []).map((item, idx) => {
-                                const q = Number(item.qty || item.q || 1);
-                                const p = Number(item.price || 0);
-                                return (
-                                  <div key={idx} className="flex justify-between text-xs text-ink/80">
-                                    <span>{item.title} ({item.color || 'Standard'}) × {q}</span>
-                                    <b>{inr(p * q)}</b>
+                          return (
+                            <div key={o.id} className="bg-white rounded-2xl border border-ink/10 p-5 sm:p-6 shadow-sm space-y-4">
+                              {/* Top Bar */}
+                              <div className="flex flex-wrap justify-between items-center gap-3 pb-3 border-b border-ink/10">
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <b className="text-base font-bold text-ink">{o.id}</b>
+                                    <span className="text-[10px] text-ink/60 bg-bone px-2 py-0.5 rounded border border-ink/10 font-mono">
+                                      {o.inv || 'INV-TAX'}
+                                    </span>
+                                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${currentStat.badge}`}>
+                                      {currentStat.label}
+                                    </span>
                                   </div>
-                                );
-                              })}
+                                  <span className="text-xs text-ink/50 mt-0.5 block">{o.at}</span>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2.5">
+                                  <b className="text-base text-ink mr-1">{inr(o.total)}</b>
+                                  <button
+                                    onClick={() => setInvoiceModalOrder(o)}
+                                    className="px-3 py-1.5 rounded-lg bg-bone border border-brass/40 text-xs font-bold hover:bg-brass hover:text-ink transition shadow-xs"
+                                  >
+                                    🧾 Tax Invoice
+                                  </button>
+
+                                  {/* Cancel Button (Available until Delivered) */}
+                                  {canCancel && (
+                                    <button
+                                      onClick={() => openCancelModal(o)}
+                                      className="px-3 py-1.5 rounded-lg border border-rose-300 bg-rose-50/60 text-rose-700 text-xs font-bold hover:bg-rose-100 transition shadow-xs flex items-center gap-1.5"
+                                    >
+                                      <span>✕</span> Cancel Order
+                                    </button>
+                                  )}
+
+                                  {/* Return & Replace Buttons (Available when Delivered) */}
+                                  {canReturnOrReplace && (
+                                    <>
+                                      <button
+                                        onClick={() => openReturnModal(o, 'RETURN')}
+                                        className="px-3 py-1.5 rounded-lg border border-brass/50 bg-brass/10 text-ink text-xs font-bold hover:bg-brass hover:text-ink transition shadow-xs flex items-center gap-1.5"
+                                      >
+                                        <span>🔄</span> Return
+                                      </button>
+                                      <button
+                                        onClick={() => openReturnModal(o, 'REPLACE')}
+                                        className="px-3 py-1.5 rounded-lg border border-ink/20 bg-white text-ink text-xs font-bold hover:bg-bone transition shadow-xs flex items-center gap-1.5"
+                                      >
+                                        <span>🔁</span> Replace
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Visual Tracking Progress Bars */}
+                              {!isCancelledFlow && !isReturnFlow && !isReplaceFlow && (
+                                <div className="py-2 space-y-1.5">
+                                  <div className="grid grid-cols-4 gap-2">
+                                    {['ORDER PLACED', 'IN TRANSIT', 'OUT FOR DELIVERY', 'DELIVERED'].map((s, idx) => (
+                                      <div key={s} className="text-center">
+                                        <div className={`h-2 rounded-full mb-1.5 transition-all duration-300 ${idx <= o.status ? 'bg-brass shadow-xs' : 'bg-ink/10'}`} />
+                                        <p className={`text-[10px] font-bold ${idx <= o.status ? 'text-ink' : 'opacity-40'}`}>
+                                          {s}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <p className="text-xs text-ink/70 text-center pt-1 font-medium">{currentStat.desc}</p>
+                                </div>
+                              )}
+
+                              {/* Cancellation Flow Progression & Banner */}
+                              {isCancelledFlow && (
+                                <div className="space-y-3 p-4 rounded-xl border border-amber-200 bg-amber-50/60">
+                                  <div className="grid grid-cols-3 gap-2">
+                                    {[
+                                      { label: 'ORDER PLACED', active: true },
+                                      { label: 'CANCELLATION IN PROCESS', active: true },
+                                      { label: 'REFUND INITIATED', active: o.status === 5 }
+                                    ].map((step, idx) => (
+                                      <div key={idx} className="text-center">
+                                        <div className={`h-2 rounded-full mb-1.5 ${step.active ? (o.status === 5 && idx === 2 ? 'bg-purple-600' : 'bg-amber-600') : 'bg-ink/15'}`} />
+                                        <p className={`text-[10px] font-bold ${step.active ? 'text-ink' : 'opacity-40'}`}>
+                                          {step.label}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  <div className="pt-1 text-xs space-y-1">
+                                    {o.status === 4 ? (
+                                      <div className="bg-white p-3.5 rounded-lg border border-amber-300/80 shadow-xs space-y-1.5">
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-bold text-amber-900 flex items-center gap-1.5 text-xs">
+                                            <span>⏳</span> Status: Cancellation in process for checking
+                                          </span>
+                                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                                            Verification in Progress
+                                          </span>
+                                        </div>
+                                        <p className="text-ink/80 text-[11px] leading-relaxed">
+                                          Your cancellation request has been received. Our fulfillment team is checking logistics status. Once verification is complete (approx. 1 hour), refund will be initiated directly back to your payment source.
+                                        </p>
+                                        {o.cancelInfo?.reason && (
+                                          <p className="text-[10px] text-ink/60"><b>Reason:</b> {o.cancelInfo.reason}</p>
+                                        )}
+                                        <div className="pt-1 flex flex-wrap items-center justify-between gap-2">
+                                          <span className="text-[10px] text-ink/50">Refund Target: Original payment source (3 to 5 business days)</span>
+                                          <button
+                                            onClick={() => handleSimulateTime(o.id, 1)}
+                                            className="px-2.5 py-1 rounded-md bg-brass text-ink font-bold text-[10px] hover:opacity-90 shadow-xs"
+                                            title="Simulate 1 hour passing to view auto-refund"
+                                          >
+                                            ⚡ Fast-Forward 1 hr (Demo Auto-Refund)
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="bg-white p-3.5 rounded-lg border border-purple-300/80 shadow-xs space-y-1">
+                                        <span className="font-bold text-purple-900 flex items-center gap-1.5 text-xs">
+                                          <span>✓</span> Status: Refund Initiated
+                                        </span>
+                                        <p className="text-ink/80 text-[11px]">
+                                          <b>Refund initiated.</b> Amount of <b>{inr(o.total)}</b> will be credited back to your original payment source within <b>3 to 5 business days</b>.
+                                        </p>
+                                        <p className="text-[10px] text-purple-700">Bank ARN / Reversal generated successfully.</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Return Flow Progression & Banner */}
+                              {isReturnFlow && (
+                                <div className="space-y-3 p-4 rounded-xl border border-cyan-200 bg-cyan-50/60">
+                                  <div className="grid grid-cols-3 gap-2">
+                                    {[
+                                      { label: 'RETURN IN PROCESS', active: true },
+                                      { label: 'PICKUP SCHEDULED', active: o.status >= 7 },
+                                      { label: 'REFUND INITIATED', active: o.status === 8 }
+                                    ].map((step, idx) => (
+                                      <div key={idx} className="text-center">
+                                        <div className={`h-2 rounded-full mb-1.5 ${step.active ? (o.status === 8 && idx === 2 ? 'bg-purple-600' : 'bg-cyan-600') : 'bg-ink/15'}`} />
+                                        <p className={`text-[10px] font-bold ${step.active ? 'text-ink' : 'opacity-40'}`}>
+                                          {step.label}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  <div className="pt-1 text-xs space-y-1">
+                                    {o.status === 6 && (
+                                      <div className="bg-white p-3.5 rounded-lg border border-amber-300 shadow-xs space-y-1.5">
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-bold text-amber-900 flex items-center gap-1.5 text-xs">
+                                            <span>⏳</span> Status: Return in process
+                                          </span>
+                                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                                            Quality Verification
+                                          </span>
+                                        </div>
+                                        <p className="text-ink/80 text-[11px] leading-relaxed">
+                                          Your return request has been submitted. Our logistics partner will be assigned for doorstep pickup within 2 hours.
+                                        </p>
+                                        {o.returnInfo?.reason && (
+                                          <p className="text-[10px] text-ink/60"><b>Reason:</b> {o.returnInfo.reason}</p>
+                                        )}
+                                        <div className="pt-1 flex flex-wrap items-center justify-between gap-2">
+                                          <span className="text-[10px] text-ink/50">Keep the item in its original luxury box with tags intact.</span>
+                                          <button
+                                            onClick={() => handleSimulateTime(o.id, 2)}
+                                            className="px-2.5 py-1 rounded-md bg-brass text-ink font-bold text-[10px] hover:opacity-90 shadow-xs"
+                                          >
+                                            ⚡ Fast-Forward 2 hrs (Demo Pickup)
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {o.status === 7 && (
+                                      <div className="bg-white p-3.5 rounded-lg border border-cyan-300 shadow-xs space-y-1.5">
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-bold text-cyan-900 flex items-center gap-1.5 text-xs">
+                                            <span>🚚</span> Status: Item will be picked up
+                                          </span>
+                                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-100 text-cyan-800">
+                                            Courier Assigned
+                                          </span>
+                                        </div>
+                                        <p className="text-ink/80 text-[11px] leading-relaxed">
+                                          Our courier executive has been dispatched and <b>will pick up the item</b> from your registered shipping address today. Please hand over the package safely.
+                                        </p>
+                                        <div className="pt-1 flex flex-wrap items-center justify-between gap-2">
+                                          <span className="text-[10px] text-ink/50">Upon doorstep pickup, refund will be triggered immediately.</span>
+                                          <button
+                                            onClick={() => handleSimulateTime(o.id, 1)}
+                                            className="px-2.5 py-1 rounded-md bg-brass text-ink font-bold text-[10px] hover:opacity-90 shadow-xs"
+                                          >
+                                            ⚡ Fast-Forward to Refund (Demo)
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {o.status === 8 && (
+                                      <div className="bg-white p-3.5 rounded-lg border border-purple-300 shadow-xs space-y-1">
+                                        <span className="font-bold text-purple-900 flex items-center gap-1.5 text-xs">
+                                          <span>✓</span> Status: Refund Initiated
+                                        </span>
+                                        <p className="text-ink/80 text-[11px]">
+                                          Returned item has been collected and verified. <b>Refund initiated</b> of <b>{inr(o.total)}</b> will be credited back to your payment source within <b>3 to 5 business days</b>.
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Replacement Flow Progression & Banner */}
+                              {isReplaceFlow && (
+                                <div className="space-y-3 p-4 rounded-xl border border-indigo-200 bg-indigo-50/60">
+                                  <div className="grid grid-cols-3 gap-2">
+                                    {[
+                                      { label: 'REPLACEMENT IN PROCESS', active: true },
+                                      { label: 'REPLACEMENT PICKUP', active: o.status >= 10 },
+                                      { label: 'REPLACEMENT DELIVERED', active: o.status === 11 }
+                                    ].map((step, idx) => (
+                                      <div key={idx} className="text-center">
+                                        <div className={`h-2 rounded-full mb-1.5 ${step.active ? (o.status === 11 ? 'bg-emerald-600' : 'bg-indigo-600') : 'bg-ink/15'}`} />
+                                        <p className={`text-[10px] font-bold ${step.active ? 'text-ink' : 'opacity-40'}`}>
+                                          {step.label}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  <div className="pt-1 text-xs space-y-1">
+                                    {o.status === 9 && (
+                                      <div className="bg-white p-3.5 rounded-lg border border-amber-300 shadow-xs space-y-1.5">
+                                        <span className="font-bold text-amber-900 flex items-center gap-1.5 text-xs">
+                                          <span>⏳</span> Status: Replacement in process
+                                        </span>
+                                        <p className="text-ink/80 text-[11px]">
+                                          Replacement order is being prepared by our warehouse. Doorstep exchange will be assigned within 2 hours.
+                                        </p>
+                                        <div className="pt-1 flex flex-wrap items-center justify-between gap-2">
+                                          <span className="text-[10px] text-ink/50">Replacement preference: {o.returnInfo?.replacementVariant || 'Same item'}</span>
+                                          <button
+                                            onClick={() => handleSimulateTime(o.id, 2)}
+                                            className="px-2.5 py-1 rounded-md bg-brass text-ink font-bold text-[10px] hover:opacity-90 shadow-xs"
+                                          >
+                                            ⚡ Fast-Forward 2 hrs (Demo Pickup)
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {o.status === 10 && (
+                                      <div className="bg-white p-3.5 rounded-lg border border-indigo-300 shadow-xs space-y-1.5">
+                                        <span className="font-bold text-indigo-900 flex items-center gap-1.5 text-xs">
+                                          <span>🚚</span> Status: Item will be picked up &amp; exchanged
+                                        </span>
+                                        <p className="text-ink/80 text-[11px]">
+                                          Courier partner will pick up the current product and deliver your fresh replacement piece simultaneously at your doorstep.
+                                        </p>
+                                        <div className="pt-1 flex justify-end">
+                                          <button
+                                            onClick={() => handleSimulateTime(o.id, 1)}
+                                            className="px-2.5 py-1 rounded-md bg-brass text-ink font-bold text-[10px] hover:opacity-90 shadow-xs"
+                                          >
+                                            ⚡ Fast-Forward to Delivered (Demo)
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {o.status === 11 && (
+                                      <div className="bg-white p-3.5 rounded-lg border border-emerald-300 shadow-xs space-y-1">
+                                        <span className="font-bold text-emerald-900 flex items-center gap-1.5 text-xs">
+                                          <span>✓</span> Status: Replacement Delivered
+                                        </span>
+                                        <p className="text-ink/80 text-[11px]">
+                                          Your replacement piece has been successfully delivered and handed over. Enjoy your ORAYVE luxury creation!
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Items */}
+                              <div className="space-y-1.5 pt-2 border-t border-ink/5">
+                                {(o.items || []).map((item, idx) => {
+                                  const q = Number(item.qty || item.q || 1);
+                                  const p = Number(item.price || 0);
+                                  return (
+                                    <div key={idx} className="flex justify-between items-center text-xs text-ink/80 py-0.5">
+                                      <span>{item.title} ({item.color || 'Standard'}) × {q}</span>
+                                      <b className="text-ink">{inr(p * q)}</b>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : (
                       <p className="py-16 text-center text-ink/60">
@@ -3734,18 +4271,12 @@ export default function App() {
                                     value={o.status}
                                     onChange={e => {
                                       const nextStatus = parseInt(e.target.value);
-                                      setOrders(orders.map(x => x.id === o.id ? { ...x, status: nextStatus } : x));
-                                      fetch(`/api/admin/orders/${o.id}/status`, {
-                                        method: 'PUT',
-                                        headers: { 'Content-Type': 'application/json', 'x-admin-passcode': ADMIN_PASS },
-                                        body: JSON.stringify({ status: nextStatus })
-                                      }).catch(() => {});
-                                      showToast(`Order ${o.id} marked as ${STAT[nextStatus]}`);
+                                      handleAdminOrderStatus(o.id, nextStatus);
                                     }}
                                     className="!bg-ink !text-bone font-bold text-xs"
                                   >
                                     {STAT.map((s, idx) => (
-                                      <option key={s} value={idx}>{s}</option>
+                                      <option key={s + idx} value={idx}>{s}</option>
                                     ))}
                                   </select>
                                 </div>
@@ -3769,6 +4300,160 @@ export default function App() {
                                   </span>
                                 </div>
                               </div>
+
+                              {/* Cancellation Details & Admin Action */}
+                              {o.cancelInfo && (
+                                <div className="p-3.5 rounded-xl border border-amber-300 bg-amber-50/70 space-y-2 text-xs">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="font-bold text-amber-900 flex items-center gap-1.5">
+                                      <span>⚠️</span> Customer Cancellation Request
+                                    </span>
+                                    <span className="text-[10px] text-amber-800 font-mono">
+                                      Requested: {new Date(o.cancelInfo.requestedAt).toLocaleString('en-IN')}
+                                    </span>
+                                  </div>
+                                  <div className="text-ink/80 text-xs">
+                                    <p><b>Reason:</b> {o.cancelInfo.reason}</p>
+                                    {o.cancelInfo.comments && <p className="mt-0.5"><b>Remarks:</b> {o.cancelInfo.comments}</p>}
+                                    <p className="mt-0.5 text-[11px] text-ink/60"><b>Refund Target:</b> {o.cancelInfo.refundMethod || 'Original Payment Source'}</p>
+                                  </div>
+                                  {o.status === 4 && (
+                                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAdminOrderStatus(o.id, 5, { ...o.cancelInfo, status: 'REFUND_INITIATED', refundInitiatedAt: new Date().toISOString() })}
+                                        className="px-3 py-1.5 rounded-lg bg-emerald-700 text-white font-bold hover:bg-emerald-800 text-xs shadow-xs"
+                                      >
+                                        ⚡ Approve &amp; Initiate Refund (3-5 Days)
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSimulateTime(o.id, 1)}
+                                        className="px-3 py-1.5 rounded-lg bg-brass text-ink font-bold hover:opacity-90 text-xs shadow-xs"
+                                      >
+                                        ⏩ Fast-Forward 1 hr (Demo Auto-Refund)
+                                      </button>
+                                    </div>
+                                  )}
+                                  {o.status === 5 && (
+                                    <div className="text-purple-800 font-bold text-xs flex items-center gap-1.5 pt-1 border-t border-amber-200">
+                                      <span>✓</span> Refund initiated to customer payment source (3 to 5 business days).
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Return / Replacement Details & Admin Actions */}
+                              {o.returnInfo && (
+                                <div className="p-3.5 rounded-xl border border-cyan-300 bg-cyan-50/70 space-y-2 text-xs">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="font-bold text-cyan-900 flex items-center gap-1.5">
+                                      <span>{o.returnInfo.type === 'REPLACE' ? '🔁' : '🔄'}</span>
+                                      Customer {o.returnInfo.type === 'REPLACE' ? 'Replacement' : 'Return'} Request
+                                    </span>
+                                    <span className="text-[10px] text-cyan-800 font-mono">
+                                      Requested: {new Date(o.returnInfo.requestedAt).toLocaleString('en-IN')}
+                                    </span>
+                                  </div>
+                                  <div className="text-ink/80 text-xs space-y-0.5">
+                                    <p><b>Reason:</b> {o.returnInfo.reason}</p>
+                                    <p><b>Item Condition:</b> {o.returnInfo.condition}</p>
+                                    {o.returnInfo.comments && <p><b>Remarks:</b> {o.returnInfo.comments}</p>}
+                                    {o.returnInfo.type === 'REPLACE' ? (
+                                      <p><b>Replacement Preference:</b> {o.returnInfo.replacementVariant}</p>
+                                    ) : (
+                                      <p><b>Refund Preference:</b> {o.returnInfo.refundMethod}</p>
+                                    )}
+                                  </div>
+
+                                  {/* Admin Action Buttons for Return / Replacement Lifecycle */}
+                                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-cyan-200">
+                                    {o.status === 6 && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleAdminOrderStatus(o.id, 7, undefined, { ...o.returnInfo, status: 'PICKUP_SCHEDULED', pickupScheduledAt: new Date().toISOString() })}
+                                          className="px-3 py-1.5 rounded-lg bg-cyan-700 text-white font-bold hover:bg-cyan-800 text-xs shadow-xs"
+                                        >
+                                          🚚 Schedule Courier Pickup
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSimulateTime(o.id, 2)}
+                                          className="px-3 py-1.5 rounded-lg bg-brass text-ink font-bold hover:opacity-90 text-xs shadow-xs"
+                                        >
+                                          ⏩ Fast-Forward 2 hrs (Demo Auto-Pickup)
+                                        </button>
+                                      </>
+                                    )}
+                                    {o.status === 7 && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleAdminOrderStatus(o.id, 8, undefined, { ...o.returnInfo, status: 'REFUND_INITIATED', refundInitiatedAt: new Date().toISOString() })}
+                                          className="px-3 py-1.5 rounded-lg bg-purple-700 text-white font-bold hover:bg-purple-800 text-xs shadow-xs"
+                                        >
+                                          💰 Confirm Pickup &amp; Initiate Refund (3-5 Days)
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSimulateTime(o.id, 1)}
+                                          className="px-3 py-1.5 rounded-lg bg-brass text-ink font-bold hover:opacity-90 text-xs shadow-xs"
+                                        >
+                                          ⏩ Fast-Forward to Refund (Demo)
+                                        </button>
+                                      </>
+                                    )}
+                                    {o.status === 8 && (
+                                      <div className="text-purple-800 font-bold text-xs flex items-center gap-1.5">
+                                        <span>✓</span> Return inspected &amp; refund initiated to customer payment source.
+                                      </div>
+                                    )}
+
+                                    {o.status === 9 && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleAdminOrderStatus(o.id, 10, undefined, { ...o.returnInfo, status: 'PICKUP_SCHEDULED', pickupScheduledAt: new Date().toISOString() })}
+                                          className="px-3 py-1.5 rounded-lg bg-cyan-700 text-white font-bold hover:bg-cyan-800 text-xs shadow-xs"
+                                        >
+                                          🚚 Schedule Replacement Pickup
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSimulateTime(o.id, 2)}
+                                          className="px-3 py-1.5 rounded-lg bg-brass text-ink font-bold hover:opacity-90 text-xs shadow-xs"
+                                        >
+                                          ⏩ Fast-Forward 2 hrs (Demo Auto-Pickup)
+                                        </button>
+                                      </>
+                                    )}
+                                    {o.status === 10 && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleAdminOrderStatus(o.id, 11, undefined, { ...o.returnInfo, status: 'COMPLETED', deliveredAt: new Date().toISOString() })}
+                                          className="px-3 py-1.5 rounded-lg bg-emerald-700 text-white font-bold hover:bg-emerald-800 text-xs shadow-xs"
+                                        >
+                                          📦 Dispatch &amp; Mark Replacement Delivered
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSimulateTime(o.id, 1)}
+                                          className="px-3 py-1.5 rounded-lg bg-brass text-ink font-bold hover:opacity-90 text-xs shadow-xs"
+                                        >
+                                          ⏩ Fast-Forward to Delivered (Demo)
+                                        </button>
+                                      </>
+                                    )}
+                                    {o.status === 11 && (
+                                      <div className="text-emerald-800 font-bold text-xs flex items-center gap-1.5">
+                                        <span>✓</span> Replacement delivered successfully to customer.
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
 
                               {/* Line Items */}
                               <div className="space-y-2 pt-1">
@@ -5365,6 +6050,385 @@ export default function App() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* ORDER CANCELLATION MODAL                                              */}
+      {/* ==================================================================== */}
+      {cancelModalOrder && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-brass/40 my-8">
+            {/* Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-ink/10">
+              <div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 uppercase">
+                  Order Cancellation
+                </span>
+                <h3 className="font-bold text-base text-ink mt-0.5">
+                  Cancel Order #{cancelModalOrder.id}
+                </h3>
+                <p className="text-xs text-ink/60">
+                  Total Value: {inr(cancelModalOrder.total)} · Placed on {cancelModalOrder.at}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCancelModalOrder(null)}
+                className="w-7 h-7 rounded-full border border-ink/20 flex items-center justify-center text-ink/60 hover:text-ink hover:bg-bone font-bold text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmCancel} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                  Reason for Cancellation *
+                </label>
+                <select
+                  value={cancelReason}
+                  onChange={e => setCancelReason(e.target.value)}
+                  className="w-full text-xs font-medium"
+                >
+                  <option value="Found a better price elsewhere">Found a better price elsewhere</option>
+                  <option value="Ordered by mistake / Duplicate order">Ordered by mistake / Duplicate order</option>
+                  <option value="Incorrect delivery address or contact number">Incorrect delivery address or contact number</option>
+                  <option value="Want to change colorway or size variant">Want to change colorway or size variant</option>
+                  <option value="Delivery timeframe too late">Delivery timeframe too late</option>
+                  <option value="Payment issue / changed payment method">Payment issue / changed payment method</option>
+                  <option value="Other">Other reason</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                  Additional Comments / Feedback
+                </label>
+                <textarea
+                  rows={3}
+                  value={cancelComments}
+                  onChange={e => setCancelComments(e.target.value)}
+                  placeholder="Please let us know how we can improve..."
+                  className="w-full text-xs"
+                />
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-bone/70 border border-ink/10 space-y-1 text-[11px] text-ink/70">
+                <p className="font-bold text-ink">ℹ️ Cancellation &amp; Refund Policy:</p>
+                <p>
+                  • Once submitted, the order enters <b>Verification in process</b> to verify fulfillment stoppage.
+                </p>
+                <p>
+                  • After checking (approx. 1 hour), <b>Refund will be initiated</b> automatically back to your payment source within 3–5 business days.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-ink/10">
+                <button
+                  type="button"
+                  onClick={() => setCancelModalOrder(null)}
+                  className="px-4 py-2 rounded-xl border border-ink/20 font-bold hover:bg-bone text-xs"
+                >
+                  Keep Order
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingCancel}
+                  className="px-5 py-2 rounded-xl bg-rose-700 text-white font-bold hover:bg-rose-800 shadow-md text-xs flex items-center gap-1.5"
+                >
+                  {isSubmittingCancel ? (
+                    <>
+                      <span className="animate-spin text-white">●</span>
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <span>Confirm Cancellation</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* RETURN & REPLACEMENT MODAL                                           */}
+      {/* ==================================================================== */}
+      {returnModalOrder && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl border border-brass/40 my-8">
+            {/* Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-ink/10">
+              <div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-brass/20 text-brass uppercase">
+                  {returnModalType === 'REPLACE' ? '🔁 Doorstep Replacement' : '🔄 Easy Return & Refund'}
+                </span>
+                <h3 className="font-bold text-base text-ink mt-0.5">
+                  {returnModalType === 'REPLACE' ? 'Request Product Replacement' : 'Request Product Return'}
+                </h3>
+                <p className="text-xs text-ink/60">
+                  Order #{returnModalOrder.id} · Total Value: {inr(returnModalOrder.total)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReturnModalOrder(null)}
+                className="w-7 h-7 rounded-full border border-ink/20 flex items-center justify-center text-ink/60 hover:text-ink hover:bg-bone font-bold text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmReturn} className="space-y-4 text-xs">
+              {/* Toggle between Return and Replace */}
+              <div className="grid grid-cols-2 gap-2 p-1 bg-bone rounded-xl border border-ink/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReturnModalType('RETURN');
+                    setReturnReason('Size / Dimension not suitable');
+                  }}
+                  className={`py-2 rounded-lg font-bold text-xs transition ${
+                    returnModalType === 'RETURN'
+                      ? 'bg-ink text-bone shadow-xs'
+                      : 'text-ink/60 hover:text-ink'
+                  }`}
+                >
+                  🔄 Return &amp; Refund
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReturnModalType('REPLACE');
+                    setReturnReason('Exchange for another colorway / size');
+                  }}
+                  className={`py-2 rounded-lg font-bold text-xs transition ${
+                    returnModalType === 'REPLACE'
+                      ? 'bg-ink text-bone shadow-xs'
+                      : 'text-ink/60 hover:text-ink'
+                  }`}
+                >
+                  🔁 Doorstep Replacement
+                </button>
+              </div>
+
+              {/* Reason for Return / Replacement */}
+              <div>
+                <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                  Reason for {returnModalType === 'REPLACE' ? 'Replacement' : 'Return'} *
+                </label>
+                <select
+                  value={returnReason}
+                  onChange={e => setReturnReason(e.target.value)}
+                  className="w-full text-xs font-medium"
+                >
+                  <option value="Size / Dimension not suitable">Size / Dimension not suitable</option>
+                  <option value="Defective, scratched, or damaged product">Defective, scratched, or damaged product</option>
+                  <option value="Color or finish differs from website photos">Color or finish differs from website photos</option>
+                  <option value="Wrong item or missing accessories">Wrong item or missing accessories</option>
+                  <option value="Quality / leather aroma not meeting expectations">Quality / leather aroma not meeting expectations</option>
+                  <option value="Exchange for another colorway / size">Exchange for another colorway / size</option>
+                  <option value="Delayed delivery / No longer needed">Delayed delivery / No longer needed</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              {/* Condition of Item */}
+              <div>
+                <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                  Item Condition *
+                </label>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {[
+                    'Unused, with all original tags & luxury box intact',
+                    'Opened and tried on once'
+                  ].map(cond => (
+                    <label
+                      key={cond}
+                      className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition ${
+                        returnCondition === cond ? 'border-brass bg-brass/10 font-bold' : 'border-ink/15 hover:bg-bone'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="condition"
+                        checked={returnCondition === cond}
+                        onChange={() => setReturnCondition(cond)}
+                        className="text-brass focus:ring-brass"
+                      />
+                      <span className="text-[11px] text-ink">{cond}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Detailed Comments / Feedback */}
+              <div>
+                <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                  Detailed Issue Description &amp; Feedback *
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  value={returnComments}
+                  onChange={e => setReturnComments(e.target.value)}
+                  placeholder="Please explain the reason in detail to help our quality assurance inspection team..."
+                  className="w-full text-xs"
+                />
+              </div>
+
+              {/* Replacement preference or Refund preference */}
+              {returnModalType === 'REPLACE' ? (
+                <div>
+                  <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                    Replacement Preference *
+                  </label>
+                  <input
+                    value={returnReplacementVariant}
+                    onChange={e => setReturnReplacementVariant(e.target.value)}
+                    placeholder="e.g. Same product in Pitch Black or Cognac Tan"
+                    className="w-full text-xs"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                    Refund Destination *
+                  </label>
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    <label
+                      className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition ${
+                        returnRefundPref === 'ORIGINAL' ? 'border-brass bg-brass/10 font-bold' : 'border-ink/15 hover:bg-bone'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="refundPref"
+                        checked={returnRefundPref === 'ORIGINAL'}
+                        onChange={() => setReturnRefundPref('ORIGINAL')}
+                        className="text-brass focus:ring-brass"
+                      />
+                      <div>
+                        <span className="text-[11px] text-ink block">Original Payment Source</span>
+                        <span className="text-[10px] text-ink/50">Credited within 3-5 business days</span>
+                      </div>
+                    </label>
+
+                    <label
+                      className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition ${
+                        returnRefundPref === 'WALLET' ? 'border-brass bg-brass/10 font-bold' : 'border-ink/15 hover:bg-bone'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="refundPref"
+                        checked={returnRefundPref === 'WALLET'}
+                        onChange={() => setReturnRefundPref('WALLET')}
+                        className="text-brass focus:ring-brass"
+                      />
+                      <div>
+                        <span className="text-[11px] text-ink block">Orayve Store Credit</span>
+                        <span className="text-[10px] text-ink/50">Instant wallet credit on pickup</span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Optional Proof Photos */}
+              <div className="space-y-2 p-3 rounded-xl bg-bone/40 border border-ink/10">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold text-ink flex items-center gap-1.5">
+                    <span>📷</span> Attach Product Photos / Proof ({returnPhotos.length})
+                  </label>
+                  <label className="px-2.5 py-1 rounded bg-ink text-bone font-bold text-[10px] hover:bg-ink/80 cursor-pointer shadow-xs">
+                    <span>+ Upload Photos</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      onChange={handleReturnPhotosUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    value={returnPhotoInput}
+                    onChange={e => setReturnPhotoInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddReturnPhotoUrl(); } }}
+                    placeholder="Or paste photo link (https://...)"
+                    className="flex-1 text-[11px]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddReturnPhotoUrl}
+                    className="px-2.5 py-1 rounded bg-brass text-ink font-bold text-[10px]"
+                  >
+                    Attach
+                  </button>
+                </div>
+
+                {returnPhotos.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {returnPhotos.map((ph, idx) => (
+                      <div key={idx} className="relative w-12 h-12 rounded-lg overflow-hidden border border-ink/20 group">
+                        <img src={ph} alt="Proof preview" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveReturnPhoto(idx)}
+                          className="absolute inset-0 bg-ink/70 text-white font-bold text-xs opacity-0 group-hover:opacity-100 flex items-center justify-center transition"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Pickup Address Confirmation */}
+              <div className="p-3 rounded-xl bg-bone/70 border border-ink/10 text-[11px] text-ink/70 space-y-0.5">
+                <p className="font-bold text-ink">📍 Free Doorstep Pickup Address:</p>
+                <p>
+                  {returnModalOrder.addr?.name || 'Customer'} · +91 {(returnModalOrder.addr?.phone || returnModalOrder.mobile || '').replace(/[^0-9]/g, '').slice(-10)}
+                </p>
+                <p>
+                  {[returnModalOrder.addr?.address || returnModalOrder.addr?.street, returnModalOrder.addr?.city, returnModalOrder.addr?.state, returnModalOrder.addr?.pin].filter(Boolean).join(', ')}
+                </p>
+                <p className="text-[10px] text-ink/50 pt-0.5">
+                  • Status transitions: <b>In Process</b> &rarr; After 2 hrs: <b>Pickup Scheduled</b> &rarr; Upon inspection: <b>Refund Initiated (3-5 business days)</b>.
+                </p>
+              </div>
+
+              {/* Submit Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-ink/10">
+                <button
+                  type="button"
+                  onClick={() => setReturnModalOrder(null)}
+                  className="px-4 py-2 rounded-xl border border-ink/20 font-bold hover:bg-bone text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingReturn}
+                  className="px-5 py-2 rounded-xl bg-ink text-bone font-bold hover:bg-ink/90 shadow-md text-xs flex items-center gap-1.5"
+                >
+                  {isSubmittingReturn ? (
+                    <>
+                      <span className="animate-spin text-brass">●</span>
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <span>Submit {returnModalType === 'REPLACE' ? 'Replacement' : 'Return'} Request</span>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

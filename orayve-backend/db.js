@@ -185,6 +185,11 @@ export async function initDatabase() {
         helpful_votes INT DEFAULT 0,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cancel_info JSONB DEFAULT NULL;
+      ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS return_info JSONB DEFAULT NULL;
+      ALTER TABLE order_schema.orders ADD COLUMN IF NOT EXISTS cancel_info JSONB DEFAULT NULL;
+      ALTER TABLE order_schema.orders ADD COLUMN IF NOT EXISTS return_info JSONB DEFAULT NULL;
     `);
 
     client.release();
