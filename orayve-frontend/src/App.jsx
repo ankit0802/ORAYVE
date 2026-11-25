@@ -565,8 +565,10 @@ export default function App() {
       const res = await fetch(`/api/wallet?mobile=${cleanMob}`);
       const data = await res.json();
       if (data.success) {
-        setWalletPoints(data.balancePoints);
-        setWalletTransactions(data.transactions || []);
+        const payload = data.data || data;
+        const pts = Number(payload.points ?? payload.balancePoints ?? 500);
+        setWalletPoints(pts);
+        setWalletTransactions(payload.transactions || []);
       }
     } catch (err) {
       console.warn('Wallet fetch error:', err);
