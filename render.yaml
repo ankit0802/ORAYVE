@@ -1,15 +1,13 @@
 services:
   - type: web
     name: orayve-backend
-    env: node
+    runtime: node
     rootDir: orayve-backend
     plan: free
     region: ohio
     buildCommand: npm install
     startCommand: node server.js
     envVars:
-      - key: PORT
-        value: 5000
       - key: NEON_DATABASE_URL
         value: postgresql://neondb_owner:npg_Gi5g2ZHbroQL@ep-proud-salad-bdp25wkf-pooler.c-8.us-east-2.aws.neon.tech/neondb?sslmode=require
       - key: JWT_SECRET

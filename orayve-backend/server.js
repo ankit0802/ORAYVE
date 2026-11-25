@@ -1879,8 +1879,8 @@ async function loadInventoryFromDatabase() {
   }
 }
 
-app.listen(PORT, async () => {
-  console.log(`[ORAYVE] API Server listening on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', async () => {
+  console.log(`[ORAYVE] API Server listening on 0.0.0.0:${PORT}`);
   await initDatabase();
   await loadOrdersFromDatabase();
   await loadInventoryFromDatabase();
