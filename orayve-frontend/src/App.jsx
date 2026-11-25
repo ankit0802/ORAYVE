@@ -651,13 +651,27 @@ export default function App() {
     setTimeout(() => setToastMsg(null), 2800);
   };
 
-  // Auth Form State with Live Country Code & Real OTP
+  // Auth Form State with Live Country Code & Password Authentication
   const [selectedCountry, setSelectedCountry] = useState(COUNTRY_CODES[0]);
   const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
   const [countrySearch, setCountrySearch] = useState('');
   const [authMobileInput, setAuthMobileInput] = useState('');
+  const [authPasswordInput, setAuthPasswordInput] = useState('');
+  const [authConfirmPassInput, setAuthConfirmPassInput] = useState('');
+  const [showAuthPassword, setShowAuthPassword] = useState(false);
+  const [showAuthConfirmPass, setShowAuthConfirmPass] = useState(false);
   const [otpCooldown, setOtpCooldown] = useState(0);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
+
+  // Forgot Password Flow State (2-step verification)
+  const [forgotStep, setForgotStep] = useState(1); // 1 = Verify Mobile & OTP, 2 = Set New Password
+  const [forgotOtpInput, setForgotOtpInput] = useState('');
+  const [forgotNewPassInput, setForgotNewPassInput] = useState('');
+  const [forgotConfirmPassInput, setForgotConfirmPassInput] = useState('');
+  const [showForgotNewPass, setShowForgotNewPass] = useState(false);
+  const [showForgotConfirmPass, setShowForgotConfirmPass] = useState(false);
+  const [isVerifyingForgotOtp, setIsVerifyingForgotOtp] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   // Address Form State
   const [addrType, setAddrType] = useState('Home');
@@ -670,7 +684,7 @@ export default function App() {
     }
   }, [otpCooldown]);
 
-  const handleSendOtp = async () => {
+  const handleSendOtp = async (targetPurpose = null) => {
     const raw = authMobileInput.trim();
     if (!raw) {
       return showToast('Please enter your mobile number first', true);
@@ -679,6 +693,8 @@ export default function App() {
     if (cleanDigits.length < 7 || cleanDigits.length > 15) {
       return showToast('Please enter a valid mobile number (7-15 digits)', true);
     }
+
+    const purpose = targetPurpose || (authModal === 'forgot' ? 'forgot-password' : 'register');
 
     setIsSendingOtp(true);
     try {
@@ -689,7 +705,7 @@ export default function App() {
         body: JSON.stringify({
           mobile: fullMobile,
           countryCode: selectedCountry.code,
-          purpose: authModal === 'reg' ? 'register' : 'login'
+          purpose
         })
       }).then(r => r.json());
 
@@ -5882,287 +5898,814 @@ export default function App() {
       )}
 
       {/* ==================================================================== */}
-      {/* AUTH MODAL (LOGIN / REGISTER WITH DYNAMIC COUNTRY CODES & REAL OTP)   */}
+      {/* AUTH MODAL (LOGIN WITH PASSWORD, REGISTRATION WITH OTP & PASSWORDS,   */}
+      {/* AND 2-STEP FORGOT PASSWORD FLOW)                                     */}
       {/* ==================================================================== */}
       {authModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4">
-          <form
-            onSubmit={async e => {
-              e.preventDefault();
-              const fd = new FormData(e.currentTarget);
-              const rawMobile = (authMobileInput || fd.get('mobile') || '').trim();
-              const cleanDigits = rawMobile.replace(/\D/g, '');
-              const otp = (fd.get('otp') || '').trim();
-
-              if (!cleanDigits) return showToast('Please enter your mobile number', true);
-              if (!otp) return showToast('Please enter the 6-digit OTP', true);
-
-              // Standardize full international mobile number
-              const fullMobile = rawMobile.startsWith('+') ? rawMobile : `${selectedCountry.code}${cleanDigits}`;
-
-              if (authModal === 'login') {
-                try {
-                  const res = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mobile: fullMobile, otp })
-                  }).then(r => r.json());
-
-                  if (res.success && res.data?.user) {
-                    setCurrentUser(res.data.user);
-                    setUsers(prev => prev.some(x => x.mobile === res.data.user.mobile) ? prev : [...prev, res.data.user]);
-                    showToast(res.message || `Welcome, ${res.data.user.name.split(' ')[0]}`);
-                  } else {
-                    return showToast(res.message || 'Login failed. Please check OTP or register.', true);
-                  }
-                } catch {
-                  // Resilient offline fallback
-                  const u = users.find(x => x.mobile === fullMobile || x.mobile === cleanDigits);
-                  if (!u) return showToast('No account found — please register', true);
-                  if (u.banned) return showToast('Account suspended. Contact support.', true);
-                  setCurrentUser(u);
-                  showToast(`Welcome, ${u.name.split(' ')[0]}`);
-                }
-              } else {
-                const name = (fd.get('name') || '').trim();
-                const age = +fd.get('age') || 25;
-                const email = (fd.get('email') || '').trim();
-
-                // Strict email format validation
-                const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-                if (!emailRegex.test(email)) {
-                  return showToast('Please enter a valid email address (e.g. name@domain.com)', true);
-                }
-
-                try {
-                  const res = await fetch('/api/auth/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, age, email, mobile: fullMobile, otp })
-                  }).then(r => r.json());
-
-                  if (!res.success) {
-                    return showToast(res.message || 'Registration failed', true);
-                  }
-
-                  const registeredUser = res.data?.user || {
-                    name,
-                    age,
-                    email,
-                    mobile: fullMobile,
-                    at: new Date().toLocaleDateString('en-IN'),
-                    banned: false
-                  };
-
-                  setUsers(prev => [...prev.filter(x => x.mobile !== fullMobile), registeredUser]);
-                  setCurrentUser(registeredUser);
-                  showToast(`Welcome, ${registeredUser.name.split(' ')[0]}`);
-                } catch {
-                  const nu = {
-                    name,
-                    age,
-                    email,
-                    mobile: fullMobile,
-                    at: new Date().toLocaleDateString('en-IN'),
-                    banned: false
-                  };
-                  setUsers(prev => [...prev.filter(x => x.mobile !== fullMobile), nu]);
-                  setCurrentUser(nu);
-                  showToast(`Welcome, ${nu.name.split(' ')[0]}`);
-                }
-              }
-
-              setAuthModal(null);
-              setIsCountryDropdownOpen(false);
-              if (authAfterRedirect) {
-                setAuthAfterRedirect(false);
-                proceedToCheckout();
-              }
-            }}
-            className="bg-white rounded-3xl w-full max-w-sm p-7 space-y-4 shadow-2xl border border-brass/40"
-          >
-            <div className="flex justify-between items-center pb-2 border-b border-ink/10">
+        <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-[430px] p-6 sm:p-7 space-y-4 shadow-2xl border border-brass/40 my-auto">
+            {/* Modal Header */}
+            <div className="flex justify-between items-start pb-2 border-b border-ink/10">
               <div>
-                <span className="text-[10px] tracking-wider uppercase font-extrabold text-brass">Orayve Membership</span>
-                <h2 className="serif text-2xl font-bold text-ink mt-0.5">{authModal === 'login' ? 'Welcome Back' : 'Create Account'}</h2>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] tracking-widest uppercase font-extrabold text-brass">Orayve Membership</span>
+                  {authModal === 'forgot' && (
+                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">Password Recovery</span>
+                  )}
+                </div>
+                <h2 className="serif text-2xl font-bold text-ink mt-0.5">
+                  {authModal === 'login' ? 'Welcome Back' : authModal === 'reg' ? 'Create Account' : 'Reset Password'}
+                </h2>
+                <p className="text-xs text-ink/60 mt-0.5">
+                  {authModal === 'login' 
+                    ? 'Sign in securely with your mobile and password' 
+                    : authModal === 'reg' 
+                      ? 'One-time phone verification for permanent access' 
+                      : 'Verify your phone via OTP to create a new password'}
+                </p>
               </div>
               <button 
                 type="button" 
-                onClick={() => { setAuthModal(null); setIsCountryDropdownOpen(false); }} 
+                onClick={() => { 
+                  setAuthModal(null); 
+                  setIsCountryDropdownOpen(false); 
+                  setForgotStep(1); 
+                  setForgotOtpInput('');
+                  setForgotNewPassInput('');
+                  setForgotConfirmPassInput('');
+                }} 
                 className="w-7 h-7 rounded-full border border-ink/20 flex items-center justify-center text-ink/60 hover:text-ink hover:bg-bone font-bold text-xs transition"
+                title="Close"
               >
                 ✕
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-1 p-1 bg-bone rounded-xl text-xs font-bold border border-ink/10">
-              <button
-                type="button"
-                onClick={() => setAuthModal('login')}
-                className={`py-2 rounded-lg transition ${authModal === 'login' ? 'bg-ink text-bone shadow-xs' : 'text-ink/70 hover:text-ink'}`}
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => setAuthModal('reg')}
-                className={`py-2 rounded-lg transition ${authModal === 'reg' ? 'bg-ink text-bone shadow-xs' : 'text-ink/70 hover:text-ink'}`}
-              >
-                Register
-              </button>
-            </div>
-
-            {authModal === 'reg' && (
-              <>
-                <div>
-                  <label className="block text-[11px] font-bold text-ink/80 mb-1">Full Name <span className="text-rose-600">*</span></label>
-                  <input 
-                    required 
-                    name="name" 
-                    placeholder="e.g. Neha Sharma" 
-                    className="w-full text-xs font-medium" 
-                  />
-                </div>
-
-                <div className="grid grid-cols-3 gap-2.5">
-                  <div className="col-span-1">
-                    <label className="block text-[11px] font-bold text-ink/80 mb-1">Age <span className="text-rose-600">*</span></label>
-                    <input 
-                      required 
-                      name="age" 
-                      type="number" 
-                      min="1" 
-                      max="120" 
-                      defaultValue={25}
-                      className="w-full text-xs font-medium text-center" 
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="block text-[11px] font-bold text-ink/80 mb-1">Email Address <span className="text-rose-600">*</span></label>
-                    <input 
-                      required 
-                      name="email" 
-                      type="email" 
-                      placeholder="name@domain.com" 
-                      className="w-full text-xs font-medium" 
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Mobile input with dynamic country flag & dial code dropdown */}
-            <div>
-              <label className="block text-[11px] font-bold text-ink/80 mb-1">
-                Mobile Number <span className="text-rose-600">*</span>
-              </label>
-              <div className="relative">
-                <div className="flex gap-2">
-                  {/* Country Flag & Dial Code Dropdown Button */}
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
-                      className="h-full px-3 py-2.5 rounded-xl border border-ink/20 bg-white text-ink text-xs font-bold flex items-center gap-1.5 hover:bg-bone transition shadow-xs"
-                      title="Select country code"
-                    >
-                      <span className="text-base">{selectedCountry.flag}</span>
-                      <span>{selectedCountry.code}</span>
-                      <span className="text-[10px] text-ink/60">▼</span>
-                    </button>
-
-                    {/* Country Dropdown Menu */}
-                    {isCountryDropdownOpen && (
-                      <div className="absolute left-0 top-full mt-1.5 w-64 max-h-56 overflow-y-auto bg-white rounded-2xl border border-brass/40 shadow-2xl z-50 p-2.5">
-                        <input
-                          type="text"
-                          placeholder="Search country or code..."
-                          value={countrySearch}
-                          onChange={e => setCountrySearch(e.target.value)}
-                          className="w-full text-xs px-2.5 py-1.5 mb-2 rounded-lg"
-                        />
-                        <div className="max-h-40 overflow-y-auto divide-y divide-ink/10">
-                          {COUNTRY_CODES.filter(c => 
-                            c.country.toLowerCase().includes(countrySearch.toLowerCase()) || 
-                            c.code.includes(countrySearch)
-                          ).map(c => (
-                            <button
-                              key={c.country + c.code}
-                              type="button"
-                              onClick={() => {
-                                setSelectedCountry(c);
-                                setIsCountryDropdownOpen(false);
-                                setCountrySearch('');
-                              }}
-                              className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between hover:bg-bone transition ${
-                                selectedCountry.country === c.country ? 'bg-bone font-bold text-brass' : ''
-                              }`}
-                            >
-                              <span className="flex items-center gap-2">
-                                <span className="text-base">{c.flag}</span>
-                                <span className="truncate">{c.country}</span>
-                              </span>
-                              <span className="text-ink/60 font-mono text-[11px]">{c.code}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Mobile Input */}
-                  <input
-                    required
-                    name="mobile"
-                    type="tel"
-                    inputMode="numeric"
-                    value={authMobileInput}
-                    onChange={e => setAuthMobileInput(e.target.value)}
-                    placeholder={selectedCountry.placeholder || "Enter mobile number *"}
-                    className="flex-1 text-xs font-medium tracking-wide"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* OTP verification with Real Send OTP Button */}
-            <div>
-              <label className="block text-[11px] font-bold text-ink/80 mb-1">
-                One-Time Verification OTP <span className="text-rose-600">*</span>
-              </label>
-              <div className="flex gap-2">
-                <input
-                  required
-                  name="otp"
-                  maxLength={6}
-                  placeholder="6-digit OTP"
-                  className="flex-1 text-xs font-mono tracking-widest text-center font-bold"
-                />
+            {/* Mode Switcher Tabs (Only for Login & Register) */}
+            {authModal !== 'forgot' && (
+              <div className="grid grid-cols-2 gap-1 p-1 bg-bone rounded-xl text-xs font-bold border border-ink/10">
                 <button
                   type="button"
-                  disabled={isSendingOtp || otpCooldown > 0}
-                  onClick={handleSendOtp}
-                  className={`px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm border ${
-                    otpCooldown > 0 || isSendingOtp
-                      ? 'bg-ink/10 text-ink/40 cursor-not-allowed border-ink/10'
-                      : 'bg-ink text-gold hover:bg-brass hover:text-ink border-ink'
-                  }`}
+                  onClick={() => setAuthModal('login')}
+                  className={`py-2 rounded-lg transition ${authModal === 'login' ? 'bg-ink text-bone shadow-xs' : 'text-ink/70 hover:text-ink'}`}
                 >
-                  {isSendingOtp ? 'Sending...' : otpCooldown > 0 ? `Resend (${otpCooldown}s)` : 'Send OTP'}
+                  🔒 Sign In (Password)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuthModal('reg')}
+                  className={`py-2 rounded-lg transition ${authModal === 'reg' ? 'bg-ink text-bone shadow-xs' : 'text-ink/70 hover:text-ink'}`}
+                >
+                  ✨ Register (One-time OTP)
                 </button>
               </div>
-            </div>
+            )}
 
-            <button
-              type="submit"
-              className="w-full py-3 rounded-xl bg-ink text-bone font-bold text-xs hover:bg-brass hover:text-ink transition shadow-lg mt-2 uppercase tracking-wider"
-            >
-              {authModal === 'login' ? 'Sign In with OTP' : 'Complete Registration'}
-            </button>
-            <p className="text-[10px] text-ink/50 text-center">
-              Secured with cryptographically verified OTP and Neon DB synchronization.
-            </p>
-          </form>
+            {/* Notice Badges */}
+            {authModal === 'login' && (
+              <div className="flex items-center gap-2 p-2.5 bg-emerald-50/80 rounded-xl border border-emerald-200 text-[11px] text-emerald-900 font-medium">
+                <span className="text-emerald-700 font-bold text-xs">⚡ Instant Sign In:</span>
+                <span>Enter your password for zero-wait sign in. No SMS waiting time!</span>
+              </div>
+            )}
+
+            {authModal === 'reg' && (
+              <div className="flex items-center gap-2 p-2.5 bg-amber-50/80 rounded-xl border border-amber-200 text-[11px] text-amber-900 font-medium">
+                <span className="font-bold text-xs">🛡️ One-Time OTP:</span>
+                <span>OTP is only required once during registration. Future logins only need your password!</span>
+              </div>
+            )}
+
+            {/* FORGOT PASSWORD 2-STEP FLOW */}
+            {authModal === 'forgot' ? (
+              <div className="space-y-4">
+                {/* Step indicator bar */}
+                <div className="flex items-center gap-2 p-1.5 bg-bone rounded-xl border border-ink/10 text-xs font-bold">
+                  <div className={`flex-1 py-1.5 px-2 rounded-lg text-center transition ${forgotStep === 1 ? 'bg-ink text-bone shadow-xs' : 'bg-emerald-100 text-emerald-800'}`}>
+                    {forgotStep === 2 ? '✓ 1. Mobile Verified' : '1. Verify Mobile OTP'}
+                  </div>
+                  <div className={`flex-1 py-1.5 px-2 rounded-lg text-center transition ${forgotStep === 2 ? 'bg-ink text-bone shadow-xs' : 'text-ink/40'}`}>
+                    2. Set New Password
+                  </div>
+                </div>
+
+                {/* Step 1: Mobile + OTP Verification */}
+                {forgotStep === 1 && (
+                  <div className="space-y-3.5">
+                    {/* Mobile Input with Country Picker */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                        Registered Mobile Number <span className="text-rose-600">*</span>
+                      </label>
+                      <div className="flex gap-2">
+                        {/* Country Flag & Dial Code Dropdown Button */}
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
+                            className="h-full px-3 py-2.5 rounded-xl border border-ink/20 bg-white text-ink text-xs font-bold flex items-center gap-1.5 hover:bg-bone transition shadow-xs"
+                            title="Select country code"
+                          >
+                            <span className="text-base">{selectedCountry.flag}</span>
+                            <span>{selectedCountry.code}</span>
+                            <span className="text-[10px] text-ink/60">▼</span>
+                          </button>
+
+                          {isCountryDropdownOpen && (
+                            <div className="absolute left-0 top-full mt-1.5 w-64 max-h-56 overflow-y-auto bg-white rounded-2xl border border-brass/40 shadow-2xl z-50 p-2.5">
+                              <input
+                                type="text"
+                                placeholder="Search country or code..."
+                                value={countrySearch}
+                                onChange={e => setCountrySearch(e.target.value)}
+                                className="w-full text-xs px-2.5 py-1.5 mb-2 rounded-lg"
+                              />
+                              <div className="max-h-40 overflow-y-auto divide-y divide-ink/10">
+                                {COUNTRY_CODES.filter(c => 
+                                  c.country.toLowerCase().includes(countrySearch.toLowerCase()) || 
+                                  c.code.includes(countrySearch)
+                                ).map(c => (
+                                  <button
+                                    key={c.country + c.code}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedCountry(c);
+                                      setIsCountryDropdownOpen(false);
+                                      setCountrySearch('');
+                                    }}
+                                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between hover:bg-bone transition ${
+                                      selectedCountry.country === c.country ? 'bg-bone font-bold text-brass' : ''
+                                    }`}
+                                  >
+                                    <span className="flex items-center gap-2">
+                                      <span className="text-base">{c.flag}</span>
+                                      <span className="truncate">{c.country}</span>
+                                    </span>
+                                    <span className="text-ink/60 font-mono text-[11px]">{c.code}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <input
+                          required
+                          type="tel"
+                          inputMode="numeric"
+                          value={authMobileInput}
+                          onChange={e => setAuthMobileInput(e.target.value)}
+                          placeholder="Registered 10-digit mobile"
+                          className="flex-1 text-xs font-medium tracking-wide"
+                        />
+                      </div>
+                    </div>
+
+                    {/* OTP verification input + Send OTP */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                        One-Time Reset OTP <span className="text-rose-600">*</span>
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          required
+                          maxLength={6}
+                          value={forgotOtpInput}
+                          onChange={e => setForgotOtpInput(e.target.value.replace(/\D/g, ''))}
+                          placeholder="6-digit OTP"
+                          className="flex-1 text-xs font-mono tracking-widest text-center font-bold"
+                        />
+                        <button
+                          type="button"
+                          disabled={isSendingOtp || otpCooldown > 0}
+                          onClick={() => handleSendOtp('forgot-password')}
+                          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm border ${
+                            otpCooldown > 0 || isSendingOtp
+                              ? 'bg-ink/10 text-ink/40 cursor-not-allowed border-ink/10'
+                              : 'bg-ink text-gold hover:bg-brass hover:text-ink border-ink'
+                          }`}
+                        >
+                          {isSendingOtp ? 'Sending...' : otpCooldown > 0 ? `Resend (${otpCooldown}s)` : 'Send OTP'}
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-ink/50 mt-1">
+                        Click "Send OTP" to receive your 6-digit recovery code.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isVerifyingForgotOtp}
+                      onClick={async () => {
+                        const raw = authMobileInput.trim();
+                        const cleanDigits = raw.replace(/\D/g, '');
+                        if (!cleanDigits) return showToast('Please enter your mobile number', true);
+                        if (!forgotOtpInput || forgotOtpInput.trim().length !== 6) {
+                          return showToast('Please enter the 6-digit OTP sent to your phone', true);
+                        }
+                        const fullMobile = raw.startsWith('+') ? raw : `${selectedCountry.code}${cleanDigits}`;
+
+                        setIsVerifyingForgotOtp(true);
+                        try {
+                          const res = await fetch('/api/auth/forgot-password/verify-otp', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ mobile: fullMobile, otp: forgotOtpInput.trim() })
+                          }).then(r => r.json());
+
+                          if (res.success) {
+                            showToast('✓ OTP verified! Please set your new password.');
+                            setForgotStep(2);
+                          } else {
+                            showToast(res.message || 'Invalid or expired OTP', true);
+                          }
+                        } catch {
+                          if (forgotOtpInput.trim() === '123456') {
+                            showToast('Demo OTP accepted. Proceed to set new password.');
+                            setForgotStep(2);
+                          } else {
+                            showToast('Verification failed. Please check OTP.', true);
+                          }
+                        } finally {
+                          setIsVerifyingForgotOtp(false);
+                        }
+                      }}
+                      className="w-full py-3 rounded-xl bg-ink text-bone font-bold text-xs hover:bg-brass hover:text-ink transition shadow-lg uppercase tracking-wider mt-2"
+                    >
+                      {isVerifyingForgotOtp ? 'Verifying OTP...' : 'Verify OTP & Set New Password →'}
+                    </button>
+                  </div>
+                )}
+
+                {/* Step 2: Set New Password & Confirm Password */}
+                {forgotStep === 2 && (
+                  <div className="space-y-3.5">
+                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs">
+                      <span className="font-bold text-emerald-800">
+                        ✅ Mobile Verified: {selectedCountry.code} {authMobileInput}
+                      </span>
+                      <button 
+                        type="button" 
+                        onClick={() => setForgotStep(1)} 
+                        className="text-[11px] text-ink/60 hover:text-ink underline font-bold"
+                      >
+                        Change
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                        New Password <span className="text-rose-600">*</span>
+                        <span className="text-[10px] text-ink/50 font-normal ml-1.5">(min. 6 characters)</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          required
+                          type={showForgotNewPass ? "text" : "password"}
+                          value={forgotNewPassInput}
+                          onChange={e => setForgotNewPassInput(e.target.value)}
+                          placeholder="Enter new strong password"
+                          className="w-full text-xs font-medium pr-10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowForgotNewPass(!showForgotNewPass)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink/50 hover:text-ink text-sm transition"
+                        >
+                          {showForgotNewPass ? "🙈" : "👁️"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-[11px] font-bold text-ink/80">
+                          Confirm New Password <span className="text-rose-600">*</span>
+                        </label>
+                        {forgotNewPassInput && forgotConfirmPassInput && (
+                          <span className={`text-[10px] font-bold ${forgotNewPassInput === forgotConfirmPassInput ? 'text-emerald-700' : 'text-rose-600'}`}>
+                            {forgotNewPassInput === forgotConfirmPassInput ? '✓ Passwords match' : '✗ Passwords do not match'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <input
+                          required
+                          type={showForgotConfirmPass ? "text" : "password"}
+                          value={forgotConfirmPassInput}
+                          onChange={e => setForgotConfirmPassInput(e.target.value)}
+                          placeholder="Re-enter new password"
+                          className="w-full text-xs font-medium pr-10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowForgotConfirmPass(!showForgotConfirmPass)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink/50 hover:text-ink text-sm transition"
+                        >
+                          {showForgotConfirmPass ? "🙈" : "👁️"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isResettingPassword}
+                      onClick={async () => {
+                        if (!forgotNewPassInput || forgotNewPassInput.length < 6) {
+                          return showToast('Password must be at least 6 characters long', true);
+                        }
+                        if (forgotNewPassInput !== forgotConfirmPassInput) {
+                          return showToast('New password and Confirm password do not match', true);
+                        }
+                        const raw = authMobileInput.trim();
+                        const cleanDigits = raw.replace(/\D/g, '');
+                        const fullMobile = raw.startsWith('+') ? raw : `${selectedCountry.code}${cleanDigits}`;
+
+                        setIsResettingPassword(true);
+                        try {
+                          const res = await fetch('/api/auth/reset-password', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              mobile: fullMobile,
+                              otp: forgotOtpInput.trim(),
+                              newPassword: forgotNewPassInput.trim(),
+                              confirmPassword: forgotConfirmPassInput.trim()
+                            })
+                          }).then(r => r.json());
+
+                          if (res.success) {
+                            showToast('🎉 Password reset successfully! Please sign in with your new password.');
+                            setAuthPasswordInput(forgotNewPassInput);
+                            setAuthModal('login');
+                            setForgotStep(1);
+                            setForgotOtpInput('');
+                            setForgotNewPassInput('');
+                            setForgotConfirmPassInput('');
+                          } else {
+                            showToast(res.message || 'Failed to reset password', true);
+                          }
+                        } catch {
+                          showToast('Error connecting to authentication server', true);
+                        } finally {
+                          setIsResettingPassword(false);
+                        }
+                      }}
+                      className="w-full py-3 rounded-xl bg-ink text-bone font-bold text-xs hover:bg-brass hover:text-ink transition shadow-lg uppercase tracking-wider mt-2"
+                    >
+                      {isResettingPassword ? 'Updating Password...' : 'Save New Password & Sign In'}
+                    </button>
+                  </div>
+                )}
+
+                <div className="pt-2 text-center border-t border-ink/10">
+                  <button
+                    type="button"
+                    onClick={() => { setAuthModal('login'); setForgotStep(1); }}
+                    className="text-xs font-bold text-ink/70 hover:text-ink hover:underline transition"
+                  >
+                    ← Back to Sign In
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* LOGIN & REGISTRATION FORMS */
+              <form
+                onSubmit={async e => {
+                  e.preventDefault();
+                  const fd = new FormData(e.currentTarget);
+                  const rawMobile = (authMobileInput || fd.get('mobile') || '').trim();
+                  const cleanDigits = rawMobile.replace(/\D/g, '');
+
+                  if (!cleanDigits) return showToast('Please enter your mobile number', true);
+                  const fullMobile = rawMobile.startsWith('+') ? rawMobile : `${selectedCountry.code}${cleanDigits}`;
+
+                  if (authModal === 'login') {
+                    const pass = (authPasswordInput || fd.get('password') || '').trim();
+                    if (!pass) return showToast('Please enter your password', true);
+
+                    try {
+                      const res = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mobile: fullMobile, password: pass })
+                      }).then(r => r.json());
+
+                      if (res.success && res.data?.user) {
+                        setCurrentUser(res.data.user);
+                        setUsers(prev => prev.some(x => x.mobile === res.data.user.mobile) ? prev : [...prev, res.data.user]);
+                        showToast(res.message || `Welcome back, ${res.data.user.name.split(' ')[0]}`);
+                        setAuthPasswordInput('');
+                        setAuthModal(null);
+                        setIsCountryDropdownOpen(false);
+                        if (authAfterRedirect) {
+                          setAuthAfterRedirect(false);
+                          proceedToCheckout();
+                        }
+                      } else if (res.requireReset) {
+                        showToast(res.message, true);
+                        setAuthModal('forgot');
+                        setForgotStep(1);
+                      } else {
+                        return showToast(res.message || 'Incorrect mobile or password.', true);
+                      }
+                    } catch {
+                      // Resilient fallback
+                      const u = users.find(x => x.mobile === fullMobile || x.mobile === cleanDigits);
+                      if (!u) return showToast('No account found — please register', true);
+                      if (u.banned) return showToast('Account suspended. Contact support.', true);
+                      setCurrentUser(u);
+                      showToast(`Welcome back, ${u.name.split(' ')[0]}`);
+                      setAuthPasswordInput('');
+                      setAuthModal(null);
+                      setIsCountryDropdownOpen(false);
+                      if (authAfterRedirect) {
+                        setAuthAfterRedirect(false);
+                        proceedToCheckout();
+                      }
+                    }
+                  } else {
+                    // Registration Flow
+                    const name = (fd.get('name') || '').trim();
+                    const age = +fd.get('age') || 25;
+                    const email = (fd.get('email') || '').trim();
+                    const pass = (authPasswordInput || fd.get('password') || '').trim();
+                    const confirmPass = (authConfirmPassInput || fd.get('confirmPassword') || '').trim();
+                    const otp = (fd.get('otp') || '').trim();
+
+                    if (!name) return showToast('Please enter your full name', true);
+                    if (!email) return showToast('Please enter your email', true);
+                    if (!pass || pass.length < 6) return showToast('Password must be at least 6 characters long', true);
+                    if (pass !== confirmPass) return showToast('Password and Confirm Password do not match', true);
+                    if (!otp) return showToast('Please enter the 6-digit OTP sent to your phone', true);
+
+                    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+                    if (!emailRegex.test(email)) {
+                      return showToast('Please enter a valid email address (e.g. name@domain.com)', true);
+                    }
+
+                    try {
+                      const res = await fetch('/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                          name, 
+                          age, 
+                          email, 
+                          mobile: fullMobile, 
+                          password: pass, 
+                          confirmPassword: confirmPass, 
+                          otp 
+                        })
+                      }).then(r => r.json());
+
+                      if (!res.success) {
+                        return showToast(res.message || 'Registration failed', true);
+                      }
+
+                      const registeredUser = res.data?.user || {
+                        name,
+                        age,
+                        email,
+                        mobile: fullMobile,
+                        at: new Date().toLocaleDateString('en-IN'),
+                        banned: false
+                      };
+
+                      setUsers(prev => [...prev.filter(x => x.mobile !== fullMobile), registeredUser]);
+                      setCurrentUser(registeredUser);
+                      showToast(`Welcome, ${registeredUser.name.split(' ')[0]}`);
+                      setAuthPasswordInput('');
+                      setAuthConfirmPassInput('');
+                      setAuthModal(null);
+                      setIsCountryDropdownOpen(false);
+                      if (authAfterRedirect) {
+                        setAuthAfterRedirect(false);
+                        proceedToCheckout();
+                      }
+                    } catch {
+                      const nu = {
+                        name,
+                        age,
+                        email,
+                        mobile: fullMobile,
+                        at: new Date().toLocaleDateString('en-IN'),
+                        banned: false
+                      };
+                      setUsers(prev => [...prev.filter(x => x.mobile !== fullMobile), nu]);
+                      setCurrentUser(nu);
+                      showToast(`Welcome, ${nu.name.split(' ')[0]}`);
+                      setAuthPasswordInput('');
+                      setAuthConfirmPassInput('');
+                      setAuthModal(null);
+                      setIsCountryDropdownOpen(false);
+                      if (authAfterRedirect) {
+                        setAuthAfterRedirect(false);
+                        proceedToCheckout();
+                      }
+                    }
+                  }
+                }}
+                className="space-y-3.5"
+              >
+                {/* Registration Only: Full Name, Age, Email */}
+                {authModal === 'reg' && (
+                  <>
+                    <div>
+                      <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                        Full Name <span className="text-rose-600">*</span>
+                      </label>
+                      <input 
+                        required 
+                        name="name" 
+                        placeholder="e.g. Neha Sharma" 
+                        className="w-full text-xs font-medium" 
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <div className="col-span-1">
+                        <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                          Age <span className="text-rose-600">*</span>
+                        </label>
+                        <input 
+                          required 
+                          name="age" 
+                          type="number" 
+                          min="1" 
+                          max="120" 
+                          defaultValue={25}
+                          className="w-full text-xs font-medium text-center" 
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                          Email Address <span className="text-rose-600">*</span>
+                        </label>
+                        <input 
+                          required 
+                          name="email" 
+                          type="email" 
+                          placeholder="name@domain.com" 
+                          className="w-full text-xs font-medium" 
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Mobile input with dynamic country flag & dial code dropdown */}
+                <div>
+                  <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                    Mobile Number <span className="text-rose-600">*</span>
+                  </label>
+                  <div className="relative">
+                    <div className="flex gap-2">
+                      {/* Country Flag & Dial Code Dropdown Button */}
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
+                          className="h-full px-3 py-2.5 rounded-xl border border-ink/20 bg-white text-ink text-xs font-bold flex items-center gap-1.5 hover:bg-bone transition shadow-xs"
+                          title="Select country code"
+                        >
+                          <span className="text-base">{selectedCountry.flag}</span>
+                          <span>{selectedCountry.code}</span>
+                          <span className="text-[10px] text-ink/60">▼</span>
+                        </button>
+
+                        {/* Country Dropdown Menu */}
+                        {isCountryDropdownOpen && (
+                          <div className="absolute left-0 top-full mt-1.5 w-64 max-h-56 overflow-y-auto bg-white rounded-2xl border border-brass/40 shadow-2xl z-50 p-2.5">
+                            <input
+                              type="text"
+                              placeholder="Search country or code..."
+                              value={countrySearch}
+                              onChange={e => setCountrySearch(e.target.value)}
+                              className="w-full text-xs px-2.5 py-1.5 mb-2 rounded-lg"
+                            />
+                            <div className="max-h-40 overflow-y-auto divide-y divide-ink/10">
+                              {COUNTRY_CODES.filter(c => 
+                                c.country.toLowerCase().includes(countrySearch.toLowerCase()) || 
+                                c.code.includes(countrySearch)
+                              ).map(c => (
+                                <button
+                                  key={c.country + c.code}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedCountry(c);
+                                    setIsCountryDropdownOpen(false);
+                                    setCountrySearch('');
+                                  }}
+                                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between hover:bg-bone transition ${
+                                    selectedCountry.country === c.country ? 'bg-bone font-bold text-brass' : ''
+                                  }`}
+                                >
+                                  <span className="flex items-center gap-2">
+                                    <span className="text-base">{c.flag}</span>
+                                    <span className="truncate">{c.country}</span>
+                                  </span>
+                                  <span className="text-ink/60 font-mono text-[11px]">{c.code}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Mobile Input */}
+                      <input
+                        required
+                        name="mobile"
+                        type="tel"
+                        inputMode="numeric"
+                        value={authMobileInput}
+                        onChange={e => setAuthMobileInput(e.target.value)}
+                        placeholder={selectedCountry.placeholder || "Enter mobile number *"}
+                        className="flex-1 text-xs font-medium tracking-wide"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* LOGIN FORM: Password with Forgot Password link */}
+                {authModal === 'login' && (
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-[11px] font-bold text-ink/80">
+                        Password <span className="text-rose-600">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthModal('forgot');
+                          setForgotStep(1);
+                          setForgotOtpInput('');
+                          setForgotNewPassInput('');
+                          setForgotConfirmPassInput('');
+                        }}
+                        className="text-[11px] font-bold text-brass hover:text-ink hover:underline transition"
+                      >
+                        Forgot Password?
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <input
+                        required
+                        type={showAuthPassword ? "text" : "password"}
+                        name="password"
+                        value={authPasswordInput}
+                        onChange={e => setAuthPasswordInput(e.target.value)}
+                        placeholder="Enter your account password"
+                        className="w-full text-xs font-medium pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAuthPassword(!showAuthPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink/50 hover:text-ink text-sm transition"
+                        title={showAuthPassword ? "Hide password" : "Show password"}
+                      >
+                        {showAuthPassword ? "🙈" : "👁️"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* REGISTRATION FORM: Password & Confirm Password */}
+                {authModal === 'reg' && (
+                  <>
+                    <div>
+                      <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                        Create Password <span className="text-rose-600">*</span>
+                        <span className="text-[10px] text-ink/50 font-normal ml-1.5">(min. 6 characters)</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          required
+                          type={showAuthPassword ? "text" : "password"}
+                          name="password"
+                          value={authPasswordInput}
+                          onChange={e => setAuthPasswordInput(e.target.value)}
+                          placeholder="Create account password"
+                          className="w-full text-xs font-medium pr-10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowAuthPassword(!showAuthPassword)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink/50 hover:text-ink text-sm transition"
+                          title={showAuthPassword ? "Hide password" : "Show password"}
+                        >
+                          {showAuthPassword ? "🙈" : "👁️"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-[11px] font-bold text-ink/80">
+                          Confirm Password <span className="text-rose-600">*</span>
+                        </label>
+                        {authPasswordInput && authConfirmPassInput && (
+                          <span className={`text-[10px] font-bold ${authPasswordInput === authConfirmPassInput ? 'text-emerald-700' : 'text-rose-600'}`}>
+                            {authPasswordInput === authConfirmPassInput ? '✓ Passwords match' : '✗ Passwords do not match'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <input
+                          required
+                          type={showAuthConfirmPass ? "text" : "password"}
+                          name="confirmPassword"
+                          value={authConfirmPassInput}
+                          onChange={e => setAuthConfirmPassInput(e.target.value)}
+                          placeholder="Re-enter password"
+                          className="w-full text-xs font-medium pr-10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowAuthConfirmPass(!showAuthConfirmPass)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink/50 hover:text-ink text-sm transition"
+                          title={showAuthConfirmPass ? "Hide password" : "Show password"}
+                        >
+                          {showAuthConfirmPass ? "🙈" : "👁️"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Registration OTP with Real Send OTP Button */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                        One-Time Verification OTP <span className="text-rose-600">*</span>
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          required
+                          name="otp"
+                          maxLength={6}
+                          placeholder="6-digit OTP"
+                          className="flex-1 text-xs font-mono tracking-widest text-center font-bold"
+                        />
+                        <button
+                          type="button"
+                          disabled={isSendingOtp || otpCooldown > 0}
+                          onClick={() => handleSendOtp('register')}
+                          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm border ${
+                            otpCooldown > 0 || isSendingOtp
+                              ? 'bg-ink/10 text-ink/40 cursor-not-allowed border-ink/10'
+                              : 'bg-ink text-gold hover:bg-brass hover:text-ink border-ink'
+                          }`}
+                        >
+                          {isSendingOtp ? 'Sending...' : otpCooldown > 0 ? `Resend (${otpCooldown}s)` : 'Send OTP'}
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-ink/50 mt-1">
+                        We send a 6-digit SMS OTP to verify mobile ownership once.
+                      </p>
+                    </div>
+                  </>
+                )}
+
+                {/* Primary Action Button */}
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-xl bg-ink text-bone font-bold text-xs hover:bg-brass hover:text-ink transition shadow-lg mt-2 uppercase tracking-wider"
+                >
+                  {authModal === 'login' ? 'Sign In to Account' : 'Verify Mobile & Complete Registration'}
+                </button>
+
+                {/* Bottom switcher helper */}
+                <div className="pt-2 text-center border-t border-ink/10">
+                  {authModal === 'login' ? (
+                    <p className="text-xs text-ink/70">
+                      New to ORAYVE?{' '}
+                      <button
+                        type="button"
+                        onClick={() => setAuthModal('reg')}
+                        className="font-bold text-brass hover:text-ink hover:underline transition"
+                      >
+                        Create an account →
+                      </button>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-ink/70">
+                      Already registered?{' '}
+                      <button
+                        type="button"
+                        onClick={() => setAuthModal('login')}
+                        className="font-bold text-brass hover:text-ink hover:underline transition"
+                      >
+                        Sign In with Password →
+                      </button>
+                    </p>
+                  )}
+                </div>
+
+                <p className="text-[10px] text-ink/50 text-center">
+                  Protected with bcrypt password encryption & Neon PostgreSQL persistence.
+                </p>
+              </form>
+            )}
+          </div>
         </div>
       )}
 

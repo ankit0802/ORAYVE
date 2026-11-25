@@ -191,6 +191,10 @@ export async function initDatabase() {
       ALTER TABLE order_schema.orders ADD COLUMN IF NOT EXISTS cancel_info JSONB DEFAULT NULL;
       ALTER TABLE order_schema.orders ADD COLUMN IF NOT EXISTS return_info JSONB DEFAULT NULL;
 
+      -- Password authentication support
+      ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+      ALTER TABLE auth_schema.users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+
       CREATE TABLE IF NOT EXISTS public.user_wallets (
         wallet_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_mobile VARCHAR(20) UNIQUE NOT NULL,

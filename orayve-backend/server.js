@@ -90,8 +90,8 @@ let COUPONS = [
 ];
 
 let USERS = [
-  { name: 'Rohit Sharma', age: 29, email: 'rohit@example.com', mobile: '9876543210', at: '23/11/2026', banned: false },
-  { name: 'Ankit Kumar', age: 26, email: 'ankit@orayve.in', mobile: '9988776655', at: '23/11/2026', banned: false }
+  { name: 'Rohit Sharma', age: 29, email: 'rohit@example.com', mobile: '9876543210', password_hash: bcrypt.hashSync('orayve@123', 10), at: '23/11/2026', banned: false },
+  { name: 'Ankit Kumar', age: 26, email: 'ankit@orayve.in', mobile: '9988776655', password_hash: bcrypt.hashSync('orayve@123', 10), at: '23/11/2026', banned: false }
 ];
 
 let ADDRESSES = [
@@ -192,7 +192,7 @@ app.get('/api/delivery/check-pincode', (req, res) => {
 // In-memory live OTP storage: mobile -> { otp, exp }
 const LIVE_OTPS = new Map();
 
-function verifyOtpHelper(mobile, userOtp) {
+function verifyOtpHelper(mobile, userOtp, consume = true) {
   if (!userOtp) return false;
   const trimmed = userOtp.trim();
   if (trimmed === '123456') return true; // dev fallback
@@ -204,13 +204,13 @@ function verifyOtpHelper(mobile, userOtp) {
     return false;
   }
   if (entry.otp === trimmed) {
-    LIVE_OTPS.delete(clean);
+    if (consume) LIVE_OTPS.delete(clean);
     return true;
   }
   return false;
 }
 
-// POST /api/auth/send-otp
+// POST /api/auth/send-otp (OTP ONLY for Registration and Forgot-Password)
 app.post('/api/auth/send-otp', async (req, res) => {
   const { mobile, countryCode, purpose } = req.body;
   if (!mobile) {
@@ -225,39 +225,44 @@ app.post('/api/auth/send-otp', async (req, res) => {
   const last10 = digits.slice(-10);
 
   // Early context-aware duplicate / existence check
-  if (purpose === 'register') {
+  if (purpose === 'login') {
+    return res.status(400).json({
+      success: false,
+      message: 'Login uses password and does not require OTP. Please enter your password or click "Forgot Password".'
+    });
+  } else if (purpose === 'register') {
     if (pool) {
       try {
         const existing = await pool.query(
-          "SELECT 1 FROM public.users WHERE RIGHT(regexp_replace(mobile_number, '[^0-9]', '', 'g'), 10) = $1",
-          [last10]
+          "SELECT 1 FROM public.users WHERE RIGHT(regexp_replace(mobile_number, '[^0-9]', '', 'g'), 10) = $1 OR mobile_number = $2",
+          [last10, cleanMobile]
         );
         if (existing.rows.length > 0) {
-          return res.status(409).json({ success: false, message: 'Mobile number is already registered. Please switch to Login.' });
+          return res.status(409).json({ success: false, message: 'Mobile number is already registered. Please sign in with your password.' });
         }
       } catch (e) {
         console.error('[DB] Error checking duplicate user in send-otp:', e.message);
       }
     } else if (USERS.some(u => (u.mobile || '').replace(/[^0-9]/g, '').endsWith(last10))) {
-      return res.status(409).json({ success: false, message: 'Mobile number is already registered. Please switch to Login.' });
+      return res.status(409).json({ success: false, message: 'Mobile number is already registered. Please sign in with your password.' });
     }
-  } else if (purpose === 'login') {
+  } else if (purpose === 'forgot-password' || purpose === 'forgot') {
     let exists = false;
     if (pool) {
       try {
         const found = await pool.query(
-          "SELECT 1 FROM public.users WHERE RIGHT(regexp_replace(mobile_number, '[^0-9]', '', 'g'), 10) = $1",
-          [last10]
+          "SELECT 1 FROM public.users WHERE RIGHT(regexp_replace(mobile_number, '[^0-9]', '', 'g'), 10) = $1 OR mobile_number = $2",
+          [last10, cleanMobile]
         );
         exists = found.rows.length > 0;
       } catch (e) {
-        console.error('[DB] Error checking user existence in send-otp:', e.message);
+        console.error('[DB] Error checking user existence in forgot-password send-otp:', e.message);
       }
     } else {
       exists = USERS.some(u => (u.mobile || '').replace(/[^0-9]/g, '').endsWith(last10));
     }
     if (!exists) {
-      return res.status(404).json({ success: false, message: 'No account found with this mobile number. Please switch to Register.' });
+      return res.status(404).json({ success: false, message: 'No registered account found with this mobile number. Please register.' });
     }
   }
 
@@ -312,6 +317,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
 
   console.log(`\n=======================================================`);
   console.log(`  [ORAYVE LIVE SMS] Recipient: ${cleanMobile}`);
+  console.log(`  [PURPOSE]       : ${purpose || 'verification'}`);
   console.log(`  [LIVE OTP CODE] : ${liveOtp} (Valid for 5 minutes)`);
   console.log(`  [CARRIER STATUS]: ${smsCarrierStatus}`);
   console.log(`  [TIMESTAMP]     : ${new Date().toISOString()}`);
@@ -324,15 +330,18 @@ app.post('/api/auth/send-otp', async (req, res) => {
   });
 });
 
-// POST /api/auth/login
+// POST /api/auth/login (PASSWORD ONLY - ZERO OTP COST)
 app.post('/api/auth/login', async (req, res) => {
-  const { mobile, otp } = req.body;
+  const { mobile, password } = req.body;
   const m = (mobile || '').trim();
   const digits = m.replace(/[^0-9]/g, '');
   const last10 = digits.slice(-10);
 
-  if (!verifyOtpHelper(m, otp)) {
-    return res.status(400).json({ success: false, message: 'Invalid or expired OTP. Please enter the latest 6-digit OTP or click Send OTP.' });
+  if (!digits) {
+    return res.status(400).json({ success: false, message: 'Please enter your mobile number' });
+  }
+  if (!password) {
+    return res.status(400).json({ success: false, message: 'Please enter your password' });
   }
 
   let user = USERS.find(u => (u.mobile || '').replace(/[^0-9]/g, '').endsWith(last10));
@@ -341,7 +350,7 @@ app.post('/api/auth/login', async (req, res) => {
   if (pool) {
     try {
       const q = await pool.query(
-        "SELECT full_name as name, age, email, mobile_number as mobile, is_banned as banned, role FROM public.users WHERE RIGHT(regexp_replace(mobile_number, '[^0-9]', '', 'g'), 10) = $1 OR mobile_number = $2",
+        "SELECT user_id, full_name as name, age, email, mobile_number as mobile, password_hash, is_banned as banned, role FROM public.users WHERE RIGHT(regexp_replace(mobile_number, '[^0-9]', '', 'g'), 10) = $1 OR mobile_number = $2",
         [last10, m]
       );
       if (q.rows.length > 0) {
@@ -352,20 +361,52 @@ app.post('/api/auth/login', async (req, res) => {
     }
   }
 
-  if (!user) return res.status(404).json({ success: false, message: 'No account found — please register' });
-  if (user.banned) return res.status(403).json({ success: false, message: 'Account suspended. Contact support.' });
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'No registered account found with this mobile number. Please register.' });
+  }
+  if (user.banned) {
+    return res.status(403).json({ success: false, message: 'Account suspended. Contact support.' });
+  }
+
+  // Handle legacy accounts without a password hash
+  if (!user.password_hash) {
+    return res.status(400).json({
+      success: false,
+      requireReset: true,
+      message: 'Password not set for this account yet. Please use "Forgot Password" to verify with OTP and create your password.'
+    });
+  }
+
+  const isMatch = bcrypt.compareSync(password.trim(), user.password_hash);
+  if (!isMatch) {
+    return res.status(401).json({ success: false, message: 'Incorrect password. Please try again or click "Forgot Password?".' });
+  }
 
   const token = jwt.sign({ mobile: user.mobile, name: user.name, role: user.role || 'USER' }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({ success: true, message: `Welcome, ${user.name}`, data: { user, token } });
+  const clientUser = { ...user };
+  delete clientUser.password_hash;
+
+  res.json({ success: true, message: `Welcome back, ${user.name}`, data: { user: clientUser, token } });
 });
 
-// POST /api/auth/register
+// POST /api/auth/register (VERIFIES OTP, REQUIRES PASSWORD & CONFIRM PASSWORD)
 app.post('/api/auth/register', async (req, res) => {
-  const { name, age, email, mobile, otp } = req.body;
-  if (!name || !age || !email || !mobile) return res.status(400).json({ success: false, message: 'All fields are required' });
+  const { name, age, email, mobile, password, confirmPassword, otp } = req.body;
+  if (!name || !age || !email || !mobile || !password) {
+    return res.status(400).json({ success: false, message: 'All fields (Name, Age, Email, Mobile, Password) are required' });
+  }
 
   const m = mobile.trim();
   const em = email.trim();
+  const pass = password.trim();
+
+  // Password validation (min 6 characters)
+  if (pass.length < 6) {
+    return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long' });
+  }
+  if (confirmPassword && pass !== confirmPassword.trim()) {
+    return res.status(400).json({ success: false, message: 'Password and Confirm Password do not match' });
+  }
 
   // Strict email format validation
   const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
@@ -388,23 +429,26 @@ app.post('/api/auth/register', async (req, res) => {
         [`%${last10}`, m, em]
       );
       if (existing.rows.length > 0) {
-        return res.status(409).json({ success: false, message: 'Mobile number or email is already registered. Please switch to Login.' });
+        return res.status(409).json({ success: false, message: 'Mobile number or email is already registered. Please sign in with your password.' });
       }
     } catch (e) {
       console.error('[DB] Error checking duplicate user:', e.message);
     }
   } else {
     if (USERS.some(u => (u.mobile || '').replace(/[^0-9]/g, '').endsWith(last10))) {
-      return res.status(409).json({ success: false, message: 'Mobile number is already registered. Please switch to Login.' });
+      return res.status(409).json({ success: false, message: 'Mobile number is already registered. Please sign in with your password.' });
     }
     if (USERS.some(u => u.email.toLowerCase() === em.toLowerCase())) return res.status(409).json({ success: false, message: 'Email already registered' });
   }
+
+  const password_hash = bcrypt.hashSync(pass, 10);
 
   const newUser = {
     name: name.trim(),
     age: parseInt(age),
     email: em,
     mobile: m,
+    password_hash,
     at: new Date().toLocaleDateString('en-IN'),
     banned: false
   };
@@ -414,26 +458,106 @@ app.post('/api/auth/register', async (req, res) => {
   if (pool) {
     try {
       await pool.query(`
-        INSERT INTO public.users (full_name, age, email, mobile_number, role, is_banned)
-        VALUES ($1, $2, $3, $4, 'ROLE_USER', FALSE)
+        INSERT INTO public.users (full_name, age, email, mobile_number, password_hash, role, is_banned)
+        VALUES ($1, $2, $3, $4, $5, 'ROLE_USER', FALSE)
         ON CONFLICT (mobile_number) DO UPDATE 
-        SET full_name = EXCLUDED.full_name, email = EXCLUDED.email, age = EXCLUDED.age;
-      `, [newUser.name, newUser.age, newUser.email, newUser.mobile]);
+        SET full_name = EXCLUDED.full_name, email = EXCLUDED.email, age = EXCLUDED.age, password_hash = EXCLUDED.password_hash;
+      `, [newUser.name, newUser.age, newUser.email, newUser.mobile, password_hash]);
 
       await pool.query(`
-        INSERT INTO auth_schema.users (full_name, age, email, mobile_number, role, is_banned)
-        VALUES ($1, $2, $3, $4, 'ROLE_USER', FALSE)
+        INSERT INTO auth_schema.users (full_name, age, email, mobile_number, password_hash, role, is_banned)
+        VALUES ($1, $2, $3, $4, $5, 'ROLE_USER', FALSE)
         ON CONFLICT (mobile_number) DO UPDATE 
-        SET full_name = EXCLUDED.full_name, email = EXCLUDED.email, age = EXCLUDED.age;
-      `, [newUser.name, newUser.age, newUser.email, newUser.mobile]);
-      console.log(`[DB] Successfully registered user in Neon DB: ${newUser.name} (${newUser.mobile})`);
+        SET full_name = EXCLUDED.full_name, email = EXCLUDED.email, age = EXCLUDED.age, password_hash = EXCLUDED.password_hash;
+      `, [newUser.name, newUser.age, newUser.email, newUser.mobile, password_hash]);
+      console.log(`[DB] Successfully registered user with password in Neon DB: ${newUser.name} (${newUser.mobile})`);
     } catch (e) {
       console.error('[DB] User insert error:', e.message);
     }
   }
 
+  const clientUser = { ...newUser };
+  delete clientUser.password_hash;
+
   const token = jwt.sign({ mobile: newUser.mobile, name: newUser.name, role: 'USER' }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({ success: true, message: `Account created for ${newUser.name}`, data: { user: newUser, token } });
+  res.json({ success: true, message: `Account created successfully for ${newUser.name}`, data: { user: clientUser, token } });
+});
+
+// POST /api/auth/forgot-password/verify-otp (Step 1 validation)
+app.post('/api/auth/forgot-password/verify-otp', async (req, res) => {
+  const { mobile, otp } = req.body;
+  const m = (mobile || '').trim();
+  const o = (otp || '').trim();
+
+  if (!m || !o) {
+    return res.status(400).json({ success: false, message: 'Mobile number and OTP are required' });
+  }
+
+  // Verify OTP without consuming so reset call can confirm
+  const isValid = verifyOtpHelper(m, o, false);
+  if (!isValid) {
+    return res.status(400).json({ success: false, message: 'Invalid or expired OTP. Please check the 6-digit code or request a new OTP.' });
+  }
+
+  res.json({ success: true, message: 'OTP verified successfully. You can now set your new password.' });
+});
+
+// POST /api/auth/reset-password (Step 2 update password)
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { mobile, otp, newPassword, confirmPassword } = req.body;
+  const m = (mobile || '').trim();
+  const digits = m.replace(/[^0-9]/g, '');
+  const last10 = digits.slice(-10);
+  const pass = (newPassword || '').trim();
+
+  if (!digits || !otp || !pass) {
+    return res.status(400).json({ success: false, message: 'Mobile number, OTP, and new password are required' });
+  }
+
+  if (pass.length < 6) {
+    return res.status(400).json({ success: false, message: 'New password must be at least 6 characters long' });
+  }
+
+  if (confirmPassword && pass !== confirmPassword.trim()) {
+    return res.status(400).json({ success: false, message: 'New password and Confirm password do not match' });
+  }
+
+  // Consume OTP
+  if (!verifyOtpHelper(m, otp, true)) {
+    return res.status(400).json({ success: false, message: 'Invalid or expired OTP. Please request a fresh OTP.' });
+  }
+
+  const newHash = bcrypt.hashSync(pass, 10);
+  let updated = false;
+
+  if (pool) {
+    try {
+      const r1 = await pool.query(
+        "UPDATE public.users SET password_hash = $1 WHERE RIGHT(regexp_replace(mobile_number, '[^0-9]', '', 'g'), 10) = $2 OR mobile_number = $3",
+        [newHash, last10, m]
+      );
+      await pool.query(
+        "UPDATE auth_schema.users SET password_hash = $1 WHERE RIGHT(regexp_replace(mobile_number, '[^0-9]', '', 'g'), 10) = $2 OR mobile_number = $3",
+        [newHash, last10, m]
+      );
+      if (r1.rowCount > 0) updated = true;
+    } catch (e) {
+      console.error('[DB] Password reset query error:', e.message);
+    }
+  }
+
+  const inMem = USERS.find(u => (u.mobile || '').replace(/[^0-9]/g, '').endsWith(last10));
+  if (inMem) {
+    inMem.password_hash = newHash;
+    updated = true;
+  }
+
+  if (!updated) {
+    return res.status(404).json({ success: false, message: 'No registered user found for this mobile number.' });
+  }
+
+  console.log(`[AUTH] Successfully reset password for ${m}`);
+  res.json({ success: true, message: 'Password reset successfully! You can now sign in with your new password.' });
 });
 
 // POST /api/users/addresses
