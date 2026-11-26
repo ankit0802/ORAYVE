@@ -503,6 +503,11 @@ export default function App() {
   const [activePhotoModalUrl, setActivePhotoModalUrl] = useState(null);
   const [reviewFilterStars, setReviewFilterStars] = useState('ALL');
 
+  // Multi-item Order Review and Continuation States
+  const [orderSelectReviewModal, setOrderSelectReviewModal] = useState(null); // The order whose items to choose from
+  const [orderReviewContext, setOrderReviewContext] = useState(null); // { orderId, currentPid }
+  const [reviewNextPrompt, setReviewNextPrompt] = useState(null); // { order, nextItem, nextProduct, remainingCount }
+
   // Order Cancellation & Return / Replacement States
   const [cancelModalOrder, setCancelModalOrder] = useState(null);
   const [cancelReason, setCancelReason] = useState('Found a better price elsewhere');
@@ -1144,11 +1149,11 @@ export default function App() {
   const isUserVerifiedBuyer = (prod) => {
     if (!prod) return false;
     if (adminLoggedIn) return true; // Admin has verified tester access
-    const userPhoneClean = (currentUser?.phone || '').replace(/\D/g, '').slice(-10);
+    const userPhoneClean = (currentUser?.mobile || currentUser?.phone || '').replace(/\D/g, '').slice(-10);
     const userEmailClean = (currentUser?.email || '').trim().toLowerCase();
 
     return orders.some(ord => {
-      const ordPhone = (ord.customerMobile || ord.phone || ord.mobile || ord.customer?.phone || '').replace(/\D/g, '').slice(-10);
+      const ordPhone = (ord.customerMobile || ord.phone || ord.mobile || ord.customer?.phone || ord.addr?.phone || ord.addr?.mobile || '').replace(/\D/g, '').slice(-10);
       const ordEmail = (ord.customerEmail || ord.email || ord.customer?.email || '').trim().toLowerCase();
 
       const phoneMatches = userPhoneClean && ordPhone && userPhoneClean === ordPhone;
@@ -1177,6 +1182,51 @@ export default function App() {
     setReviewComment('');
     setReviewPhotos([]);
     setReviewPhotoUrlInput('');
+  };
+
+  const startReviewForItem = (order, item, forcedProd = null) => {
+    const matchedProd = forcedProd || products.find(p => p.id === item.pid || p.title.toLowerCase() === (item.title || '').toLowerCase());
+    const prodToReview = matchedProd || {
+      id: item.pid || 'p_' + Date.now(),
+      title: item.title,
+      cat: item.cat || 'Accessories',
+      v: [{ id: item.vid || 'v1', color: item.color || 'Standard', photo: '' }]
+    };
+    setOrderReviewContext({ orderId: order.id, currentPid: prodToReview.id });
+    setOrderSelectReviewModal(null);
+    setReviewNextPrompt(null);
+    setReviewModalProduct(prodToReview);
+    setReviewRating(5);
+    setReviewHeadline('');
+    setReviewComment('');
+    setReviewPhotos([]);
+    setReviewPhotoUrlInput('');
+  };
+
+  const handleStartOrderReview = (order) => {
+    const items = order.items || [];
+    if (!items.length) {
+      return showToast('No items found in this order', true);
+    }
+    const userPhoneClean = (currentUser?.mobile || currentUser?.phone || '').replace(/\D/g, '').slice(-10);
+    const unreviewed = items.filter(it => {
+      const p = products.find(prod => prod.id === it.pid || prod.title.toLowerCase() === (it.title || '').toLowerCase());
+      const pId = p?.id || it.pid;
+      const alreadyReviewed = reviews.some(r => 
+        (r.pid === pId || (r.pTitle && r.pTitle.toLowerCase() === (it.title || '').toLowerCase())) &&
+        (r.mobile && userPhoneClean && r.mobile.replace(/\D/g, '').slice(-10) === userPhoneClean)
+      );
+      return !alreadyReviewed;
+    });
+
+    if (unreviewed.length === 0) {
+      return showToast('You have already submitted verified reviews for all products in this order! Thank you.');
+    }
+    if (items.length === 1) {
+      startReviewForItem(order, items[0]);
+    } else {
+      setOrderSelectReviewModal(order);
+    }
   };
 
   const handleReviewPhotoUpload = (e) => {
@@ -1236,7 +1286,7 @@ export default function App() {
 
     setIsSubmittingReview(true);
     const reviewerName = currentUser?.name || (adminLoggedIn ? 'Orayve Quality Tester' : 'Verified Buyer');
-    const reviewerPhone = currentUser?.phone || '+91' + (orders[0]?.customerMobile || '9876543210');
+    const reviewerPhone = currentUser?.mobile || currentUser?.phone || '+91' + (orders[0]?.customerMobile || orders[0]?.mobile || '9876543210');
 
     const newRev = {
       id: 'rev_' + Date.now(),
@@ -1287,8 +1337,49 @@ export default function App() {
     }
 
     setIsSubmittingReview(false);
+    const reviewedProdTitle = reviewModalProduct.title;
+    const reviewedProdId = reviewModalProduct.id;
     setReviewModalProduct(null);
     showToast('Thank you! Your verified review has been published.');
+
+    // Sequential multi-item prompt: check if there are other unreviewed products from this order
+    if (orderReviewContext?.orderId) {
+      const activeOrderId = orderReviewContext.orderId;
+      const activeOrd = orders.find(o => o.id === activeOrderId);
+      if (activeOrd) {
+        const userCleanPhone = (currentUser?.mobile || currentUser?.phone || reviewerPhone || '').replace(/\D/g, '').slice(-10);
+        const remaining = (activeOrd.items || []).filter(it => {
+          const matched = products.find(p => p.id === it.pid || p.title.toLowerCase() === (it.title || '').toLowerCase());
+          const pId = matched?.id || it.pid;
+          if (pId === reviewedProdId || (it.title || '').toLowerCase() === reviewedProdTitle.toLowerCase()) {
+            return false; // just reviewed
+          }
+          const already = reviews.some(r => 
+            (r.pid === pId || (r.pTitle && r.pTitle.toLowerCase() === (it.title || '').toLowerCase())) &&
+            (r.mobile && userCleanPhone && r.mobile.replace(/\D/g, '').slice(-10) === userCleanPhone)
+          );
+          return !already;
+        });
+
+        if (remaining.length > 0) {
+          const nextIt = remaining[0];
+          const nextMatched = products.find(p => p.id === nextIt.pid || p.title.toLowerCase() === (nextIt.title || '').toLowerCase()) || {
+            id: nextIt.pid || 'p_' + Date.now(),
+            title: nextIt.title,
+            cat: nextIt.cat || 'Accessories',
+            v: [{ id: nextIt.vid || 'v1', color: nextIt.color || 'Standard', photo: '' }]
+          };
+          setReviewNextPrompt({
+            order: activeOrd,
+            nextItem: nextIt,
+            nextProduct: nextMatched,
+            remainingCount: remaining.length
+          });
+        } else {
+          setOrderReviewContext(null);
+        }
+      }
+    }
   };
 
   // ----------------------------------------------------------------------
@@ -1877,7 +1968,7 @@ export default function App() {
       {/* HEADER                                                               */}
       {/* ==================================================================== */}
       <header className="sticky top-0 z-40 w-full min-w-full bg-ink text-bone shadow-md">
-        {adminLoggedIn ? (
+        {(view === 'admin' || adminLoggedIn) ? (
           /* ================================================================= */
           /* DEDICATED ADMIN HEADER                                            */
           /* ================================================================= */
@@ -1887,7 +1978,7 @@ export default function App() {
               <button
                 onClick={() => {
                   setView('admin');
-                  setAdminTab('analytics');
+                  if (adminLoggedIn) setAdminTab('analytics');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 className="serif text-xl tracking-wide flex items-center gap-2 hover:opacity-90"
@@ -1903,182 +1994,198 @@ export default function App() {
               </span>
             </div>
 
-            {/* Quick Admin Navigation Tabs (Desktop) */}
-            <div className="hidden lg:flex items-center gap-1.5 text-xs font-bold">
-              {[
-                ['analytics', 'Analytics'],
-                ['orders', `Orders (${orders.length})`],
-                ['products', 'Products'],
-                ['categories', 'Categories'],
-                ['users', `Users (${users.length})`],
-                ['coupons', 'Coupons']
-              ].map(([tab, label]) => (
+            {adminLoggedIn ? (
+              <>
+                {/* Quick Admin Navigation Tabs (Desktop) */}
+                <div className="hidden lg:flex items-center gap-1.5 text-xs font-bold">
+                  {[
+                    ['analytics', 'Analytics'],
+                    ['orders', `Orders (${orders.length})`],
+                    ['products', 'Products'],
+                    ['categories', 'Categories'],
+                    ['users', `Users (${users.length})`],
+                    ['coupons', 'Coupons']
+                  ].map(([tab, label]) => (
+                    <button
+                      key={tab}
+                      onClick={() => {
+                        setView('admin');
+                        setAdminTab(tab);
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className={`px-3 py-1.5 rounded-lg transition ${
+                        view === 'admin' && adminTab === tab
+                          ? 'bg-brass text-ink shadow'
+                          : 'text-bone/70 hover:text-bone hover:bg-white/10'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Admin Right Controls */}
+                <div className="flex items-center gap-2.5 text-xs font-semibold">
+                  {/* Real-time Data Sync Status Pill */}
+                  <button
+                    onClick={() => {
+                      refreshLiveOrders();
+                      refreshLiveProducts();
+                      refreshLiveUsers();
+                      updateSyncTimestamp();
+                      showToast('Database refreshed');
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-bone border border-brass/30 transition text-[11px] font-mono shadow-sm"
+                    title="Click to refresh live data from database"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span className="hidden sm:inline text-bone/60">Updated:</span>
+                    <span className="font-bold text-bone">{lastUpdatedTime}</span>
+                    <span className="text-bone/50 hover:text-bone ml-0.5">🔄</span>
+                  </button>
+
+                  {/* View Storefront Toggle */}
+                  <button
+                    onClick={() => {
+                      setView(view === 'admin' ? 'store' : 'admin');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-brass/40 text-bone hover:bg-white/10 transition"
+                  >
+                    <span>{view === 'admin' ? '🏪 View Store' : '🛡️ Admin Area'}</span>
+                  </button>
+
+                  {/* Admin 3-Dot Overflow Menu */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setMenuOpen(!menuOpen)}
+                      aria-label="Admin options"
+                      className="w-9 h-9 rounded-full border border-brass/40 text-lg leading-none flex items-center justify-center hover:bg-white/10 transition text-bone"
+                    >
+                      ⋮
+                    </button>
+
+                    {menuOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)}></div>
+                        <div className="absolute right-0 top-11 z-50 w-60 bg-white text-ink rounded-xl shadow-2xl border border-ink/10 py-1 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                          <div className="px-4 py-2.5 border-b text-xs bg-ink text-bone">
+                            <span className="text-[10px] tracking-wider uppercase text-brass font-bold block">Authenticated As</span>
+                            <b className="block text-sm">Super Admin</b>
+                            <p className="text-bone/60 text-[10px]">Neon DB Connected</p>
+                          </div>
+
+                          <button
+                            onClick={() => {
+                              setMenuOpen(false);
+                              setView('admin');
+                              setAdminTab('analytics');
+                            }}
+                            className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold flex items-center justify-between"
+                          >
+                            <span>📊 Analytics Dashboard</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setMenuOpen(false);
+                              setView('admin');
+                              setAdminTab('orders');
+                            }}
+                            className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold flex items-center justify-between"
+                          >
+                            <span>📦 Live Orders</span>
+                            <span className="bg-brass text-ink px-1.5 py-0.5 rounded-full font-bold text-[10px]">{orders.length}</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setMenuOpen(false);
+                              setView('admin');
+                              setAdminTab('products');
+                            }}
+                            className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                          >
+                            🏷️ Product &amp; Stock Manager
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setMenuOpen(false);
+                              setView('admin');
+                              setAdminTab('users');
+                            }}
+                            className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                          >
+                            👥 Customer Directory ({users.length})
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setMenuOpen(false);
+                              setView('admin');
+                              setAdminTab('coupons');
+                            }}
+                            className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                          >
+                            🎟️ Discount Coupons
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setMenuOpen(false);
+                              refreshLiveOrders();
+                              refreshLiveProducts();
+                              refreshLiveUsers();
+                              updateSyncTimestamp();
+                              showToast('Database synchronized');
+                            }}
+                            className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold border-t border-ink/5"
+                          >
+                            🔄 Sync Database Now
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setMenuOpen(false);
+                              setView(view === 'admin' ? 'store' : 'admin');
+                            }}
+                            className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
+                          >
+                            {view === 'admin' ? '🏪 Switch to Storefront' : '🛡️ Open Admin Console'}
+                          </button>
+
+                          <div className="border-t border-ink/10">
+                            <button
+                              onClick={() => {
+                                setMenuOpen(false);
+                                handleAdminLogout();
+                              }}
+                              className="w-full text-left px-4 py-2.5 hover:bg-rose-50 text-xs font-bold text-rose-700 flex items-center gap-1.5"
+                            >
+                              <span>⎋</span>
+                              <span>Sign out Admin</span>
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center gap-2">
                 <button
-                  key={tab}
                   onClick={() => {
-                    setView('admin');
-                    setAdminTab(tab);
+                    setView('store');
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
-                  className={`px-3 py-1.5 rounded-lg transition ${
-                    view === 'admin' && adminTab === tab
-                      ? 'bg-brass text-ink shadow'
-                      : 'text-bone/70 hover:text-bone hover:bg-white/10'
-                  }`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-brass/40 text-bone hover:bg-white/10 transition text-xs font-semibold"
                 >
-                  {label}
+                  <span>🏪 Return to Storefront</span>
                 </button>
-              ))}
-            </div>
-
-            {/* Admin Right Controls */}
-            <div className="flex items-center gap-2.5 text-xs font-semibold">
-              {/* Real-time Data Sync Status Pill */}
-              <button
-                onClick={() => {
-                  refreshLiveOrders();
-                  refreshLiveProducts();
-                  refreshLiveUsers();
-                  updateSyncTimestamp();
-                  showToast('Database refreshed');
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-bone border border-brass/30 transition text-[11px] font-mono shadow-sm"
-                title="Click to refresh live data from database"
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span className="hidden sm:inline text-bone/60">Updated:</span>
-                <span className="font-bold text-bone">{lastUpdatedTime}</span>
-                <span className="text-bone/50 hover:text-bone ml-0.5">🔄</span>
-              </button>
-
-              {/* View Storefront Toggle */}
-              <button
-                onClick={() => {
-                  setView(view === 'admin' ? 'store' : 'admin');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-brass/40 text-bone hover:bg-white/10 transition"
-              >
-                <span>{view === 'admin' ? '🏪 View Store' : '🛡️ Admin Area'}</span>
-              </button>
-
-              {/* Admin 3-Dot Overflow Menu */}
-              <div className="relative">
-                <button
-                  onClick={() => setMenuOpen(!menuOpen)}
-                  aria-label="Admin options"
-                  className="w-9 h-9 rounded-full border border-brass/40 text-lg leading-none flex items-center justify-center hover:bg-white/10 transition text-bone"
-                >
-                  ⋮
-                </button>
-
-                {menuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)}></div>
-                    <div className="absolute right-0 top-11 z-50 w-60 bg-white text-ink rounded-xl shadow-2xl border border-ink/10 py-1 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                      <div className="px-4 py-2.5 border-b text-xs bg-ink text-bone">
-                        <span className="text-[10px] tracking-wider uppercase text-brass font-bold block">Authenticated As</span>
-                        <b className="block text-sm">Super Admin</b>
-                        <p className="text-bone/60 text-[10px]">Neon DB Connected</p>
-                      </div>
-
-                      <button
-                        onClick={() => {
-                          setMenuOpen(false);
-                          setView('admin');
-                          setAdminTab('analytics');
-                        }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold flex items-center justify-between"
-                      >
-                        <span>📊 Analytics Dashboard</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setMenuOpen(false);
-                          setView('admin');
-                          setAdminTab('orders');
-                        }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold flex items-center justify-between"
-                      >
-                        <span>📦 Live Orders</span>
-                        <span className="bg-brass text-ink px-1.5 py-0.5 rounded-full font-bold text-[10px]">{orders.length}</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setMenuOpen(false);
-                          setView('admin');
-                          setAdminTab('products');
-                        }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
-                      >
-                        🏷️ Product & Stock Manager
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setMenuOpen(false);
-                          setView('admin');
-                          setAdminTab('users');
-                        }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
-                      >
-                        👥 Customer Directory ({users.length})
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setMenuOpen(false);
-                          setView('admin');
-                          setAdminTab('coupons');
-                        }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
-                      >
-                        🎟️ Discount Coupons
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setMenuOpen(false);
-                          refreshLiveOrders();
-                          refreshLiveProducts();
-                          refreshLiveUsers();
-                          updateSyncTimestamp();
-                          showToast('Database synchronized');
-                        }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold border-t border-ink/5"
-                      >
-                        🔄 Sync Database Now
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setMenuOpen(false);
-                          setView(view === 'admin' ? 'store' : 'admin');
-                        }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
-                      >
-                        {view === 'admin' ? '🏪 Switch to Storefront' : '🛡️ Open Admin Console'}
-                      </button>
-
-                      <div className="border-t border-ink/10">
-                        <button
-                          onClick={() => {
-                            setMenuOpen(false);
-                            handleAdminLogout();
-                          }}
-                          className="w-full text-left px-4 py-2.5 hover:bg-rose-50 text-xs font-bold text-rose-700 flex items-center gap-1.5"
-                        >
-                          <span>⎋</span>
-                          <span>Sign out Admin</span>
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
               </div>
-            </div>
+            )}
           </div>
         ) : (
           /* ================================================================= */
@@ -2140,16 +2247,18 @@ export default function App() {
                 <span>{wishlist.length}</span>
               </button>
 
-              {/* Aura Wallet Pill Button */}
-              <button
-                onClick={() => setShowWalletPassbook(true)}
-                title="Orayve Aura Wallet · 1 Pt = ₹1"
-                className="px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-gold/60 text-gold hover:bg-gold/25 transition flex items-center gap-1.5 shadow-xs"
-              >
-                <span className="text-amber-300 font-bold">✦</span>
-                <span className="font-bold">{walletPoints.toLocaleString('en-IN')}</span>
-                <span className="text-[10px] text-bone/80 hidden sm:inline">Aura Pts</span>
-              </button>
+              {/* Aura Wallet Pill Button (Never visible in Admin section) */}
+              {view !== 'admin' && !adminLoggedIn && (
+                <button
+                  onClick={() => setShowWalletPassbook(true)}
+                  title="Orayve Aura Wallet · 1 Pt = ₹1"
+                  className="px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-gold/60 text-gold hover:bg-gold/25 transition flex items-center gap-1.5 shadow-xs"
+                >
+                  <span className="text-amber-300 font-bold">✦</span>
+                  <span className="font-bold">{walletPoints.toLocaleString('en-IN')}</span>
+                  <span className="text-[10px] text-bone/80 hidden sm:inline">Aura Pts</span>
+                </button>
+              )}
 
               {/* Bag Button */}
               <button
@@ -2227,21 +2336,23 @@ export default function App() {
                       >
                         📦 My Orders ({orders.filter(o => (o.mobile || o.addr?.phone || '').replace(/[^0-9]/g, '').slice(-10) === (currentUser?.mobile || '').replace(/[^0-9]/g, '').slice(-10)).length})
                       </button>
-                      <button
-                        onClick={() => {
-                          setMenuOpen(false);
-                          setShowWalletPassbook(true);
-                        }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-amber-50 text-xs font-semibold text-amber-900 flex items-center justify-between"
-                      >
-                        <span className="flex items-center gap-2">
-                          <span className="text-amber-500 font-bold">✦</span>
-                          <span>Aura Wallet &amp; Passbook</span>
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
-                          {walletPoints.toLocaleString('en-IN')} Pts
-                        </span>
-                      </button>
+                      {view !== 'admin' && !adminLoggedIn && (
+                        <button
+                          onClick={() => {
+                            setMenuOpen(false);
+                            setShowWalletPassbook(true);
+                          }}
+                          className="w-full text-left px-4 py-2.5 hover:bg-amber-50 text-xs font-semibold text-amber-900 flex items-center justify-between"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="text-amber-500 font-bold">✦</span>
+                            <span>Aura Wallet &amp; Passbook</span>
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                            {walletPoints.toLocaleString('en-IN')} Pts
+                          </span>
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           setMenuOpen(false);
@@ -4011,6 +4122,17 @@ export default function App() {
                                       </button>
                                     </>
                                   )}
+
+                                  {/* Rate & Review Products Button (Available when Delivered) */}
+                                  {o.status === 3 && (
+                                    <button
+                                      onClick={() => handleStartOrderReview(o)}
+                                      className="px-3 py-1.5 rounded-lg border border-gold/70 bg-gradient-to-r from-amber-500/15 to-yellow-500/20 text-ink text-xs font-bold hover:bg-gold hover:text-ink transition shadow-xs flex items-center gap-1.5"
+                                      title="Leave rating & review for products in this order"
+                                    >
+                                      <span>⭐</span> Review Products
+                                    </button>
+                                  )}
                                 </div>
                               </div>
 
@@ -4250,15 +4372,100 @@ export default function App() {
                                 </div>
                               )}
 
-                              {/* Items */}
-                              <div className="space-y-1.5 pt-2 border-t border-ink/5">
+                              {/* Ordered Items with Luxury Thumbnails & Review Action */}
+                              <div className="space-y-2.5 pt-3 border-t border-ink/10">
+                                <div className="flex items-center justify-between text-[11px] font-bold text-ink/60 uppercase tracking-wider">
+                                  <span>Ordered Items ({o.items?.length || 0})</span>
+                                  <span>Subtotal</span>
+                                </div>
+
                                 {(o.items || []).map((item, idx) => {
                                   const q = Number(item.qty || item.q || 1);
                                   const p = Number(item.price || 0);
+                                  const matchedProd = products.find(prod => prod.id === item.pid || prod.title.toLowerCase() === (item.title || '').toLowerCase());
+                                  const matchedVar = matchedProd?.v?.find(v => v.id === item.vid || v.color?.toLowerCase() === (item.color || '').toLowerCase()) || matchedProd?.v?.[0];
+                                  const itemPhoto = item.img || (matchedVar?.photo ? imgUrl(matchedVar) : null) || (matchedProd?.imgs?.[0]) || FB;
+
+                                  const userPhoneClean = (currentUser?.mobile || currentUser?.phone || '').replace(/\D/g, '').slice(-10);
+                                  const pId = matchedProd?.id || item.pid;
+                                  const existingReview = reviews.find(r => 
+                                    (r.pid === pId || (r.pTitle && r.pTitle.toLowerCase() === (item.title || '').toLowerCase())) &&
+                                    (r.mobile && userPhoneClean && r.mobile.replace(/\D/g, '').slice(-10) === userPhoneClean)
+                                  );
+
                                   return (
-                                    <div key={idx} className="flex justify-between items-center text-xs text-ink/80 py-0.5">
-                                      <span>{item.title} ({item.color || 'Standard'}) × {q}</span>
-                                      <b className="text-ink">{inr(p * q)}</b>
+                                    <div
+                                      key={idx}
+                                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-white border border-ink/10 hover:border-brass/50 transition-all shadow-2xs"
+                                    >
+                                      <div className="flex items-center gap-3 min-w-0">
+                                        {/* Small Luxury Product Thumbnail (Click redirects to Product Page) */}
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (matchedProd) openProduct(matchedProd.id);
+                                            else showToast(`Product details for ${item.title}`);
+                                          }}
+                                          title={matchedProd ? `Open ${matchedProd.title} details` : item.title}
+                                          className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden border border-ink/10 bg-bone shrink-0 cursor-pointer hover:border-brass hover:scale-105 transition-all shadow-xs group"
+                                        >
+                                          <img
+                                            src={itemPhoto}
+                                            alt={item.title}
+                                            className="w-full h-full object-cover group-hover:opacity-90 transition"
+                                            onError={e => { e.currentTarget.src = FB; }}
+                                          />
+                                        </button>
+
+                                        {/* Item Title & Specifications */}
+                                        <div className="min-w-0">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (matchedProd) openProduct(matchedProd.id);
+                                              else showToast(`Product details for ${item.title}`);
+                                            }}
+                                            className="font-bold text-xs text-ink hover:text-amber-800 text-left line-clamp-1 cursor-pointer transition block"
+                                          >
+                                            {item.title}
+                                          </button>
+                                          <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[11px] text-ink/70">
+                                            <span className="px-2 py-0.5 rounded-md bg-bone border border-ink/10 font-medium">
+                                              {item.color || 'Standard'}
+                                            </span>
+                                            <span>×</span>
+                                            <span className="font-semibold">{q} unit{q > 1 ? 's' : ''}</span>
+                                            <span>·</span>
+                                            <span className="text-ink/60">{inr(p)} each</span>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Right side: Subtotal & Review Action if Delivered */}
+                                      <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-1 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-ink/5">
+                                        <b className="text-sm font-extrabold text-ink">{inr(p * q)}</b>
+
+                                        {o.status === 3 && (
+                                          <div className="mt-1">
+                                            {existingReview ? (
+                                              <span
+                                                title={existingReview.title || 'Verified review'}
+                                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                              >
+                                                <span>✓</span> Reviewed ★ {existingReview.rate || 5}
+                                              </span>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                onClick={() => startReviewForItem(o, item, matchedProd)}
+                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-500/15 border border-gold/60 text-amber-900 hover:bg-gold hover:text-ink transition shadow-2xs"
+                                              >
+                                                <span>⭐</span> Write Review
+                                              </button>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
                                   );
                                 })}
@@ -7040,6 +7247,172 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MULTI-ITEM ORDER: SELECT PRODUCT TO REVIEW MODAL                    */}
+      {/* ==================================================================== */}
+      {orderSelectReviewModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl border border-brass/40 my-8">
+            <div className="flex items-start justify-between pb-3 border-b border-ink/10">
+              <div>
+                <span className="px-2.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 uppercase">
+                  Order #{orderSelectReviewModal.id}
+                </span>
+                <h3 className="font-bold text-base text-ink mt-1">
+                  Which product would you like to review?
+                </h3>
+                <p className="text-xs text-ink/60 mt-0.5">
+                  Select an item from your delivery to share your rating and review.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOrderSelectReviewModal(null)}
+                className="w-7 h-7 rounded-full border border-ink/20 flex items-center justify-center text-ink/60 hover:text-ink hover:bg-bone font-bold text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
+              {(orderSelectReviewModal.items || []).map((item, idx) => {
+                const matchedProd = products.find(prod => prod.id === item.pid || prod.title.toLowerCase() === (item.title || '').toLowerCase());
+                const matchedVar = matchedProd?.v?.find(v => v.id === item.vid || v.color?.toLowerCase() === (item.color || '').toLowerCase()) || matchedProd?.v?.[0];
+                const itemPhoto = item.img || (matchedVar?.photo ? imgUrl(matchedVar) : null) || (matchedProd?.imgs?.[0]) || FB;
+
+                const userPhoneClean = (currentUser?.mobile || currentUser?.phone || '').replace(/\D/g, '').slice(-10);
+                const pId = matchedProd?.id || item.pid;
+                const existingReview = reviews.find(r => 
+                  (r.pid === pId || (r.pTitle && r.pTitle.toLowerCase() === (item.title || '').toLowerCase())) &&
+                  (r.mobile && userPhoneClean && r.mobile.replace(/\D/g, '').slice(-10) === userPhoneClean)
+                );
+
+                return (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between gap-3 p-3 rounded-xl border border-ink/10 hover:border-brass transition bg-bone/30"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img
+                        src={itemPhoto}
+                        alt={item.title}
+                        className="w-12 h-12 rounded-lg object-cover border border-ink/10 bg-white shrink-0"
+                        onError={e => { e.currentTarget.src = FB; }}
+                      />
+                      <div className="min-w-0">
+                        <p className="font-bold text-xs text-ink line-clamp-1">{item.title}</p>
+                        <p className="text-[11px] text-ink/60 mt-0.5">
+                          {item.color || 'Standard'} · {inr(item.price)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="shrink-0">
+                      {existingReview ? (
+                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          <span>✓</span> Reviewed ★ {existingReview.rate || 5}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => startReviewForItem(orderSelectReviewModal, item, matchedProd)}
+                          className="px-3 py-1.5 rounded-lg bg-brass text-ink font-bold text-xs hover:opacity-90 transition shadow-xs flex items-center gap-1.5"
+                        >
+                          <span>⭐</span> Write Review
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="pt-2 border-t border-ink/10 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setOrderSelectReviewModal(null)}
+                className="px-4 py-2 rounded-xl border border-ink/20 font-bold hover:bg-bone text-xs"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* SEQUENTIAL MULTI-ITEM REVIEW CONTINUATION PROMPT                     */}
+      {/* ==================================================================== */}
+      {reviewNextPrompt && (
+        <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-brass/50 text-center animate-in zoom-in-95 duration-200">
+            <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto text-2xl font-bold border border-emerald-300 shadow-xs">
+              ✓
+            </div>
+
+            <div className="space-y-1">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold tracking-wider uppercase bg-brass/30 text-ink">
+                Review Published!
+              </span>
+              <h3 className="serif text-xl font-bold text-ink pt-1">
+                Share Feedback for Another Product?
+              </h3>
+              <p className="text-xs text-ink/70">
+                You ordered {reviewNextPrompt.remainingCount} more item{reviewNextPrompt.remainingCount > 1 ? 's' : ''} in this package. Would you like to review the next one now?
+              </p>
+            </div>
+
+            {/* Next Item Preview Card */}
+            <div className="flex items-center gap-3 p-3.5 rounded-xl bg-bone border border-brass/40 text-left">
+              <img
+                src={
+                  reviewNextPrompt.nextItem.img ||
+                  (reviewNextPrompt.nextProduct.v?.[0]?.photo ? imgUrl(reviewNextPrompt.nextProduct.v[0]) : null) ||
+                  (reviewNextPrompt.nextProduct.imgs?.[0]) ||
+                  FB
+                }
+                alt={reviewNextPrompt.nextItem.title}
+                className="w-14 h-14 rounded-xl object-cover border border-ink/10 bg-white shrink-0 shadow-2xs"
+                onError={e => { e.currentTarget.src = FB; }}
+              />
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-brass block">Next Product</span>
+                <b className="text-xs text-ink line-clamp-1 block">{reviewNextPrompt.nextItem.title}</b>
+                <span className="text-[11px] text-ink/60 block mt-0.5">
+                  Color: {reviewNextPrompt.nextItem.color || 'Standard'}
+                </span>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const prompt = reviewNextPrompt;
+                  setReviewNextPrompt(null);
+                  startReviewForItem(prompt.order, prompt.nextItem, prompt.nextProduct);
+                }}
+                className="w-full py-2.5 rounded-xl bg-brass text-ink font-bold hover:brightness-105 transition shadow-sm text-xs flex items-center justify-center gap-2"
+              >
+                <span>⭐</span> Review This Product Now
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setReviewNextPrompt(null);
+                  setOrderReviewContext(null);
+                }}
+                className="w-full py-2 rounded-xl border border-ink/20 font-bold hover:bg-bone text-xs text-ink/70 transition"
+              >
+                Maybe Later / Done
+              </button>
+            </div>
           </div>
         </div>
       )}
