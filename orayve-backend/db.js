@@ -191,6 +191,9 @@ export async function initDatabase() {
       ALTER TABLE order_schema.orders ADD COLUMN IF NOT EXISTS cancel_info JSONB DEFAULT NULL;
       ALTER TABLE order_schema.orders ADD COLUMN IF NOT EXISTS return_info JSONB DEFAULT NULL;
 
+      ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS product_id VARCHAR(64);
+      ALTER TABLE order_schema.order_items ADD COLUMN IF NOT EXISTS product_id VARCHAR(64);
+
       -- Password authentication support
       ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password_hash TEXT;
       ALTER TABLE auth_schema.users ADD COLUMN IF NOT EXISTS password_hash TEXT;

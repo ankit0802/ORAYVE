@@ -478,7 +478,7 @@ export default function App() {
       },
       {
         id: 'rev_init_3',
-        pid: 'p_all',
+        pid: 'p21',
         pTitle: 'Savile Formal Buckle Leather Belt',
         name: 'Ankit Singh Bhadoriya',
         mobile: '+916393272074',
@@ -1185,17 +1185,18 @@ export default function App() {
   };
 
   const startReviewForItem = (order, item, forcedProd = null) => {
-    const matchedProd = forcedProd || products.find(p => p.id === item.pid || p.title.toLowerCase() === (item.title || '').toLowerCase());
-    const prodToReview = matchedProd || {
-      id: item.pid || 'p_' + Date.now(),
-      title: item.title,
-      cat: item.cat || 'Accessories',
-      v: [{ id: item.vid || 'v1', color: item.color || 'Standard', photo: '' }]
-    };
-    setOrderReviewContext({ orderId: order.id, currentPid: prodToReview.id });
+    const cleanTitle = (item.title || '').trim().toLowerCase();
+    const matchedProd = forcedProd || products.find(p => 
+      (item.pid && p.id === item.pid) ||
+      p.title.trim().toLowerCase() === cleanTitle ||
+      (cleanTitle && p.title.toLowerCase().includes(cleanTitle)) ||
+      (cleanTitle && cleanTitle.includes(p.title.toLowerCase()))
+    ) || products.find(p => p.cat === item.cat) || products[0];
+
+    setOrderReviewContext({ orderId: order.id, currentPid: matchedProd.id });
     setOrderSelectReviewModal(null);
     setReviewNextPrompt(null);
-    setReviewModalProduct(prodToReview);
+    setReviewModalProduct(matchedProd);
     setReviewRating(5);
     setReviewHeadline('');
     setReviewComment('');
@@ -1210,10 +1211,16 @@ export default function App() {
     }
     const userPhoneClean = (currentUser?.mobile || currentUser?.phone || '').replace(/\D/g, '').slice(-10);
     const unreviewed = items.filter(it => {
-      const p = products.find(prod => prod.id === it.pid || prod.title.toLowerCase() === (it.title || '').toLowerCase());
-      const pId = p?.id || it.pid;
+      const cleanTitle = (it.title || '').trim().toLowerCase();
+      const p = products.find(prod => 
+        (it.pid && prod.id === it.pid) ||
+        prod.title.trim().toLowerCase() === cleanTitle ||
+        (cleanTitle && prod.title.toLowerCase().includes(cleanTitle)) ||
+        (cleanTitle && cleanTitle.includes(prod.title.toLowerCase()))
+      ) || products.find(prod => prod.cat === it.cat) || products[0];
+      const pId = p.id;
       const alreadyReviewed = reviews.some(r => 
-        (r.pid === pId || (r.pTitle && r.pTitle.toLowerCase() === (it.title || '').toLowerCase())) &&
+        r.pid === pId &&
         (r.mobile && userPhoneClean && r.mobile.replace(/\D/g, '').slice(-10) === userPhoneClean)
       );
       return !alreadyReviewed;
@@ -1349,13 +1356,19 @@ export default function App() {
       if (activeOrd) {
         const userCleanPhone = (currentUser?.mobile || currentUser?.phone || reviewerPhone || '').replace(/\D/g, '').slice(-10);
         const remaining = (activeOrd.items || []).filter(it => {
-          const matched = products.find(p => p.id === it.pid || p.title.toLowerCase() === (it.title || '').toLowerCase());
-          const pId = matched?.id || it.pid;
-          if (pId === reviewedProdId || (it.title || '').toLowerCase() === reviewedProdTitle.toLowerCase()) {
+          const cleanTitle = (it.title || '').trim().toLowerCase();
+          const matched = products.find(p => 
+            (it.pid && p.id === it.pid) ||
+            p.title.trim().toLowerCase() === cleanTitle ||
+            (cleanTitle && p.title.toLowerCase().includes(cleanTitle)) ||
+            (cleanTitle && cleanTitle.includes(p.title.toLowerCase()))
+          ) || products.find(p => p.cat === it.cat) || products[0];
+          const pId = matched.id;
+          if (pId === reviewedProdId) {
             return false; // just reviewed
           }
           const already = reviews.some(r => 
-            (r.pid === pId || (r.pTitle && r.pTitle.toLowerCase() === (it.title || '').toLowerCase())) &&
+            r.pid === pId &&
             (r.mobile && userCleanPhone && r.mobile.replace(/\D/g, '').slice(-10) === userCleanPhone)
           );
           return !already;
@@ -1363,12 +1376,14 @@ export default function App() {
 
         if (remaining.length > 0) {
           const nextIt = remaining[0];
-          const nextMatched = products.find(p => p.id === nextIt.pid || p.title.toLowerCase() === (nextIt.title || '').toLowerCase()) || {
-            id: nextIt.pid || 'p_' + Date.now(),
-            title: nextIt.title,
-            cat: nextIt.cat || 'Accessories',
-            v: [{ id: nextIt.vid || 'v1', color: nextIt.color || 'Standard', photo: '' }]
-          };
+          const cleanNextTitle = (nextIt.title || '').trim().toLowerCase();
+          const nextMatched = products.find(p => 
+            (nextIt.pid && p.id === nextIt.pid) ||
+            p.title.trim().toLowerCase() === cleanNextTitle ||
+            (cleanNextTitle && p.title.toLowerCase().includes(cleanNextTitle)) ||
+            (cleanNextTitle && cleanNextTitle.includes(p.title.toLowerCase()))
+          ) || products.find(p => p.cat === nextIt.cat) || products[0];
+
           setReviewNextPrompt({
             order: activeOrd,
             nextItem: nextIt,
@@ -1896,8 +1911,8 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Open Product Details
-  const openProduct = (pid) => {
+  // Open Product Details & Sync Latest Verified Reviews for This Product
+  const openProduct = async (pid) => {
     const p = products.find(x => x.id === pid);
     if (!p) return;
     setDetailProduct(p);
@@ -1908,6 +1923,20 @@ export default function App() {
     setNavHistory(prev => [...prev, { view, scroll: window.scrollY }]);
     setView('product');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    try {
+      const res = await fetch(`/api/catalog/products/${pid}/reviews`);
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setReviews(prev => {
+          const fetchedIds = new Set(json.data.map(r => r.id));
+          const keepOld = prev.filter(r => !fetchedIds.has(r.id));
+          return [...json.data, ...keepOld];
+        });
+      }
+    } catch (e) {
+      console.warn('Could not sync reviews from database:', e);
+    }
   };
 
   // Stepper Component
@@ -3075,7 +3104,7 @@ export default function App() {
 
             {/* Ratings & Reviews Section (Verified Buyers Only) */}
             {(() => {
-              const prodReviews = reviews.filter(r => r.pid === p.id || r.pid === 'p_all' || (r.pTitle && r.pTitle.toLowerCase() === p.title.toLowerCase()));
+              const prodReviews = reviews.filter(r => r.pid === p.id || (r.pTitle && p.title && r.pTitle.trim().toLowerCase() === p.title.trim().toLowerCase()));
               const totalRevs = prodReviews.length;
               const starCounts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
               let starSum = 0;
@@ -7333,14 +7362,19 @@ export default function App() {
 
             <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
               {(orderSelectReviewModal.items || []).map((item, idx) => {
-                const matchedProd = products.find(prod => prod.id === item.pid || prod.title.toLowerCase() === (item.title || '').toLowerCase());
+                const cleanTitle = (item.title || '').trim().toLowerCase();
+                const matchedProd = products.find(prod => 
+                  (item.pid && prod.id === item.pid) ||
+                  prod.title.trim().toLowerCase() === cleanTitle ||
+                  (cleanTitle && prod.title.toLowerCase().includes(cleanTitle)) ||
+                  (cleanTitle && cleanTitle.includes(prod.title.toLowerCase()))
+                ) || products.find(prod => prod.cat === item.cat) || products[0];
                 const matchedVar = matchedProd?.v?.find(v => v.id === item.vid || v.color?.toLowerCase() === (item.color || '').toLowerCase()) || matchedProd?.v?.[0];
                 const itemPhoto = item.img || (matchedVar?.photo ? imgUrl(matchedVar) : null) || (matchedProd?.imgs?.[0]) || FB;
 
                 const userPhoneClean = (currentUser?.mobile || currentUser?.phone || '').replace(/\D/g, '').slice(-10);
-                const pId = matchedProd?.id || item.pid;
                 const existingReview = reviews.find(r => 
-                  (r.pid === pId || (r.pTitle && r.pTitle.toLowerCase() === (item.title || '').toLowerCase())) &&
+                  r.pid === matchedProd.id &&
                   (r.mobile && userPhoneClean && r.mobile.replace(/\D/g, '').slice(-10) === userPhoneClean)
                 );
 

@@ -725,9 +725,9 @@ app.post('/api/checkout/place-order', (req, res) => {
       if (oId) {
         for (const item of processedItems) {
           pool.query(`
-            INSERT INTO public.order_items (order_id, product_title, category_name, color_name, sku, hsn_code, unit_price, quantity)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
-          `, [oId, item.title, item.cat, item.color, item.sku, item.hsn, item.price, item.qty]).catch(e => console.error('[DB] Item insert error:', e.message));
+            INSERT INTO public.order_items (order_id, product_id, product_title, category_name, color_name, sku, hsn_code, unit_price, quantity)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+          `, [oId, item.pid || 'p1', item.title, item.cat, item.color, item.sku, item.hsn, item.price, item.qty]).catch(e => console.error('[DB] Item insert error:', e.message));
         }
       }
     }).catch(e => console.error('[DB] Order insert error:', e.message));
@@ -760,6 +760,7 @@ app.get('/api/orders', async (req, res) => {
           COALESCE(
             json_agg(
               json_build_object(
+                'pid', oi.product_id,
                 'title', oi.product_title,
                 'cat', oi.category_name,
                 'color', oi.color_name,
@@ -1543,9 +1544,9 @@ app.get('/api/catalog/products/:id/reviews', async (req, res) => {
                is_verified_purchase as verified, helpful_votes as helpful,
                to_char(created_at, 'DD Mon YYYY') as date
         FROM public.product_reviews
-        WHERE product_id = $1 OR product_title ILIKE $2
+        WHERE product_id = $1
         ORDER BY created_at DESC;
-      `, [pid, `%${pid}%`]);
+      `, [pid]);
       if (q.rows.length > 0) {
         return res.json({ success: true, data: q.rows });
       }
@@ -1554,7 +1555,7 @@ app.get('/api/catalog/products/:id/reviews', async (req, res) => {
     }
   }
 
-  const list = PRODUCT_REVIEWS.filter(r => r.pid === pid || r.pTitle?.toLowerCase().includes(pid.toLowerCase()));
+  const list = PRODUCT_REVIEWS.filter(r => r.pid === pid);
   res.json({ success: true, data: list });
 });
 
