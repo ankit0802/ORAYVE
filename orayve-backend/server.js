@@ -614,8 +614,166 @@ app.get('/api/users/addresses', (req, res) => {
 });
 
 // ============================================================================
-// 3. CART, CHECKOUT & ORDERS APIS
+// 3. CART, CHECKOUT & ORDERS APIS (WITH INDIAN GST TAX ENGINE)
 // ============================================================================
+
+const SERVER_CATEGORY_GST = {
+  'Wallets': { rate: 18, hsn: '42023120', name: 'Leather Wallets & Cardholders' },
+  "Men's Belts": { rate: 18, hsn: '42033000', name: "Men's Leather Belts" },
+  'Bags & Backpacks': { rate: 18, hsn: '42029200', name: 'Travel Bags & Backpacks' },
+  'Handbags': { rate: 18, hsn: '42022290', name: "Women's Handbags" },
+  'Rings': { rate: 3, hsn: '71171990', name: 'Imitation Jewellery Rings' },
+  'Chains & Necklaces': { rate: 3, hsn: '71171910', name: 'Imitation Jewellery Chains' },
+  'Shoes': { rate: 18, hsn: '64039990', name: 'Formal Footwear & Boots' },
+  'Sandals': { rate: 18, hsn: '64039920', name: 'Leather Sandals & Slides' },
+  'Ladies Belts': { rate: 18, hsn: '42033000', name: "Women's Fashion Belts" },
+  'Ties': { rate: 12, hsn: '62151000', name: 'Silk & Fabric Neckties' },
+  'Socks': { rate: 12, hsn: '61159500', name: 'Cotton & Knitted Hosiery' },
+  'Ladies Wrist Watches': { rate: 18, hsn: '91021100', name: 'Ladies Wrist Watches' },
+  'Gents Wrist Watches': { rate: 18, hsn: '91021100', name: 'Gents Wrist Watches' }
+};
+
+function getServerGstRate(cat, price, hsn) {
+  let info = SERVER_CATEGORY_GST[cat];
+  if (!info) {
+    if (hsn === '71171990' || hsn === '71171910') info = { rate: 3, hsn: hsn || '71171990', name: 'Imitation Jewellery' };
+    else if (hsn === '62151000' || hsn === '61159500') info = { rate: 12, hsn: hsn || '62151000', name: 'Apparel Accessories' };
+    else info = { rate: 18, hsn: hsn || '42023120', name: 'Luxury Accessories' };
+  }
+  let rate = info.rate;
+  if ((cat === 'Shoes' || cat === 'Sandals') && price && Number(price) <= 1000) {
+    rate = 12;
+  }
+  return { rate, hsn: info.hsn, name: info.name };
+}
+
+function computeServerGstDetails(order) {
+  if (!order || !order.items || !order.items.length) {
+    return {
+      subtotalGross: 0,
+      discount: 0,
+      taxableSubtotal: 0,
+      totalCgst: 0,
+      totalSgst: 0,
+      totalGst: 0,
+      grandTotal: 0,
+      rateBreakdown: {},
+      itemDetails: []
+    };
+  }
+
+  const items = order.items;
+  const orderSub = Number(order.sub || items.reduce((s, it) => s + (Number(it.price || 0) * Number(it.qty || it.q || 1)), 0)) || 1;
+  const orderDisc = Number(order.disc || 0);
+  const discountRatio = orderSub > 0 ? (orderDisc / orderSub) : 0;
+
+  let totalTaxable = 0;
+  let totalCgst = 0;
+  let totalSgst = 0;
+  let totalGst = 0;
+  const rateBreakdown = {};
+
+  const itemDetails = items.map((it, idx) => {
+    const qty = Number(it.qty || it.q || 1);
+    const unitPrice = Number(it.price || 0);
+    const grossLine = unitPrice * qty;
+    const itemDisc = Math.round(grossLine * discountRatio);
+    const netLine = Math.max(0, grossLine - itemDisc);
+
+    const { rate: gstRate, hsn: itemHsn, name: catName } = getServerGstRate(it.cat, unitPrice, it.hsn);
+    const halfRate = gstRate / 2;
+
+    const taxableVal = Math.round((netLine / (1 + (gstRate / 100))) * 100) / 100;
+    const lineGst = Math.round((netLine - taxableVal) * 100) / 100;
+    const lineCgst = Math.round((lineGst / 2) * 100) / 100;
+    const lineSgst = Math.round((lineGst - lineCgst) * 100) / 100;
+
+    totalTaxable += taxableVal;
+    totalCgst += lineCgst;
+    totalSgst += lineSgst;
+    totalGst += lineGst;
+
+    const rateKey = `${gstRate}%`;
+    if (!rateBreakdown[rateKey]) {
+      rateBreakdown[rateKey] = {
+        rate: gstRate,
+        cgstRate: halfRate,
+        sgstRate: halfRate,
+        taxable: 0,
+        cgst: 0,
+        sgst: 0,
+        totalGst: 0,
+        hsnList: new Set()
+      };
+    }
+    rateBreakdown[rateKey].taxable += taxableVal;
+    rateBreakdown[rateKey].cgst += lineCgst;
+    rateBreakdown[rateKey].sgst += lineSgst;
+    rateBreakdown[rateKey].totalGst += lineGst;
+    rateBreakdown[rateKey].hsnList.add(itemHsn);
+
+    return {
+      index: idx + 1,
+      title: it.title || 'Luxury Product',
+      color: it.color || 'Standard',
+      sku: it.sku || `ORV-${idx + 1}`,
+      cat: it.cat || catName,
+      hsn: itemHsn,
+      qty,
+      unitPrice,
+      grossLine,
+      discount: itemDisc,
+      netLine,
+      gstRate,
+      cgstRate: halfRate,
+      sgstRate: halfRate,
+      taxableVal,
+      cgst: lineCgst,
+      sgst: lineSgst,
+      lineGst,
+      total: netLine
+    };
+  });
+
+  Object.keys(rateBreakdown).forEach(k => {
+    rateBreakdown[k].hsn = Array.from(rateBreakdown[k].hsnList).join(', ');
+    rateBreakdown[k].taxable = Math.round(rateBreakdown[k].taxable * 100) / 100;
+    rateBreakdown[k].cgst = Math.round(rateBreakdown[k].cgst * 100) / 100;
+    rateBreakdown[k].sgst = Math.round(rateBreakdown[k].sgst * 100) / 100;
+    rateBreakdown[k].totalGst = Math.round(rateBreakdown[k].totalGst * 100) / 100;
+  });
+
+  return {
+    subtotalGross: orderSub,
+    discount: orderDisc,
+    taxableSubtotal: Math.round(totalTaxable * 100) / 100,
+    totalCgst: Math.round(totalCgst * 100) / 100,
+    totalSgst: Math.round(totalSgst * 100) / 100,
+    totalGst: Math.round(totalGst * 100) / 100,
+    grandTotal: Number(order.total || (orderSub - orderDisc)),
+    rateBreakdown,
+    itemDetails
+  };
+}
+
+function numberToWordsServer(num) {
+  const n = Math.round(num);
+  if (n <= 0) return 'Zero Rupees';
+  const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  function inWords(val) {
+    if (val === 0) return '';
+    if (val < 20) return a[val] + ' ';
+    if (val < 100) return b[Math.floor(val / 10)] + (val % 10 !== 0 ? ' ' + a[val % 10] : '') + ' ';
+    if (val < 1000) return a[Math.floor(val / 100)] + ' Hundred ' + inWords(val % 100);
+    if (val < 100000) return inWords(Math.floor(val / 1000)) + 'Thousand ' + inWords(val % 1000);
+    if (val < 10000000) return inWords(Math.floor(val / 100000)) + 'Lakh ' + inWords(val % 100000);
+    return inWords(Math.floor(val / 10000000)) + 'Crore ' + inWords(val % 10000000);
+  }
+
+  return 'INR ' + inWords(n).trim() + ' Only';
+}
 
 // POST /api/checkout/place-order
 app.post('/api/checkout/place-order', (req, res) => {
@@ -696,6 +854,13 @@ app.post('/api/checkout/place-order', (req, res) => {
     }
   }
 
+  const gstBreakdown = computeServerGstDetails({
+    sub: subtotal,
+    disc: discount,
+    total: finalTotal,
+    items: processedItems
+  });
+
   const orderRecord = {
     id: orderId,
     inv: invNumber,
@@ -708,7 +873,8 @@ app.post('/api/checkout/place-order', (req, res) => {
     disc: discount,
     total: finalTotal,
     addr,
-    items: processedItems
+    items: processedItems,
+    gst: gstBreakdown
   };
 
   ORDERS.unshift(orderRecord);
@@ -719,7 +885,7 @@ app.post('/api/checkout/place-order', (req, res) => {
       INSERT INTO public.orders (order_number, invoice_number, user_mobile, shipping_address_snapshot, subtotal_amount, discount_amount, final_amount, payment_method, payment_status, order_status, coupon_code)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PAID', 0, $9)
       RETURNING order_id;
-    `, [orderId, invNumber, mobile, JSON.stringify(addr), subtotal, discount, finalTotal, pay, coupon || ''])
+    `, [orderId, invNumber, mobile, JSON.stringify({ ...addr, gst: gstBreakdown }), subtotal, discount, finalTotal, pay, coupon || ''])
     .then(res => {
       const oId = res.rows[0]?.order_id;
       if (oId) {
@@ -844,7 +1010,7 @@ app.get('/api/orders', async (req, res) => {
           ).catch(e => console.error('[DB] Auto-progression update error:', e.message));
         }
 
-        return {
+        const mappedOrder = {
           id: r.id,
           inv: r.inv,
           mobile: r.mobile,
@@ -860,6 +1026,8 @@ app.get('/api/orders', async (req, res) => {
           cancelInfo,
           returnInfo
         };
+        mappedOrder.gst = parsedAddr?.gst || computeServerGstDetails(mappedOrder);
+        return mappedOrder;
       });
 
       if (!mobile && dbOrders.length > 0) {
@@ -875,6 +1043,7 @@ app.get('/api/orders', async (req, res) => {
   // Fallback for in-memory orders
   const nowMs = Date.now();
   ORDERS.forEach(order => {
+    if (!order.gst) order.gst = computeServerGstDetails(order);
     if (order.status === 4 && order.cancelInfo?.requestedAt) {
       const elapsedMs = nowMs - new Date(order.cancelInfo.requestedAt).getTime();
       if (elapsedMs >= 1 * 60 * 60 * 1000) {
@@ -896,96 +1065,161 @@ app.get('/api/orders', async (req, res) => {
     }
   });
 
-  const list = mobile ? ORDERS.filter(o => o.mobile === mobile) : ORDERS;
+  const list = (mobile ? ORDERS.filter(o => o.mobile === mobile) : ORDERS).map(o => {
+    if (!o.gst) o.gst = computeServerGstDetails(o);
+    return o;
+  });
   res.json({ success: true, data: list });
 });
 
-// GET /api/orders/:id/invoice (Stream PDF GST Tax Invoice)
+// GET /api/orders/:id/invoice (Stream Legal PDF GST Tax Invoice)
 app.get('/api/orders/:id/invoice', (req, res) => {
   const order = ORDERS.find(o => o.id === req.params.id || o.inv === req.params.id) || ORDERS[0];
-  const doc = new PDFDocument({ margin: 40, size: 'A4' });
+  const doc = new PDFDocument({ margin: 35, size: 'A4' });
 
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename=ORAYVE_GST_INVOICE_${order ? order.id : 'SAMPLE'}.pdf`);
   doc.pipe(res);
 
-  // Header
-  doc.fontSize(22).font('Helvetica-Bold').fillColor('#1C1B29').text('O R A Y V E', { tracking: 3 });
-  doc.fontSize(9).font('Helvetica').fillColor('#B8905C').text('Small Details. Big Presence.');
-  doc.moveDown(0.5);
-  doc.fontSize(8).fillColor('#555555').text('ORAYVE Retail India · support@orayve.in · GSTIN: 29AABCO1234F1Z5');
-  doc.moveDown(0.8);
-  doc.strokeColor('#B8905C').lineWidth(1).moveTo(40, doc.y).lineTo(550, doc.y).stroke();
-  doc.moveDown(1);
+  const gst = computeServerGstDetails(order);
 
-  // Invoice Details
-  const invNumber = order ? order.inv : 'INV-2026-902143';
+  // Header
+  doc.fontSize(20).font('Helvetica-Bold').fillColor('#1C1B29').text('O R A Y V E', 35, 35, { tracking: 3 });
+  doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#B8905C').text('Small Details. Big Presence.');
+  doc.fontSize(7.5).font('Helvetica').fillColor('#555555')
+    .text('ORAYVE Retail India Pvt. Ltd. · support@orayve.in · www.orayve.in')
+    .text('GSTIN: 29AABCO1234M1Z5 · State: Karnataka (Code: 29)');
+
+  // Right Header Meta
+  const invNumber = order ? (order.inv || order.id) : 'INV-2026-902143';
   const ordNumber = order ? order.id : 'ORD-2026-881230';
   const ordDate = order ? order.at : new Date().toLocaleDateString('en-IN');
-  const recipient = order && order.addr ? order.addr.name : 'Valued Customer';
-  const addressStr = order && order.addr ? `${order.addr.street}, ${order.addr.city} - ${order.addr.pin}` : 'Bengaluru, KA';
+  const recipient = order && order.addr ? (order.addr.name || 'Valued Customer') : 'Valued Customer';
+  const streetStr = order && order.addr ? (order.addr.street || order.addr.address || '') : '';
+  const cityStr = order && order.addr ? (order.addr.city || 'Bengaluru') : 'Bengaluru';
+  const stateStr = order && order.addr ? (order.addr.state || 'Karnataka') : 'Karnataka';
+  const pinStr = order && order.addr ? (order.addr.pin || order.addr.pincode || '560001') : '560001';
+  const phoneStr = order && order.addr ? (order.addr.phone || order.addr.mobile || order.mobile || '') : '';
 
-  doc.fontSize(10).font('Helvetica-Bold').fillColor('#1C1B29').text('TAX INVOICE', { align: 'right' });
-  doc.fontSize(8).font('Helvetica').fillColor('#444444');
-  doc.text(`Invoice No: ${invNumber}`, { align: 'right' });
-  doc.text(`Order ID: ${ordNumber}`, { align: 'right' });
-  doc.text(`Date: ${ordDate}`, { align: 'right' });
-  doc.text(`Payment: ${order ? order.pay : 'UPI'} · PAID`, { align: 'right' });
+  doc.fontSize(10).font('Helvetica-Bold').fillColor('#1C1B29').text('TAX INVOICE', 350, 35, { align: 'right', width: 210 });
+  doc.fontSize(7.5).font('Helvetica').fillColor('#555555');
+  doc.text('Rule 46 of CGST Rules, 2017', 350, 48, { align: 'right', width: 210 });
+  doc.text(`Invoice No: ${invNumber}`, 350, 58, { align: 'right', width: 210 });
+  doc.text(`Order ID: ${ordNumber}`, 350, 68, { align: 'right', width: 210 });
+  doc.text(`Invoice Date: ${ordDate}`, 350, 78, { align: 'right', width: 210 });
+  doc.font('Helvetica-Bold').fillColor('#1E4D3B').text(`Payment: ${order ? order.pay : 'UPI'} · PAID`, 350, 88, { align: 'right', width: 210 });
 
-  doc.moveDown(1);
-  doc.fontSize(9).font('Helvetica-Bold').fillColor('#1C1B29').text('Shipped to:');
-  doc.fontSize(8).font('Helvetica').fillColor('#333333').text(recipient);
-  doc.text(addressStr);
-  doc.moveDown(1.5);
+  doc.strokeColor('#B8905C').lineWidth(1).moveTo(35, 102).lineTo(560, 102).stroke();
+
+  // Billed / Shipped To Card
+  doc.rect(35, 108, 525, 48).fill('#F9F7F2');
+  doc.fillColor('#B8905C').fontSize(7.5).font('Helvetica-Bold').text('BILLED & SHIPPED TO (RECIPIENT):', 42, 113);
+  doc.fillColor('#1C1B29').fontSize(8.5).font('Helvetica-Bold').text(recipient, 42, 123);
+  doc.fillColor('#444444').fontSize(7.5).font('Helvetica').text(`${streetStr}, ${cityStr}, ${stateStr} - ${pinStr} · Phone: +91 ${phoneStr}`, 42, 134);
+
+  doc.fillColor('#B8905C').fontSize(7.5).font('Helvetica-Bold').text('SUPPLY PARTICULARS:', 380, 113);
+  doc.fillColor('#444444').fontSize(7.5).font('Helvetica')
+    .text(`Place of Supply: ${stateStr}`, 380, 123)
+    .text('Reverse Charge Applicable: No', 380, 133);
 
   // Items Table Header
-  const tableTop = doc.y;
-  doc.rect(40, tableTop, 510, 20).fill('#F3EFE7');
-  doc.fillColor('#1C1B29').fontSize(8).font('Helvetica-Bold');
-  doc.text('Item Description', 45, tableTop + 6);
-  doc.text('HSN Code', 260, tableTop + 6);
-  doc.text('Price (₹)', 340, tableTop + 6);
-  doc.text('Qty', 420, tableTop + 6);
-  doc.text('Total (₹)', 480, tableTop + 6, { align: 'right', width: 65 });
+  const tableTop = 164;
+  doc.rect(35, tableTop, 525, 18).fill('#F3EFE7');
+  doc.fillColor('#1C1B29').fontSize(7.5).font('Helvetica-Bold');
+  doc.text('Item Description & SKU', 40, tableTop + 5);
+  doc.text('HSN', 205, tableTop + 5);
+  doc.text('Qty', 255, tableTop + 5);
+  doc.text('Gross (₹)', 285, tableTop + 5, { align: 'right', width: 45 });
+  doc.text('Taxable (₹)', 335, tableTop + 5, { align: 'right', width: 45 });
+  doc.text('GST%', 385, tableTop + 5, { align: 'center', width: 30 });
+  doc.text('CGST (₹)', 420, tableTop + 5, { align: 'right', width: 40 });
+  doc.text('SGST (₹)', 465, tableTop + 5, { align: 'right', width: 40 });
+  doc.text('Total (₹)', 510, tableTop + 5, { align: 'right', width: 45 });
 
-  let y = tableTop + 26;
-  const items = order && order.items && order.items.length ? order.items : [
-    { title: 'Sovereign Minimalist Band Ring', sku: 'ORV-RNG-01-1', color: 'Champagne Gold', hsn: '71171990', price: 549, qty: 1 }
-  ];
+  let y = tableTop + 22;
+  doc.font('Helvetica').fontSize(7).fillColor('#333333');
 
-  doc.font('Helvetica').fontSize(8).fillColor('#333333');
-  items.forEach(it => {
-    doc.text(`${it.title} (${it.color})`, 45, y, { width: 210 });
-    doc.text(it.hsn || '71171990', 260, y);
-    doc.text(`₹${Number(it.price).toLocaleString('en-IN')}`, 340, y);
-    doc.text(`${it.qty}`, 420, y);
-    doc.text(`₹${(it.price * it.qty).toLocaleString('en-IN')}`, 480, y, { align: 'right', width: 65 });
-    y += 20;
+  gst.itemDetails.forEach((it, idx) => {
+    if (idx % 2 === 1) {
+      doc.rect(35, y - 2, 525, 18).fill('#FCFBF9');
+    }
+    doc.fillColor('#1C1B29').font('Helvetica-Bold').text(it.title, 40, y, { width: 160, lineBreak: false });
+    doc.font('Helvetica').fillColor('#666666').text(`${it.color} · ${it.sku}`, 40, y + 8, { width: 160, lineBreak: false });
+    doc.fillColor('#333333');
+    doc.text(it.hsn, 205, y);
+    doc.text(String(it.qty), 255, y);
+    doc.text(`₹${it.grossLine.toLocaleString('en-IN')}`, 285, y, { align: 'right', width: 45 });
+    doc.text(`₹${it.taxableVal.toLocaleString('en-IN')}`, 335, y, { align: 'right', width: 45 });
+    doc.text(`${it.gstRate}%`, 385, y, { align: 'center', width: 30 });
+    doc.text(`₹${it.cgst.toLocaleString('en-IN')}`, 420, y, { align: 'right', width: 40 });
+    doc.text(`₹${it.sgst.toLocaleString('en-IN')}`, 465, y, { align: 'right', width: 40 });
+    doc.font('Helvetica-Bold').fillColor('#1C1B29').text(`₹${it.total.toLocaleString('en-IN')}`, 510, y, { align: 'right', width: 45 });
+    y += 19;
   });
 
-  doc.strokeColor('#E0E0E0').lineWidth(0.5).moveTo(40, y).lineTo(550, y).stroke();
-  y += 12;
+  doc.strokeColor('#E0E0E0').lineWidth(0.5).moveTo(35, y + 2).lineTo(560, y + 2).stroke();
+  y += 8;
 
-  const sub = order ? order.sub : 549;
-  const disc = order ? order.disc : 0;
-  const tot = order ? order.total : 549;
+  // HSN Breakdown Summary Table (Left) & Financial Totals (Right)
+  const summaryBoxY = y;
+  
+  // Left: HSN Table
+  doc.rect(35, summaryBoxY, 280, 75).fill('#F9F7F2');
+  doc.fillColor('#B8905C').fontSize(7.5).font('Helvetica-Bold').text('HSN TAX CLASSIFICATION SUMMARY', 42, summaryBoxY + 6);
+  doc.fillColor('#555555').fontSize(6.5).font('Helvetica');
+  doc.text('HSN / Rate', 42, summaryBoxY + 18);
+  doc.text('Taxable Val', 115, summaryBoxY + 18);
+  doc.text('CGST', 170, summaryBoxY + 18);
+  doc.text('SGST', 215, summaryBoxY + 18);
+  doc.text('Total Tax', 260, summaryBoxY + 18);
 
-  doc.fontSize(8).font('Helvetica').text(`Subtotal (incl. GST): ₹${sub.toLocaleString('en-IN')}`, 350, y, { align: 'right', width: 195 });
-  y += 14;
-  if (disc > 0) {
-    doc.text(`Discount (${order.coupon}): -₹${disc.toLocaleString('en-IN')}`, 350, y, { align: 'right', width: 195 });
-    y += 14;
+  let hsnY = summaryBoxY + 28;
+  Object.entries(gst.rateBreakdown).forEach(([rateKey, data]) => {
+    doc.fillColor('#222222').fontSize(6.5);
+    doc.text(`${data.hsn} (${rateKey})`, 42, hsnY);
+    doc.text(`₹${data.taxable.toLocaleString('en-IN')}`, 115, hsnY);
+    doc.text(`₹${data.cgst.toLocaleString('en-IN')}`, 170, hsnY);
+    doc.text(`₹${data.sgst.toLocaleString('en-IN')}`, 215, hsnY);
+    doc.text(`₹${data.totalGst.toLocaleString('en-IN')}`, 260, hsnY);
+    hsnY += 10;
+  });
+
+  // Right: Totals
+  doc.rect(325, summaryBoxY, 235, 75).fill('#FFFFFF');
+  doc.strokeColor('#E5E0D5').lineWidth(0.5).rect(325, summaryBoxY, 235, 75).stroke();
+
+  doc.fontSize(7.5).font('Helvetica').fillColor('#555555');
+  doc.text('Subtotal (Gross Value):', 335, summaryBoxY + 6);
+  doc.font('Helvetica-Bold').fillColor('#1C1B29').text(`₹${gst.subtotalGross.toLocaleString('en-IN')}`, 450, summaryBoxY + 6, { align: 'right', width: 100 });
+
+  if (gst.discount > 0) {
+    doc.font('Helvetica').fillColor('#1E4D3B').text(`Coupon Discount (${order.coupon || 'PROMO'}):`, 335, summaryBoxY + 17);
+    doc.text(`-₹${gst.discount.toLocaleString('en-IN')}`, 450, summaryBoxY + 17, { align: 'right', width: 100 });
   }
-  doc.fontSize(10).font('Helvetica-Bold').fillColor('#1C1B29').text(`Grand Total: ₹${tot.toLocaleString('en-IN')}`, 350, y, { align: 'right', width: 195 });
 
-  // Compliance Footer
-  doc.rect(40, 710, 510, 50).fill('#F3EFE7');
+  doc.font('Helvetica').fillColor('#555555').text('Total Taxable Value:', 335, summaryBoxY + 28);
+  doc.text(`₹${gst.taxableSubtotal.toLocaleString('en-IN')}`, 450, summaryBoxY + 28, { align: 'right', width: 100 });
+
+  doc.text('Total GST (CGST + SGST):', 335, summaryBoxY + 39);
+  doc.text(`₹${gst.totalGst.toLocaleString('en-IN')}`, 450, summaryBoxY + 39, { align: 'right', width: 100 });
+
+  doc.strokeColor('#B8905C').lineWidth(1).moveTo(335, summaryBoxY + 50).lineTo(550, summaryBoxY + 50).stroke();
+
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#1C1B29').text('Grand Total:', 335, summaryBoxY + 55);
+  doc.fontSize(10).font('Helvetica-Bold').fillColor('#1C1B29').text(`₹${gst.grandTotal.toLocaleString('en-IN')}`, 450, summaryBoxY + 54, { align: 'right', width: 100 });
+
+  // Amount in words
+  doc.fontSize(6.5).font('Helvetica-Oblique').fillColor('#666666').text(numberToWordsServer(gst.grandTotal), 35, summaryBoxY + 82, { width: 525 });
+
+  // Statutory Footer
+  doc.rect(35, 735, 525, 65).fill('#F3EFE7');
   doc.fillColor('#1C1B29').fontSize(7.5).font('Helvetica-Bold');
-  doc.text('LEGAL COMPLIANCE DISCLOSURE & CONSUMER PROTECTION', 50, 718);
-  doc.font('Helvetica').fontSize(7).fillColor('#555555');
-  doc.text('• All prices are inclusive of GST under Reverse / Forward charge. Net Quantity: 1 Unit.', 50, 728);
-  doc.text('• 7-Day Return & Replacement Policy: Eligible within 7 days of delivery in original packaging.', 50, 738);
-  doc.text('• Country of Origin: India. Customer Care: support@orayve.in.', 50, 748);
+  doc.text('LEGAL COMPLIANCE & STATUTORY DECLARATION', 42, 742);
+  doc.font('Helvetica').fontSize(6.5).fillColor('#444444');
+  doc.text('• We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.', 42, 752);
+  doc.text('• Central GST (CGST) and State GST (SGST) are collected under Rule 46 of the CGST Rules, 2017. Prices are inclusive of all taxes.', 42, 762);
+  doc.text('• 7-Day Return & Replacement Policy: Eligible within 7 days of delivery in original luxury packaging. Origin: India.', 42, 772);
+  doc.text('• Computer generated invoice. Authorized Signatory for ORAYVE Retail India Pvt. Ltd.', 42, 782);
 
   doc.end();
 });

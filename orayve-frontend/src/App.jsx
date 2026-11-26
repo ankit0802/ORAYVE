@@ -46,6 +46,167 @@ export const COUNTRY_CODES = [
   { code: '+64', country: 'New Zealand', flag: '🇳🇿', len: 9, placeholder: '21 123 4567' }
 ];
 
+// ============================================================================
+// INDIAN GST RATES & HSN CLASSIFICATION (Schedule per CBIC & GST Council)
+// ============================================================================
+export const CATEGORY_GST_RATES = {
+  'Wallets': { rate: 18, hsn: '42023120', name: 'Leather Wallets & Cardholders' },
+  "Men's Belts": { rate: 18, hsn: '42033000', name: "Men's Leather Belts" },
+  'Bags & Backpacks': { rate: 18, hsn: '42029200', name: 'Travel Bags & Backpacks' },
+  'Handbags': { rate: 18, hsn: '42022290', name: "Women's Handbags" },
+  'Rings': { rate: 3, hsn: '71171990', name: 'Imitation Jewellery Rings' },
+  'Chains & Necklaces': { rate: 3, hsn: '71171910', name: 'Imitation Jewellery Chains' },
+  'Shoes': { rate: 18, hsn: '64039990', name: 'Formal Footwear & Boots' },
+  'Sandals': { rate: 18, hsn: '64039920', name: 'Leather Sandals & Slides' },
+  'Ladies Belts': { rate: 18, hsn: '42033000', name: "Women's Fashion Belts" },
+  'Ties': { rate: 12, hsn: '62151000', name: 'Silk & Fabric Neckties' },
+  'Socks': { rate: 12, hsn: '61159500', name: 'Cotton & Knitted Hosiery' },
+  'Ladies Wrist Watches': { rate: 18, hsn: '91021100', name: 'Ladies Wrist Watches' },
+  'Gents Wrist Watches': { rate: 18, hsn: '91021100', name: 'Gents Wrist Watches' }
+};
+
+export const getGstRateForProduct = (cat, price, hsn) => {
+  let info = CATEGORY_GST_RATES[cat];
+  if (!info) {
+    if (hsn === '71171990' || hsn === '71171910') info = { rate: 3, hsn: hsn || '71171990', name: 'Imitation Jewellery' };
+    else if (hsn === '62151000' || hsn === '61159500') info = { rate: 12, hsn: hsn || '62151000', name: 'Apparel Accessories' };
+    else info = { rate: 18, hsn: hsn || '42023120', name: 'Luxury Accessories' };
+  }
+  let rate = info.rate;
+  if ((cat === 'Shoes' || cat === 'Sandals') && price && Number(price) <= 1000) {
+    rate = 12;
+  }
+  return { rate, hsn: info.hsn, name: info.name };
+};
+
+export const computeOrderGstDetails = (order) => {
+  if (!order || !order.items || !order.items.length) {
+    return {
+      subtotalGross: 0,
+      discount: 0,
+      taxableSubtotal: 0,
+      totalCgst: 0,
+      totalSgst: 0,
+      totalGst: 0,
+      grandTotal: 0,
+      rateBreakdown: {},
+      itemDetails: []
+    };
+  }
+
+  const items = order.items;
+  const orderSub = Number(order.sub || items.reduce((s, it) => s + (Number(it.price || 0) * Number(it.qty || it.q || 1)), 0)) || 1;
+  const orderDisc = Number(order.disc || 0);
+  const discountRatio = orderSub > 0 ? (orderDisc / orderSub) : 0;
+
+  let totalTaxable = 0;
+  let totalCgst = 0;
+  let totalSgst = 0;
+  let totalGst = 0;
+  const rateBreakdown = {};
+
+  const itemDetails = items.map((it, idx) => {
+    const qty = Number(it.qty || it.q || 1);
+    const unitPrice = Number(it.price || 0);
+    const grossLine = unitPrice * qty;
+    const itemDisc = Math.round(grossLine * discountRatio);
+    const netLine = Math.max(0, grossLine - itemDisc);
+
+    const { rate: gstRate, hsn: itemHsn, name: catName } = getGstRateForProduct(it.cat, unitPrice, it.hsn);
+    const halfRate = gstRate / 2;
+
+    const taxableVal = Math.round((netLine / (1 + (gstRate / 100))) * 100) / 100;
+    const lineGst = Math.round((netLine - taxableVal) * 100) / 100;
+    const lineCgst = Math.round((lineGst / 2) * 100) / 100;
+    const lineSgst = Math.round((lineGst - lineCgst) * 100) / 100;
+
+    totalTaxable += taxableVal;
+    totalCgst += lineCgst;
+    totalSgst += lineSgst;
+    totalGst += lineGst;
+
+    const rateKey = `${gstRate}%`;
+    if (!rateBreakdown[rateKey]) {
+      rateBreakdown[rateKey] = {
+        rate: gstRate,
+        cgstRate: halfRate,
+        sgstRate: halfRate,
+        taxable: 0,
+        cgst: 0,
+        sgst: 0,
+        totalGst: 0,
+        hsnList: new Set()
+      };
+    }
+    rateBreakdown[rateKey].taxable += taxableVal;
+    rateBreakdown[rateKey].cgst += lineCgst;
+    rateBreakdown[rateKey].sgst += lineSgst;
+    rateBreakdown[rateKey].totalGst += lineGst;
+    rateBreakdown[rateKey].hsnList.add(itemHsn);
+
+    return {
+      index: idx + 1,
+      title: it.title || 'Luxury Product',
+      color: it.color || 'Standard',
+      sku: it.sku || `ORV-${idx + 1}`,
+      cat: it.cat || catName,
+      hsn: itemHsn,
+      qty,
+      unitPrice,
+      grossLine,
+      discount: itemDisc,
+      netLine,
+      gstRate,
+      cgstRate: halfRate,
+      sgstRate: halfRate,
+      taxableVal,
+      cgst: lineCgst,
+      sgst: lineSgst,
+      lineGst,
+      total: netLine
+    };
+  });
+
+  Object.keys(rateBreakdown).forEach(k => {
+    rateBreakdown[k].hsn = Array.from(rateBreakdown[k].hsnList).join(', ');
+    rateBreakdown[k].taxable = Math.round(rateBreakdown[k].taxable * 100) / 100;
+    rateBreakdown[k].cgst = Math.round(rateBreakdown[k].cgst * 100) / 100;
+    rateBreakdown[k].sgst = Math.round(rateBreakdown[k].sgst * 100) / 100;
+    rateBreakdown[k].totalGst = Math.round(rateBreakdown[k].totalGst * 100) / 100;
+  });
+
+  return {
+    subtotalGross: orderSub,
+    discount: orderDisc,
+    taxableSubtotal: Math.round(totalTaxable * 100) / 100,
+    totalCgst: Math.round(totalCgst * 100) / 100,
+    totalSgst: Math.round(totalSgst * 100) / 100,
+    totalGst: Math.round(totalGst * 100) / 100,
+    grandTotal: Number(order.total || (orderSub - orderDisc)),
+    rateBreakdown,
+    itemDetails
+  };
+};
+
+export const numberToWordsInr = (num) => {
+  const n = Math.round(num);
+  if (n <= 0) return 'Zero Rupees';
+  const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  function inWords(val) {
+    if (val === 0) return '';
+    if (val < 20) return a[val] + ' ';
+    if (val < 100) return b[Math.floor(val / 10)] + (val % 10 !== 0 ? ' ' + a[val % 10] : '') + ' ';
+    if (val < 1000) return a[Math.floor(val / 100)] + ' Hundred ' + inWords(val % 100);
+    if (val < 100000) return inWords(Math.floor(val / 1000)) + 'Thousand ' + inWords(val % 1000);
+    if (val < 10000000) return inWords(Math.floor(val / 100000)) + 'Lakh ' + inWords(val % 100000);
+    return inWords(Math.floor(val / 10000000)) + 'Crore ' + inWords(val % 10000000);
+  }
+
+  return 'INR ' + inWords(n).trim() + ' Only';
+};
+
 function generateInitialProducts() {
   const list = [];
   let n = 0;
@@ -902,12 +1063,36 @@ export default function App() {
         : Math.min(cp.val, eligibleSub);
     }
 
+    const finalTotal = Math.max(0, sub - disc);
+
+    // Compute category-based Indian GST breakdown
+    const gstBreakdown = computeOrderGstDetails({
+      sub,
+      disc,
+      total: finalTotal,
+      items: items.map(i => ({
+        pid: i.p.id,
+        title: i.p.title,
+        cat: i.p.cat,
+        color: i.v.color,
+        sku: i.v.sku,
+        hsn: i.p.hsn,
+        price: i.v.price,
+        qty: i.q
+      }))
+    });
+
     return {
       items,
       sub,
       disc,
-      total: Math.max(0, sub - disc),
-      count: items.reduce((s, i) => s + i.q, 0)
+      total: finalTotal,
+      count: items.reduce((s, i) => s + i.q, 0),
+      taxableSubtotal: gstBreakdown.taxableSubtotal,
+      totalGst: gstBreakdown.totalGst,
+      totalCgst: gstBreakdown.totalCgst,
+      totalSgst: gstBreakdown.totalSgst,
+      gstBreakdown
     };
   }, [cart, products, appliedCoupon, coupons]);
 
@@ -1889,6 +2074,7 @@ export default function App() {
         vid: i.v.id
       }))
     };
+    orderData.gst = computeOrderGstDetails(orderData);
 
     // Decrement stock client-side immediately
     setProducts(prev => prev.map(p => {
@@ -2320,7 +2506,8 @@ export default function App() {
                   setView('store');
                   setCurrentPage(1);
                 }}
-                className={`px-3 py-1.5 rounded-full border border-brass/40 transition flex items-center gap-1.5 ${onlyWishlist ? 'bg-gold text-ink font-bold' : 'hover:bg-white/10'}`}
+                className={`px-2.5 sm:px-3 py-1.5 rounded-full border border-brass/40 transition flex items-center gap-1.5 text-xs ${onlyWishlist ? 'bg-gold text-ink font-bold' : 'hover:bg-white/10'}`}
+                title="Wishlist"
               >
                 <span>♥</span>
                 <span>{wishlist.length}</span>
@@ -2331,7 +2518,7 @@ export default function App() {
                 <button
                   onClick={() => setShowWalletPassbook(true)}
                   title="Orayve Aura Wallet · 1 Pt = ₹1"
-                  className="px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-gold/60 text-gold hover:bg-gold/25 transition flex items-center gap-1.5 shadow-xs"
+                  className="px-2.5 sm:px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-gold/60 text-gold hover:bg-gold/25 transition flex items-center gap-1.5 shadow-xs text-xs"
                 >
                   <span className="text-amber-300 font-bold">✦</span>
                   <span className="font-bold">{walletPoints.toLocaleString('en-IN')}</span>
@@ -2345,13 +2532,14 @@ export default function App() {
                   setView('cart');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
-                className="px-3 py-1.5 rounded-full border border-brass/40 hover:bg-white/10 transition flex items-center gap-1.5"
+                className="px-2.5 sm:px-3 py-1.5 rounded-full border border-brass/40 hover:bg-white/10 transition flex items-center gap-1.5 text-xs"
+                title="Shopping Bag"
               >
                 <span>Bag</span>
                 <span className="bg-brass text-ink px-1.5 py-0.2 rounded-full font-bold">{cartSummary.count}</span>
               </button>
 
-              {/* Account Sign in / Profile */}
+              {/* Account Sign in / Profile (Visible on sm+ screens, in overflow menu on mobile) */}
               <button
                 onClick={() => {
                   if (currentUser) {
@@ -2360,18 +2548,18 @@ export default function App() {
                     setAuthModal('login');
                   }
                 }}
-                className="px-3 py-1.5 rounded-full border border-brass/40 hover:bg-white/10 transition"
+                className="hidden sm:inline-flex px-3 py-1.5 rounded-full border border-brass/40 hover:bg-white/10 transition text-xs"
               >
                 {currentUser ? `👤 ${currentUser.name.split(' ')[0]}` : 'Sign in'}
               </button>
 
-              {/* Admin Console Gate */}
+              {/* Admin Console Gate (Visible on md+ screens, in overflow menu on mobile) */}
               <button
                 onClick={() => {
                   setView('admin');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
-                className="px-3 py-1.5 rounded-full bg-brass/20 text-gold border border-brass/50 hover:bg-brass hover:text-ink transition"
+                className="hidden md:inline-flex px-3 py-1.5 rounded-full bg-brass/20 text-gold border border-brass/50 hover:bg-brass hover:text-ink transition text-xs"
               >
                 Admin
               </button>
@@ -2381,7 +2569,7 @@ export default function App() {
                 <button
                   onClick={() => setMenuOpen(!menuOpen)}
                   aria-label="More options"
-                  className="w-9 h-9 rounded-full border border-brass/40 text-lg leading-none flex items-center justify-center hover:bg-white/10 transition"
+                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-full border border-brass/40 text-lg leading-none flex items-center justify-center hover:bg-white/10 transition"
                 >
                   ⋮
                 </button>
@@ -2414,6 +2602,16 @@ export default function App() {
                         className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
                       >
                         📦 My Orders ({orders.filter(o => (o.mobile || o.addr?.phone || '').replace(/[^0-9]/g, '').slice(-10) === (currentUser?.mobile || '').replace(/[^0-9]/g, '').slice(-10)).length})
+                      </button>
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setView('admin');
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold text-brass flex items-center justify-between"
+                      >
+                        <span>🛡️ Admin Console</span>
+                        <span className="text-[10px] bg-brass/15 text-brass px-1.5 py-0.5 rounded font-bold">Portal</span>
                       </button>
                       {view !== 'admin' && !adminLoggedIn && currentUser && (
                         <button
@@ -2921,9 +3119,9 @@ export default function App() {
             <div className="grid md:grid-cols-12 gap-6 lg:gap-8 items-start">
               
               {/* Left Column: 2-Second Auto-Carousel Gallery */}
-              <div className="md:col-span-6 lg:col-span-5 sticky top-20">
+              <div className="md:col-span-6 lg:col-span-5 md:sticky md:top-20">
                 <div
-                  className="relative overflow-hidden rounded-2xl bg-bone/30 border border-ink/10 aspect-square max-h-[420px] shadow-sm flex items-center justify-center group"
+                  className="relative overflow-hidden rounded-2xl bg-bone/30 border border-ink/10 aspect-square max-h-[340px] sm:max-h-[400px] shadow-sm flex items-center justify-center group"
                   onMouseEnter={() => setIsGalleryPaused(true)}
                   onMouseLeave={() => setIsGalleryPaused(false)}
                 >
@@ -3618,25 +3816,36 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="border-t border-ink/10 pt-3 space-y-1">
+                <div className="border-t border-ink/10 pt-3 space-y-1.5">
                   <div className="flex justify-between">
-                    <span>Subtotal</span>
-                    <span>{inr(cartSummary.sub)}</span>
+                    <span className="text-ink/75">Bag Subtotal (Gross)</span>
+                    <span className="font-mono font-semibold">{inr(cartSummary.sub)}</span>
                   </div>
                   {cartSummary.disc > 0 && (
                     <div className="flex justify-between text-emerald-700 font-semibold">
-                      <span>Discount ({appliedCoupon})</span>
-                      <span>−{inr(cartSummary.disc)}</span>
+                      <span>Discount Voucher ({appliedCoupon})</span>
+                      <span className="font-mono">−{inr(cartSummary.disc)}</span>
                     </div>
                   )}
+                  <div className="flex justify-between text-[11px] text-ink/70 pt-1 border-t border-ink/5">
+                    <span>Taxable Base Value</span>
+                    <span className="font-mono">{inr(cartSummary.taxableSubtotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-[11px] text-brass font-medium">
+                    <span>Estimated GST (CGST + SGST)</span>
+                    <span className="font-mono font-bold">{inr(cartSummary.totalGst)}</span>
+                  </div>
                   <div className="flex justify-between">
-                    <span>Shipping</span>
+                    <span>Express Insured Shipping</span>
                     <span className="text-emerald-700 font-semibold">FREE</span>
                   </div>
-                  <div className="flex justify-between text-base font-bold border-t border-ink/10 pt-2">
-                    <span>Total</span>
-                    <span>{inr(cartSummary.total)}</span>
+                  <div className="flex justify-between text-base font-bold border-t border-ink/10 pt-2 text-ink">
+                    <span>Total (Incl. all taxes)</span>
+                    <span className="font-mono font-black">{inr(cartSummary.total)}</span>
                   </div>
+                  <p className="text-[10px] text-ink/50 pt-1">
+                    ✓ Official GST Tax Invoice with HSN &amp; CGST/SGST breakdown available on placement
+                  </p>
                 </div>
 
                 <button
@@ -4010,26 +4219,37 @@ export default function App() {
               {/* Order Summary box */}
               <div className="bg-white p-5 rounded-xl border border-ink/10 h-fit space-y-3 shadow-sm text-xs">
                 <h3 className="serif text-lg font-bold">Order Summary</h3>
-                <div className="space-y-1 border-b border-ink/10 pb-3">
+                <div className="space-y-1.5 border-b border-ink/10 pb-3">
                   <div className="flex justify-between">
-                    <span>Subtotal ({cartSummary.count})</span>
-                    <span>{inr(cartSummary.sub)}</span>
+                    <span className="text-ink/75">Subtotal ({cartSummary.count} {cartSummary.count === 1 ? 'item' : 'items'})</span>
+                    <span className="font-mono font-semibold">{inr(cartSummary.sub)}</span>
                   </div>
                   {cartSummary.disc > 0 && (
                     <div className="flex justify-between text-emerald-700 font-semibold">
                       <span>Coupon {appliedCoupon}</span>
-                      <span>−{inr(cartSummary.disc)}</span>
+                      <span className="font-mono">−{inr(cartSummary.disc)}</span>
                     </div>
                   )}
+                  <div className="flex justify-between text-[11px] text-ink/70 pt-1 border-t border-ink/5">
+                    <span>Taxable Base Subtotal</span>
+                    <span className="font-mono">{inr(cartSummary.taxableSubtotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-[11px] text-brass font-medium">
+                    <span>GST (CGST + SGST Breakdown)</span>
+                    <span className="font-mono font-bold">{inr(cartSummary.totalGst)}</span>
+                  </div>
                   <div className="flex justify-between">
-                    <span>Shipping</span>
+                    <span>Doorstep Insured Shipping</span>
                     <span className="text-emerald-700 font-semibold">FREE</span>
                   </div>
                 </div>
-                <div className="flex justify-between font-bold text-sm">
-                  <span>Total</span>
-                  <span>{inr(cartSummary.total)}</span>
+                <div className="flex justify-between font-bold text-base text-ink">
+                  <span>Total Payable</span>
+                  <span className="font-mono font-black">{inr(cartSummary.total)}</span>
                 </div>
+                <p className="text-[10px] text-ink/50 leading-relaxed">
+                  ✓ Official GST Tax Invoice included. All taxes &amp; duties calculated per Indian CBIC guidelines.
+                </p>
                 <button
                   onClick={() => {
                     if (!selectedAddrId) return showToast('Select or add a delivery address', true);
@@ -4723,17 +4943,19 @@ export default function App() {
           ) : (
             <div>
               {/* Admin Nav Header */}
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                 <div>
-                  <h1 className="serif text-3xl font-bold flex items-center gap-3">
+                  <h1 className="serif text-2xl sm:text-3xl font-bold flex items-center gap-3">
                     Admin Console
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Neon DB Live
                     </span>
                   </h1>
-                  <p className="text-xs text-ink/60 mt-1">Real-time Neon PostgreSQL order processing & inventory intelligence</p>
+                  <p className="text-xs text-ink/60 mt-1">Real-time Neon PostgreSQL order processing &amp; inventory intelligence</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+
+                {/* Horizontal Scrollable Tabs Container for Mobile & Tablet */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none w-full md:w-auto">
                   <button
                     onClick={() => {
                       refreshLiveOrders();
@@ -4742,16 +4964,16 @@ export default function App() {
                       updateSyncTimestamp();
                       showToast('Orders, products & users synchronized with database');
                     }}
-                    className="px-3.5 py-2 rounded-lg bg-white border border-ink/20 text-xs font-bold hover:bg-bone transition flex items-center gap-1.5 shadow-sm"
+                    className="px-3.5 py-2 rounded-lg bg-white border border-ink/20 text-xs font-bold hover:bg-bone transition flex items-center gap-1.5 shadow-sm whitespace-nowrap shrink-0"
                     title="Sync latest records from Neon DB"
                   >
-                    <span>🔄</span> Sync Neon DB
+                    <span>🔄</span> <span className="hidden sm:inline">Sync DB</span>
                   </button>
                   {['analytics', 'orders', 'products', 'categories', 'users', 'wallets', 'coupons'].map(tab => (
                     <button
                       key={tab}
                       onClick={() => setAdminTab(tab)}
-                      className={`px-4 py-2 rounded-lg text-xs font-bold capitalize transition hover:scale-[1.02] cursor-pointer ${
+                      className={`px-3.5 py-2 rounded-lg text-xs font-bold capitalize transition hover:scale-[1.02] cursor-pointer whitespace-nowrap shrink-0 ${
                         adminTab === tab ? 'bg-ink text-bone shadow' : 'bg-white border border-ink/15 hover:bg-bone hover:border-brass/40'
                       }`}
                     >
@@ -4760,7 +4982,7 @@ export default function App() {
                   ))}
                   <button
                     onClick={handleAdminLogout}
-                    className="px-4 py-2 rounded-lg text-xs font-bold text-rose-700 hover:bg-rose-50 border border-rose-200"
+                    className="px-3.5 py-2 rounded-lg text-xs font-bold text-rose-700 hover:bg-rose-50 border border-rose-200 whitespace-nowrap shrink-0"
                   >
                     Sign out
                   </button>
@@ -7444,117 +7666,247 @@ export default function App() {
       })()}
 
       {/* ==================================================================== */}
-      {/* TAX INVOICE MODAL                                                    */}
+      {/* TAX INVOICE MODAL (Official Indian GST Tax Invoice Rule 46 Compliant) */}
       {/* ==================================================================== */}
-      {invoiceModalOrder && (
-        <div className="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-ink/10">
-            <div className="p-4 border-b flex justify-between items-center bg-bone">
-              <b className="text-xs uppercase font-bold">Tax Invoice · {invoiceModalOrder.inv}</b>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => window.print()}
-                  className="px-3 py-1.5 rounded-lg bg-ink text-bone text-xs font-bold hover:bg-brass hover:text-ink transition"
-                >
-                  Print / Save PDF
-                </button>
-                <a
-                  href={`/api/orders/${invoiceModalOrder.id}/invoice`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3 py-1.5 rounded-lg bg-brass text-ink text-xs font-bold hover:opacity-90 transition"
-                >
-                  Download PDF
-                </a>
-                <button
-                  onClick={() => setInvoiceModalOrder(null)}
-                  className="p-1 font-bold text-sm"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
+      {invoiceModalOrder && (() => {
+        const gst = computeOrderGstDetails(invoiceModalOrder);
+        const addr = invoiceModalOrder.addr || {};
+        const stateName = addr.state || 'Karnataka';
 
-            <div id="inv" className="p-7 text-xs space-y-4">
-              <div className="flex justify-between border-b border-ink/10 pb-4">
-                <div>
-                  <p className="serif text-2xl font-bold">Orayve</p>
-                  <p className="text-brass font-bold text-[10px] uppercase tracking-widest">
-                    Small Details. Big Presence.
-                  </p>
-                  <p className="text-ink/60 mt-1">orayve.in · GSTIN: 29AABCO1234M1Z5</p>
-                </div>
-                <div className="text-right">
-                  <b className="text-sm">TAX INVOICE</b>
-                  <p>{invoiceModalOrder.inv}</p>
-                  <p>{invoiceModalOrder.id}</p>
-                  <p>{invoiceModalOrder.at}</p>
-                </div>
-              </div>
-
-              <div className="flex justify-between">
-                <div>
-                  <p className="text-[10px] uppercase font-bold text-ink/55">Shipped to</p>
-                  <b>{invoiceModalOrder.addr.name}</b>
-                  <p>{invoiceModalOrder.addr.street}, {invoiceModalOrder.addr.city} - {invoiceModalOrder.addr.pin}</p>
-                  <p className="text-ink/60">+91 {invoiceModalOrder.addr.phone}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[10px] uppercase font-bold text-ink/55">Payment</p>
-                  <p className="font-semibold">{invoiceModalOrder.pay}</p>
-                </div>
-              </div>
-
-              <table className="w-full text-left border-y border-ink/10">
-                <thead className="bg-bone">
-                  <tr>
-                    <th className="p-2">Item</th>
-                    <th className="p-2">HSN</th>
-                    <th className="p-2 text-right">Price</th>
-                    <th className="p-2 text-right">Qty</th>
-                    <th className="p-2 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-ink/10">
-                  {invoiceModalOrder.items.map((item, idx) => (
-                    <tr key={idx}>
-                      <td className="p-2">
-                        <b>{item.title}</b><br />
-                        <span className="text-[10px] text-ink/60">{item.color} · {item.sku}</span>
-                      </td>
-                      <td className="p-2">{item.hsn}</td>
-                      <td className="p-2 text-right">{inr(item.price)}</td>
-                      <td className="p-2 text-right">{item.qty}</td>
-                      <td className="p-2 text-right font-bold">{inr(item.price * item.qty)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="ml-auto w-56 space-y-1">
-                <div className="flex justify-between">
-                  <span>Subtotal (incl. GST)</span>
-                  <span>{inr(invoiceModalOrder.sub)}</span>
-                </div>
-                {invoiceModalOrder.disc > 0 && (
-                  <div className="flex justify-between text-emerald-700 font-semibold">
-                    <span>Discount</span>
-                    <span>−{inr(invoiceModalOrder.disc)}</span>
+        return (
+          <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+            <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-brass/40 my-3 sm:my-6">
+              
+              {/* Modal Top Action Bar */}
+              <div className="sticky top-0 z-20 flex flex-wrap justify-between items-center gap-2 p-3 sm:p-4 bg-bone/95 backdrop-blur-sm border-b border-ink/10">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🧾</span>
+                  <div>
+                    <b className="text-xs sm:text-sm text-ink block font-bold">Official GST Tax Invoice</b>
+                    <span className="text-[10px] text-ink/60 font-mono">{invoiceModalOrder.inv || invoiceModalOrder.id}</span>
                   </div>
-                )}
-                <div className="flex justify-between font-bold text-sm border-t border-ink/10 pt-1">
-                  <span>Grand Total</span>
-                  <span>{inr(invoiceModalOrder.total)}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => window.print()}
+                    className="px-3 py-1.5 rounded-lg bg-white border border-ink/20 text-ink text-xs font-bold hover:bg-bone transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>🖨️</span> <span className="hidden sm:inline">Print / Save</span>
+                  </button>
+                  <a
+                    href={`/api/orders/${invoiceModalOrder.id}/invoice`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3 py-1.5 rounded-lg bg-brass text-ink text-xs font-bold hover:opacity-90 transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>📥</span> <span>Download PDF</span>
+                  </a>
+                  <button
+                    onClick={() => setInvoiceModalOrder(null)}
+                    className="w-8 h-8 rounded-full border border-ink/15 hover:bg-rose-50 hover:text-rose-700 font-bold text-sm flex items-center justify-center transition cursor-pointer"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
                 </div>
               </div>
 
-              <p className="p-3 rounded-lg bg-bone border border-brass/30 text-[11px]">
-                <b>7-Day Return &amp; Replacement Policy:</b> eligible within 7 days of delivery in original packaging. Country of origin: India.
-              </p>
+              {/* Printable Invoice Body */}
+              <div id="inv" className="p-4 sm:p-7 text-xs space-y-4">
+                
+                {/* Header: Company & Tax Invoice Metadata */}
+                <div className="flex flex-wrap justify-between items-start gap-4 border-b border-ink/10 pb-4">
+                  <div>
+                    <p className="serif text-2xl font-bold tracking-tight text-ink">Orayve</p>
+                    <p className="text-brass font-bold text-[10px] uppercase tracking-widest">
+                      Small Details. Big Presence.
+                    </p>
+                    <p className="text-ink/75 mt-1 font-medium text-[11px]">
+                      ORAYVE Retail India Pvt. Ltd. · Bengaluru, Karnataka<br />
+                      GSTIN: <b className="font-mono text-ink">29AABCO1234M1Z5</b> · State Code: <b className="font-mono">29 (KA)</b><br />
+                      support@orayve.in · www.orayve.in
+                    </p>
+                  </div>
+                  <div className="text-right sm:text-right">
+                    <span className="px-2.5 py-1 rounded bg-brass/15 border border-brass/40 text-brass text-[10px] font-black uppercase tracking-wider inline-block mb-1">
+                      TAX INVOICE
+                    </span>
+                    <p className="text-ink/50 text-[10px]">Rule 46 of CGST Rules, 2017</p>
+                    <p className="font-bold text-ink mt-1 font-mono text-xs">Invoice: {invoiceModalOrder.inv || invoiceModalOrder.id}</p>
+                    <p className="text-ink/70 font-mono text-[11px]">Order: {invoiceModalOrder.id}</p>
+                    <p className="text-ink/60 text-[11px]">Date: {invoiceModalOrder.at}</p>
+                    <p className="text-emerald-700 font-bold text-[11px]">Payment: {invoiceModalOrder.pay || 'UPI'} · PAID</p>
+                  </div>
+                </div>
+
+                {/* Billing & Shipping Details */}
+                <div className="grid sm:grid-cols-2 gap-4 p-3.5 rounded-xl bg-bone/40 border border-ink/10">
+                  <div>
+                    <p className="text-[10px] uppercase font-bold text-brass tracking-wider mb-1">Billed &amp; Shipped To (Recipient)</p>
+                    <b className="text-ink text-sm block">{addr.name || 'Valued Customer'}</b>
+                    <p className="text-ink/70 text-[11px] mt-0.5 leading-relaxed font-medium">
+                      {addr.flat ? `${addr.flat}, ` : ''}{addr.street || addr.address || ''}<br />
+                      {addr.city}, {stateName} — <span className="font-mono font-bold text-ink">{addr.pin || addr.pincode}</span>
+                    </p>
+                    <p className="text-ink/60 text-[11px] mt-1 font-semibold">📞 +91 {addr.phone || addr.mobile || invoiceModalOrder.mobile}</p>
+                  </div>
+                  <div className="sm:text-right space-y-1">
+                    <p className="text-[10px] uppercase font-bold text-brass tracking-wider mb-1">Supply Particulars</p>
+                    <p className="text-[11px] text-ink/70">Place of Supply: <b className="text-ink">{stateName}</b></p>
+                    <p className="text-[11px] text-ink/70">Country of Origin: <b className="text-ink">India 🇮🇳</b></p>
+                    <p className="text-[11px] text-ink/70">Reverse Charge Applicable: <b className="text-ink">No</b></p>
+                    <p className="text-[11px] text-ink/70">Transaction: <b className="text-ink">B2C Retail E-Commerce</b></p>
+                  </div>
+                </div>
+
+                {/* Itemized Table with Category-wise GST Calculation */}
+                <div className="overflow-x-auto rounded-xl border border-ink/10">
+                  <table className="w-full min-w-[620px] text-left text-xs divide-y divide-ink/10">
+                    <thead className="bg-bone text-ink font-bold text-[11px]">
+                      <tr>
+                        <th className="p-2.5 w-8">#</th>
+                        <th className="p-2.5">Item Description &amp; SKU</th>
+                        <th className="p-2.5 text-center">HSN</th>
+                        <th className="p-2.5 text-center">Qty</th>
+                        <th className="p-2.5 text-right">Gross (₹)</th>
+                        <th className="p-2.5 text-right">Taxable (₹)</th>
+                        <th className="p-2.5 text-center">GST %</th>
+                        <th className="p-2.5 text-right">CGST (₹)</th>
+                        <th className="p-2.5 text-right">SGST (₹)</th>
+                        <th className="p-2.5 text-right">Total (₹)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-ink/10 bg-white">
+                      {gst.itemDetails.map(item => (
+                        <tr key={item.index} className="hover:bg-bone/30 transition-colors">
+                          <td className="p-2.5 text-ink/50 text-center font-mono">{item.index}</td>
+                          <td className="p-2.5">
+                            <b className="text-ink block">{item.title}</b>
+                            <span className="text-[10px] text-ink/60 block">{item.cat} · {item.color} · SKU: {item.sku}</span>
+                          </td>
+                          <td className="p-2.5 text-center font-mono text-[11px]">{item.hsn}</td>
+                          <td className="p-2.5 text-center font-bold">{item.qty}</td>
+                          <td className="p-2.5 text-right font-mono">{inr(item.grossLine)}</td>
+                          <td className="p-2.5 text-right font-mono font-medium">{inr(item.taxableVal)}</td>
+                          <td className="p-2.5 text-center">
+                            <span className="px-1.5 py-0.5 rounded bg-brass/15 text-brass font-bold text-[10px] font-mono">
+                              {item.gstRate}%
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-right font-mono text-ink/75">
+                            {inr(item.cgst)}<br />
+                            <span className="text-[9px] text-ink/45">({item.cgstRate}%)</span>
+                          </td>
+                          <td className="p-2.5 text-right font-mono text-ink/75">
+                            {inr(item.sgst)}<br />
+                            <span className="text-[9px] text-ink/45">({item.sgstRate}%)</span>
+                          </td>
+                          <td className="p-2.5 text-right font-bold font-mono text-ink">
+                            {inr(item.total)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* HSN Tax Summary & Financial Totals */}
+                <div className="grid sm:grid-cols-12 gap-4 items-start pt-1">
+                  
+                  {/* Left: Category HSN Tax Breakdown Box */}
+                  <div className="sm:col-span-7 rounded-xl bg-bone/30 border border-ink/10 p-3 space-y-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-brass flex items-center gap-1">
+                      <span>📊</span> Category HSN Tax Classification Breakdown
+                    </p>
+                    <table className="w-full text-[11px] text-left">
+                      <thead>
+                        <tr className="border-b border-ink/10 text-ink/60">
+                          <th className="pb-1">HSN / Rate</th>
+                          <th className="pb-1 text-right">Taxable Val</th>
+                          <th className="pb-1 text-right">CGST</th>
+                          <th className="pb-1 text-right">SGST</th>
+                          <th className="pb-1 text-right">Total Tax</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-ink/5">
+                        {Object.entries(gst.rateBreakdown).map(([rateKey, data]) => (
+                          <tr key={rateKey}>
+                            <td className="py-1 font-mono font-semibold">
+                              {data.hsn} <span className="text-brass">({rateKey})</span>
+                            </td>
+                            <td className="py-1 text-right font-mono">{inr(data.taxable)}</td>
+                            <td className="py-1 text-right font-mono">{inr(data.cgst)}</td>
+                            <td className="py-1 text-right font-mono">{inr(data.sgst)}</td>
+                            <td className="py-1 text-right font-mono font-bold">{inr(data.totalGst)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="text-[10px] text-ink/50 pt-1 border-t border-ink/10">
+                      Prices are inclusive of GST. Tax split 50% CGST + 50% SGST for intra-state supply.
+                    </p>
+                  </div>
+
+                  {/* Right: Order Financials Calculation */}
+                  <div className="sm:col-span-5 rounded-xl bg-white border border-ink/15 p-3.5 space-y-1.5 shadow-xs">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-ink/70">Subtotal (Gross Value):</span>
+                      <span className="font-mono font-semibold">{inr(gst.subtotalGross)}</span>
+                    </div>
+                    {gst.discount > 0 && (
+                      <div className="flex justify-between text-xs text-emerald-700 font-semibold">
+                        <span>Coupon Discount ({invoiceModalOrder.coupon || 'PROMO'}):</span>
+                        <span className="font-mono">−{inr(gst.discount)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-xs pt-1 border-t border-ink/10">
+                      <span className="text-ink/70">Total Taxable Value:</span>
+                      <span className="font-mono font-semibold">{inr(gst.taxableSubtotal)}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-ink/65">
+                      <span>Central Tax (CGST):</span>
+                      <span className="font-mono">{inr(gst.totalCgst)}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-ink/65">
+                      <span>State Tax (SGST):</span>
+                      <span className="font-mono">{inr(gst.totalSgst)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs font-semibold text-brass pt-1 border-t border-dashed border-ink/15">
+                      <span>Total Tax Amount (GST):</span>
+                      <span className="font-mono font-bold">{inr(gst.totalGst)}</span>
+                    </div>
+                    <div className="flex justify-between items-baseline font-bold text-sm sm:text-base border-t-2 border-ink pt-2 text-ink">
+                      <span>Grand Total:</span>
+                      <span className="font-mono font-black text-ink">{inr(gst.grandTotal)}</span>
+                    </div>
+                    <p className="text-[10px] text-ink/60 italic pt-1">
+                      {numberToWordsInr(gst.grandTotal)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Legal & Compliance Declaration */}
+                <div className="p-3 rounded-xl bg-bone/50 border border-brass/30 text-[10px] space-y-1 text-ink/75 leading-relaxed">
+                  <p>
+                    <b>Declaration:</b> We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct. Taxes have been charged as per applicable Goods and Services Tax laws.
+                  </p>
+                  <p>
+                    <b>7-Day Return &amp; Replacement Policy:</b> Eligible within 7 days of delivery in original packaging. Country of origin: India. For any return or tax inquiry, email: support@orayve.in.
+                  </p>
+                  <div className="pt-2 flex justify-between items-end border-t border-ink/10 mt-2">
+                    <span className="font-mono text-[9px] text-ink/50">Computer generated tax invoice · No physical signature required</span>
+                    <div className="text-right">
+                      <p className="font-bold text-ink text-[11px]">For ORAYVE Retail India Pvt. Ltd.</p>
+                      <p className="text-brass font-bold text-[10px]">Authorized Signatory</p>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ==================================================================== */}
       {/* VERIFIED BUYER WRITE REVIEW MODAL                                    */}
