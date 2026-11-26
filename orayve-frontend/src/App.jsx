@@ -4806,7 +4806,7 @@ export default function App() {
                         { lbl: 'Live Products', val: products.length, sub: `${products.reduce((s, p) => s + (p.v?.length || 0), 0)} SKU variants active` },
                         { lbl: 'Low Stock SKUs (≤10)', val: lowStockList.length, sub: `${outOfStockList.length} out of stock`, alert: lowStockList.length > 0 },
                       ].map(kpi => (
-                        <div key={kpi.lbl} className={`bg-white p-5 rounded-xl border shadow-sm ${kpi.alert ? 'border-amber-300 bg-amber-50/20' : 'border-ink/10'}`}>
+                        <div key={kpi.lbl} className={`bg-white p-5 rounded-xl border shadow-sm hover:scale-[1.02] hover:bg-amber-50/25 hover:border-brass/50 hover:shadow-md transition-all duration-200 cursor-pointer ${kpi.alert ? 'border-amber-300 bg-amber-50/20' : 'border-ink/10'}`}>
                           <p className="text-xs text-ink/60 font-semibold">{kpi.lbl}</p>
                           <p className="text-2xl font-bold mt-1 text-ink">{kpi.val}</p>
                           <p className="text-[11px] text-ink/50 mt-1">{kpi.sub}</p>
