@@ -428,6 +428,12 @@ export default function App() {
   const [adminOrderFilter, setAdminOrderFilter] = useState('ALL');
   const [adminOrderSearch, setAdminOrderSearch] = useState('');
   const [adminUserSearch, setAdminUserSearch] = useState('');
+  const [adminWalletSearch, setAdminWalletSearch] = useState('');
+  const [adminWalletTierFilter, setAdminWalletTierFilter] = useState('ALL');
+  const [adminWalletAdjustModal, setAdminWalletAdjustModal] = useState(null); // user object or null
+  const [adjustPointsAmount, setAdjustPointsAmount] = useState('250');
+  const [adjustPointsType, setAdjustPointsType] = useState('CREDIT'); // 'CREDIT' | 'DEBIT'
+  const [adjustPointsReason, setAdjustPointsReason] = useState('Loyalty Goodwill Bonus');
   // Enhanced Product Creation / Editing State (N images, N variants)
   const [editingProduct, setEditingProduct] = useState(null);
   const [formTitle, setFormTitle] = useState('');
@@ -2076,6 +2082,7 @@ export default function App() {
                     ['products', 'Products'],
                     ['categories', 'Categories'],
                     ['users', `Users (${users.length})`],
+                    ['wallets', 'Wallets'],
                     ['coupons', 'Coupons']
                   ].map(([tab, label]) => (
                     <button
@@ -2319,8 +2326,8 @@ export default function App() {
                 <span>{wishlist.length}</span>
               </button>
 
-              {/* Aura Wallet Pill Button (Never visible in Admin section) */}
-              {view !== 'admin' && !adminLoggedIn && (
+              {/* Aura Wallet Pill Button (Only visible for logged-in users, never in Admin) */}
+              {view !== 'admin' && !adminLoggedIn && currentUser && (
                 <button
                   onClick={() => setShowWalletPassbook(true)}
                   title="Orayve Aura Wallet · 1 Pt = ₹1"
@@ -2408,7 +2415,7 @@ export default function App() {
                       >
                         📦 My Orders ({orders.filter(o => (o.mobile || o.addr?.phone || '').replace(/[^0-9]/g, '').slice(-10) === (currentUser?.mobile || '').replace(/[^0-9]/g, '').slice(-10)).length})
                       </button>
-                      {view !== 'admin' && !adminLoggedIn && (
+                      {view !== 'admin' && !adminLoggedIn && currentUser && (
                         <button
                           onClick={() => {
                             setMenuOpen(false);
@@ -2511,7 +2518,7 @@ export default function App() {
             </div>
 
             {/* Hero Section */}
-            <div className="max-w-[1400px] mx-auto px-4 py-5">
+            <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5">
               <p className="text-[11px] uppercase tracking-[.28em] text-gold font-bold">Small Details. Big Presence.</p>
               <h1 className="serif text-xl sm:text-3xl font-medium mt-1 max-w-2xl">
                 260 curated essentials across 13 signature collections.
@@ -2600,36 +2607,60 @@ export default function App() {
           </div>
 
           {/* ORAYVE Aura Club Membership Privilege Banner */}
-          <div className="max-w-[1400px] mx-auto px-4 pt-4 pb-2">
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-stone-900 via-neutral-900 to-amber-950/90 border border-brass/40 p-4 sm:p-5 text-bone shadow-lg">
-              <div className="absolute -right-8 -bottom-8 w-44 h-44 bg-amber-500/10 rounded-full blur-2xl pointer-events-none"></div>
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
-                <div className="space-y-1">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brass/25 border border-brass/40 text-gold text-[10px] font-extrabold tracking-wider uppercase">
-                    <span>✦</span> ORAYVE AURA CLUB · 1 PT = ₹1
+          {view !== 'admin' && !adminLoggedIn && (
+            <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2">
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-stone-900 via-neutral-900 to-amber-950/90 border border-brass/40 p-4 sm:p-5 text-bone shadow-lg">
+                <div className="absolute -right-8 -bottom-8 w-44 h-44 bg-amber-500/10 rounded-full blur-2xl pointer-events-none"></div>
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
+                  <div className="space-y-1">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brass/25 border border-brass/40 text-gold text-[10px] font-extrabold tracking-wider uppercase">
+                      <span>✦</span> ORAYVE AURA CLUB · 1 PT = ₹1
+                    </div>
+                    {currentUser ? (
+                      <>
+                        <h3 className="serif text-lg sm:text-xl font-bold text-bone">
+                          Your Aura Credit Balance: <span className="text-gold font-sans font-extrabold">{walletPoints.toLocaleString('en-IN')} Pts</span>
+                          <span className="text-xs text-bone/60 font-sans font-normal ml-2">({inr(walletPoints)} Value)</span>
+                        </h3>
+                        <p className="text-xs text-bone/70 max-w-xl leading-relaxed">
+                          Enjoy zero-delay shopping, 100% instant refund credits into your Aura Wallet on returns &amp; cancellations, and exclusive tier benefits.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="serif text-lg sm:text-xl font-bold text-bone">
+                          Join the ORAYVE Aura Club · <span className="text-gold font-sans font-extrabold">Instant Credits &amp; VIP Privileges</span>
+                        </h3>
+                        <p className="text-xs text-bone/70 max-w-xl leading-relaxed">
+                          Sign in to access your Aura Wallet passbook, instant return credits, and exclusive member pricing on handcrafted luxury accessories.
+                        </p>
+                      </>
+                    )}
                   </div>
-                  <h3 className="serif text-lg sm:text-xl font-bold text-bone">
-                    Your Aura Credit Balance: <span className="text-gold font-sans font-extrabold">{walletPoints.toLocaleString('en-IN')} Pts</span>
-                    <span className="text-xs text-bone/60 font-sans font-normal ml-2">({inr(walletPoints)} Value)</span>
-                  </h3>
-                  <p className="text-xs text-bone/70 max-w-xl leading-relaxed">
-                    Enjoy zero-delay shopping, 100% instant refund credits into your Aura Wallet on returns &amp; cancellations, and exclusive tier benefits.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 w-full md:w-auto">
-                  <button
-                    onClick={() => setShowWalletPassbook(true)}
-                    className="w-full md:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-brass to-gold text-ink font-bold text-xs hover:brightness-110 shadow-md flex items-center justify-center gap-2 transition whitespace-nowrap"
-                  >
-                    <span>✦ View Aura Passbook &amp; History</span>
-                  </button>
+                  <div className="flex items-center gap-2 w-full md:w-auto">
+                    {currentUser ? (
+                      <button
+                        onClick={() => setShowWalletPassbook(true)}
+                        className="w-full md:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-brass to-gold text-ink font-bold text-xs hover:brightness-110 shadow-md flex items-center justify-center gap-2 transition whitespace-nowrap cursor-pointer hover:scale-[1.02]"
+                      >
+                        <span>✦ View Aura Passbook &amp; History</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setAuthModal('login')}
+                        className="w-full md:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-brass to-gold text-ink font-bold text-xs hover:brightness-110 shadow-md flex items-center justify-center gap-2 transition whitespace-nowrap cursor-pointer hover:scale-[1.02]"
+                      >
+                        <span>✦ Sign In to View Wallet</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Product Grid Header & Controls */}
-          <section className="max-w-[1400px] mx-auto px-4 py-4">
+          <section className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-ink/10">
               <div>
                 <h2 className="serif text-lg font-bold">
@@ -2685,7 +2716,7 @@ export default function App() {
                   return (
                     <div
                       key={p.id}
-                      className="bg-white rounded-xl border border-ink/10 overflow-hidden shadow-sm hover:shadow-xl transition flex flex-col group"
+                      className="bg-white rounded-xl border border-ink/10 overflow-hidden shadow-sm hover:shadow-xl hover:scale-[1.025] hover:-translate-y-1 hover:bg-amber-50/30 hover:border-brass/60 transition-all duration-300 flex flex-col group cursor-pointer"
                     >
                       {/* Product Image Box */}
                       <div
@@ -2743,7 +2774,7 @@ export default function App() {
                       </div>
 
                       {/* Card Body */}
-                      <div className="p-3 flex-1 flex flex-col">
+                      <div className="p-3 flex-1 flex flex-col transition-colors duration-200 group-hover:bg-amber-50/25">
                         
                         {/* Swatches Row */}
                         <div className="flex items-center justify-between mb-1.5">
@@ -2868,7 +2899,7 @@ export default function App() {
         const sameCatProds = products.filter(x => x.cat === p.cat && x.id !== p.id).slice(0, 6);
 
         return (
-          <main className="max-w-5xl mx-auto px-4 py-4 sm:py-6 flex-1">
+          <main className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex-1 min-w-0">
             {/* Top Back & Breadcrumb Bar */}
             <div className="flex items-center justify-between mb-4 pb-2.5 border-b border-ink/10">
               <button
@@ -2907,14 +2938,6 @@ export default function App() {
                   <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-brass text-ink text-[10px] font-black shadow-xs">
                     {v.d}% OFF
                   </span>
-
-                  {/* Auto-Slide 2s Indicator */}
-                  {gList.length > 1 && (
-                    <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full bg-ink/75 text-bone text-[10px] font-mono font-medium backdrop-blur-xs flex items-center gap-1 shadow-xs border border-white/10">
-                      <span className={`w-1.5 h-1.5 rounded-full ${isGalleryPaused ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`}></span>
-                      <span>{isGalleryPaused ? 'Paused' : 'Auto 2s'}</span>
-                    </div>
-                  )}
 
                   {/* Out of Stock Overlay */}
                   {v.stock < 1 && (
@@ -3494,7 +3517,7 @@ export default function App() {
                       <div
                         key={sp.id}
                         onClick={() => openProduct(sp.id)}
-                        className="bg-white rounded-xl border border-ink/10 p-2 cursor-pointer hover:shadow-md transition"
+                        className="bg-white rounded-xl border border-ink/10 p-2.5 cursor-pointer hover:shadow-lg hover:scale-[1.025] hover:-translate-y-1 hover:bg-amber-50/30 hover:border-brass/60 transition-all duration-200"
                       >
                         <div className="h-28 bg-ink rounded-lg overflow-hidden mb-2">
                           <img
@@ -3521,7 +3544,7 @@ export default function App() {
       {/* CART / BAG VIEW                                                      */}
       {/* ==================================================================== */}
       {view === 'cart' && (
-        <main className="max-w-5xl mx-auto px-4 py-4 flex-1">
+        <main className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex-1 min-w-0">
           <button
             onClick={() => setView('store')}
             className="text-xs font-bold mb-3 flex items-center gap-1 hover:text-brass"
@@ -3643,7 +3666,7 @@ export default function App() {
       {/* 3-STEP CHECKOUT VIEW                                                 */}
       {/* ==================================================================== */}
       {view === 'checkout' && (
-        <main className="max-w-5xl mx-auto px-4 py-5 flex-1">
+        <main className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 flex-1 min-w-0">
           {checkoutStep < 3 && (
             <button
               onClick={() => {
@@ -4160,7 +4183,7 @@ export default function App() {
       {/* MY ORDERS VIEW                                                       */}
       {/* ==================================================================== */}
       {view === 'orders' && (
-        <main className="max-w-4xl mx-auto px-4 py-10 flex-1">
+        <main className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex-1 min-w-0">
           {!currentUser ? (
             <div className="py-20 text-center">
               <button
@@ -4548,7 +4571,7 @@ export default function App() {
                                     return (
                                       <div
                                         key={idx}
-                                        className="flex flex-col p-2.5 rounded-xl bg-white border border-ink/10 hover:border-brass/60 transition-all shadow-2xs group"
+                                        className="flex flex-col p-2.5 rounded-xl bg-white border border-ink/10 hover:border-brass/60 hover:bg-amber-50/30 hover:scale-[1.025] hover:-translate-y-0.5 transition-all duration-200 shadow-2xs hover:shadow-xs group"
                                       >
                                         {/* Small Luxury Product Thumbnail with Price directly on Thumbnail */}
                                         <button
@@ -4645,7 +4668,7 @@ export default function App() {
       {/* ADMIN CONSOLE VIEW                                                   */}
       {/* ==================================================================== */}
       {view === 'admin' && (
-        <main className="w-full max-w-[1400px] mx-auto px-4 py-8 flex-1 min-w-0">
+        <main className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex-1 min-w-0">
           {!adminLoggedIn ? (
             <div className="min-h-[60vh] flex items-center justify-center p-4">
               <form
@@ -4724,15 +4747,15 @@ export default function App() {
                   >
                     <span>🔄</span> Sync Neon DB
                   </button>
-                  {['analytics', 'orders', 'products', 'categories', 'users', 'coupons'].map(tab => (
+                  {['analytics', 'orders', 'products', 'categories', 'users', 'wallets', 'coupons'].map(tab => (
                     <button
                       key={tab}
                       onClick={() => setAdminTab(tab)}
-                      className={`px-4 py-2 rounded-lg text-xs font-bold capitalize transition ${
-                        adminTab === tab ? 'bg-ink text-bone shadow' : 'bg-white border border-ink/15 hover:bg-bone'
+                      className={`px-4 py-2 rounded-lg text-xs font-bold capitalize transition hover:scale-[1.02] cursor-pointer ${
+                        adminTab === tab ? 'bg-ink text-bone shadow' : 'bg-white border border-ink/15 hover:bg-bone hover:border-brass/40'
                       }`}
                     >
-                      {tab} {tab === 'orders' ? `(${orders.length})` : tab === 'users' ? `(${users.length})` : ''}
+                      {tab === 'wallets' ? '💳 Wallets' : tab} {tab === 'orders' ? `(${orders.length})` : tab === 'users' ? `(${users.length})` : ''}
                     </button>
                   ))}
                   <button
@@ -5624,7 +5647,7 @@ export default function App() {
                             }, 0);
 
                             return (
-                              <tr key={p.id}>
+                              <tr key={p.id} className="hover:bg-amber-50/60 transition-colors">
                                 <td className="p-3">
                                   <span className="font-semibold block">{p.title}</span>
                                   <span className="text-ink/60 text-[11px]">
@@ -5777,7 +5800,7 @@ export default function App() {
                       return (
                         <div
                           key={c.name}
-                          className="bg-white p-5 rounded-2xl border border-ink/10 shadow-sm hover:shadow-md transition flex flex-col justify-between space-y-4 group"
+                          className="bg-white p-5 rounded-2xl border border-ink/10 shadow-sm hover:shadow-md hover:scale-[1.02] hover:bg-amber-50/20 hover:border-brass/60 transition-all duration-200 flex flex-col justify-between space-y-4 group cursor-pointer"
                         >
                           <div className="space-y-2">
                             <div className="flex items-start justify-between gap-2">
@@ -5865,13 +5888,14 @@ export default function App() {
                     </div>
 
                     <div className="w-full min-w-0 overflow-x-auto bg-white rounded-xl border border-ink/10 shadow-sm">
-                      <table className="w-full min-w-[640px] text-left text-xs">
+                      <table className="w-full min-w-[720px] text-left text-xs">
                         <thead className="bg-ink text-bone">
                           <tr>
                             <th className="p-3">Customer Name</th>
                             <th className="p-3">Age</th>
                             <th className="p-3">Mobile Number</th>
                             <th className="p-3">Email Address</th>
+                            <th className="p-3">Aura Wallet</th>
                             <th className="p-3">Joined</th>
                             <th className="p-3">Status</th>
                             <th className="p-3 text-right">Actions</th>
@@ -5879,11 +5903,17 @@ export default function App() {
                         </thead>
                         <tbody className="divide-y divide-ink/10">
                           {filteredUsers.length ? filteredUsers.map(u => (
-                            <tr key={u.mobile} className={u.banned ? 'bg-rose-50/60' : ''}>
+                            <tr key={u.mobile} className={`hover:bg-amber-50/50 transition-colors ${u.banned ? 'bg-rose-50/60' : ''}`}>
                               <td className="p-3 font-semibold text-ink">{u.name}</td>
                               <td className="p-3 text-ink/80">{u.age || 25}</td>
                               <td className="p-3 font-mono text-ink/80 whitespace-nowrap">+91 {u.mobile.replace(/[^0-9]/g, '').slice(-10)}</td>
                               <td className="p-3 text-ink/70 break-all">{u.email || '—'}</td>
+                              <td className="p-3 whitespace-nowrap">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-950 border border-amber-300">
+                                  <span className="text-amber-500">✦</span>
+                                  <span>{(u.points !== undefined ? u.points : 500).toLocaleString('en-IN')} Pts</span>
+                                </span>
+                              </td>
                               <td className="p-3 text-ink/60 whitespace-nowrap">{u.at || '23/11/2026'}</td>
                               <td className="p-3 whitespace-nowrap">
                                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
@@ -5892,7 +5922,17 @@ export default function App() {
                                   {u.banned ? 'BANNED' : 'Active'}
                                 </span>
                               </td>
-                              <td className="p-3 text-right space-x-3 whitespace-nowrap">
+                              <td className="p-3 text-right space-x-2.5 whitespace-nowrap">
+                                <button
+                                  onClick={() => {
+                                    setAdminTab('wallets');
+                                    setAdminWalletSearch(u.mobile.replace(/[^0-9]/g, '').slice(-10));
+                                  }}
+                                  className="font-bold text-amber-800 hover:text-amber-950 hover:underline cursor-pointer"
+                                  title="Open customer's wallet passbook"
+                                >
+                                  💳 Wallet
+                                </button>
                                 <button
                                   onClick={async () => {
                                     const nextBan = !u.banned;
@@ -5929,8 +5969,247 @@ export default function App() {
                             </tr>
                           )) : (
                             <tr>
-                              <td colSpan="7" className="p-8 text-center text-ink/60">
+                              <td colSpan="8" className="p-8 text-center text-ink/60">
                                 No users found matching criteria.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Tab: Customer Wallets & Aura Loyalty Management */}
+              {adminTab === 'wallets' && (() => {
+                const totalPoints = users.reduce((acc, u) => acc + (u.points !== undefined ? Number(u.points) : 500), 0);
+                const activeHolders = users.filter(u => !u.banned).length;
+                const avgPoints = Math.round(totalPoints / (users.length || 1));
+                const platinumCount = users.filter(u => (u.points || 500) >= 2000).length;
+
+                const filteredWallets = users.filter(u => {
+                  const pts = u.points !== undefined ? Number(u.points) : 500;
+                  if (adminWalletTierFilter === 'PLATINUM' && pts < 2000) return false;
+                  if (adminWalletTierFilter === 'GOLD' && (pts < 1000 || pts >= 2000)) return false;
+                  if (adminWalletTierFilter === 'SILVER' && pts >= 1000) return false;
+                  if (!adminWalletSearch) return true;
+                  const s = adminWalletSearch.toLowerCase();
+                  return (
+                    (u.name || '').toLowerCase().includes(s) ||
+                    (u.email || '').toLowerCase().includes(s) ||
+                    (u.mobile || '').includes(s)
+                  );
+                });
+
+                return (
+                  <div className="space-y-5">
+                    {/* Executive Header & KPI Cards */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-ink/10 shadow-sm">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="p-2 rounded-xl bg-amber-500/15 text-amber-900 text-base font-bold">💳</span>
+                          <h2 className="serif text-xl font-bold text-ink">Aura Wallets &amp; Customer Loyalty Registry</h2>
+                        </div>
+                        <p className="text-xs text-ink/60 mt-1">
+                          Live real-time visibility into every customer's Aura credit balance, passbook value, and loyalty tier status.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            refreshLiveUsers();
+                            showToast('Aura Wallets synchronized with database');
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-white border border-ink/20 text-xs font-bold hover:bg-bone hover:border-brass/40 transition flex items-center gap-1.5 shadow-2xs cursor-pointer hover:scale-[1.02]"
+                        >
+                          <span>🔄</span> Sync Wallets
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 4 Stat Overview Cards with subtle hover scaling */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+                      <div className="p-4 rounded-2xl bg-white border border-ink/10 shadow-2xs hover:border-brass/50 hover:bg-amber-50/20 hover:scale-[1.02] transition-all duration-200">
+                        <span className="text-[10px] uppercase font-bold text-ink/50 tracking-wider block">Total Points Issued</span>
+                        <div className="text-2xl font-black text-amber-900 mt-1 flex items-baseline gap-1">
+                          <span>✦</span>
+                          <span>{totalPoints.toLocaleString('en-IN')}</span>
+                          <span className="text-xs font-normal text-ink/50">Pts</span>
+                        </div>
+                        <span className="text-[10px] text-emerald-700 font-semibold mt-1 block">✓ 100% Guaranteed Reserve</span>
+                      </div>
+
+                      <div className="p-4 rounded-2xl bg-white border border-ink/10 shadow-2xs hover:border-brass/50 hover:bg-amber-50/20 hover:scale-[1.02] transition-all duration-200">
+                        <span className="text-[10px] uppercase font-bold text-ink/50 tracking-wider block">Total Passbook Value</span>
+                        <div className="text-2xl font-black text-ink mt-1">
+                          {inr(totalPoints)}
+                        </div>
+                        <span className="text-[10px] text-ink/50 mt-1 block">Fixed Rate: 1 Pt = ₹1.00</span>
+                      </div>
+
+                      <div className="p-4 rounded-2xl bg-white border border-ink/10 shadow-2xs hover:border-brass/50 hover:bg-amber-50/20 hover:scale-[1.02] transition-all duration-200">
+                        <span className="text-[10px] uppercase font-bold text-ink/50 tracking-wider block">Active Wallet Holders</span>
+                        <div className="text-2xl font-black text-ink mt-1">
+                          {activeHolders} <span className="text-xs font-normal text-ink/50">/ {users.length} Users</span>
+                        </div>
+                        <span className="text-[10px] text-brass font-semibold mt-1 block">★ {platinumCount} VIP Tier Accounts</span>
+                      </div>
+
+                      <div className="p-4 rounded-2xl bg-white border border-ink/10 shadow-2xs hover:border-brass/50 hover:bg-amber-50/20 hover:scale-[1.02] transition-all duration-200">
+                        <span className="text-[10px] uppercase font-bold text-ink/50 tracking-wider block">Avg Customer Balance</span>
+                        <div className="text-2xl font-black text-amber-800 mt-1">
+                          ✦ {avgPoints.toLocaleString('en-IN')} <span className="text-xs font-normal text-ink/50">Pts</span>
+                        </div>
+                        <span className="text-[10px] text-ink/50 mt-1 block">Automatic 500 Pts on Signup</span>
+                      </div>
+                    </div>
+
+                    {/* Filter and Search Bar */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-ink/10 shadow-2xs">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-ink/50 mr-1">Filter Tier:</span>
+                        {[
+                          { key: 'ALL', label: `All (${users.length})` },
+                          { key: 'PLATINUM', label: '✦ Platinum (2,000+)' },
+                          { key: 'GOLD', label: '✦ Gold (1,000–1,999)' },
+                          { key: 'SILVER', label: '✦ Silver (<1,000)' }
+                        ].map(flt => (
+                          <button
+                            key={flt.key}
+                            onClick={() => setAdminWalletTierFilter(flt.key)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer hover:scale-[1.02] ${
+                              adminWalletTierFilter === flt.key
+                                ? 'bg-ink text-bone font-bold shadow-xs'
+                                : 'bg-bone text-ink/70 hover:bg-ink/10'
+                            }`}
+                          >
+                            {flt.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={adminWalletSearch}
+                          onChange={e => setAdminWalletSearch(e.target.value)}
+                          placeholder="Search customer, mobile (+91), email..."
+                          className="px-3.5 py-1.5 rounded-xl border border-ink/20 text-xs w-64 max-w-full font-medium focus:border-brass outline-none"
+                        />
+                        {adminWalletSearch && (
+                          <button
+                            onClick={() => setAdminWalletSearch('')}
+                            className="px-2.5 py-1 rounded-lg text-xs font-bold text-ink/50 hover:text-ink hover:bg-bone transition cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Customer Wallets Registry Table */}
+                    <div className="w-full min-w-0 overflow-x-auto bg-white rounded-2xl border border-ink/10 shadow-sm">
+                      <table className="w-full min-w-[760px] text-left text-xs">
+                        <thead className="bg-ink text-bone">
+                          <tr>
+                            <th className="p-3.5">Customer &amp; Profile</th>
+                            <th className="p-3.5">Mobile Number</th>
+                            <th className="p-3.5">Loyalty Tier</th>
+                            <th className="p-3.5">Current Balance</th>
+                            <th className="p-3.5">Passbook Value</th>
+                            <th className="p-3.5">Status</th>
+                            <th className="p-3.5 text-right">Wallet Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-ink/10">
+                          {filteredWallets.length ? filteredWallets.map(u => {
+                            const pts = u.points !== undefined ? Number(u.points) : 500;
+                            const isPlatinum = pts >= 2000;
+                            const isGold = pts >= 1000 && pts < 2000;
+                            const tierBadge = isPlatinum
+                              ? { label: '✦ Platinum VIP', cls: 'bg-purple-100 text-purple-900 border-purple-300' }
+                              : isGold
+                              ? { label: '✦ Gold Member', cls: 'bg-amber-100 text-amber-900 border-amber-300' }
+                              : { label: '✦ Silver Member', cls: 'bg-bone text-ink/80 border-ink/20' };
+
+                            return (
+                              <tr
+                                key={u.mobile}
+                                className={`hover:bg-amber-50/50 transition-colors group ${u.banned ? 'bg-rose-50/50' : ''}`}
+                              >
+                                <td className="p-3.5">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500/30 to-yellow-500/20 text-amber-900 font-black flex items-center justify-center text-xs shrink-0 border border-amber-300/40">
+                                      {(u.name || 'U').charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <b className="font-bold text-ink block text-xs group-hover:text-amber-900 transition">{u.name}</b>
+                                      <span className="text-[10px] text-ink/50 truncate block">{u.email || 'No email registered'}</span>
+                                    </div>
+                                  </div>
+                                </td>
+
+                                <td className="p-3.5 font-mono text-ink/80 whitespace-nowrap">
+                                  +91 {u.mobile.replace(/[^0-9]/g, '').slice(-10)}
+                                </td>
+
+                                <td className="p-3.5 whitespace-nowrap">
+                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${tierBadge.cls}`}>
+                                    {tierBadge.label}
+                                  </span>
+                                </td>
+
+                                <td className="p-3.5 whitespace-nowrap">
+                                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-black bg-gradient-to-r from-amber-500/20 to-yellow-500/10 text-amber-950 border border-amber-300 shadow-2xs">
+                                    <span className="text-amber-500">✦</span>
+                                    <span>{pts.toLocaleString('en-IN')} Pts</span>
+                                  </span>
+                                </td>
+
+                                <td className="p-3.5 whitespace-nowrap">
+                                  <b className="font-bold text-ink">{inr(pts)}</b>
+                                  <span className="text-[10px] text-ink/50 block">Instant redeemable</span>
+                                </td>
+
+                                <td className="p-3.5 whitespace-nowrap">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    u.banned ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                                  }`}>
+                                    {u.banned ? 'Banned' : 'Active'}
+                                  </span>
+                                </td>
+
+                                <td className="p-3.5 text-right space-x-2 whitespace-nowrap">
+                                  <button
+                                    onClick={() => {
+                                      setAdminWalletAdjustModal(u);
+                                      setAdjustPointsType('CREDIT');
+                                      setAdjustPointsAmount('250');
+                                      setAdjustPointsReason('VIP Loyalty Goodwill Credit');
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg bg-emerald-700 text-white font-bold text-[11px] hover:bg-emerald-800 transition shadow-2xs cursor-pointer hover:scale-105"
+                                  >
+                                    + Credit
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setAdminWalletAdjustModal(u);
+                                      setAdjustPointsType('DEBIT');
+                                      setAdjustPointsAmount('100');
+                                      setAdjustPointsReason('Admin Correction');
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg bg-white border border-rose-300 text-rose-700 font-bold text-[11px] hover:bg-rose-50 transition shadow-2xs cursor-pointer hover:scale-105"
+                                  >
+                                    − Debit
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          }) : (
+                            <tr>
+                              <td colSpan="7" className="p-10 text-center text-ink/60">
+                                No customer wallets match your search filter.
                               </td>
                             </tr>
                           )}
@@ -6105,7 +6384,7 @@ export default function App() {
                     {coupons.map((c, idx) => (
                       <div
                         key={c.code}
-                        className={`bg-white rounded-2xl border p-5 shadow-sm transition hover:shadow-md flex flex-col justify-between space-y-4 relative overflow-hidden ${
+                        className={`bg-white rounded-2xl border p-5 shadow-sm transition hover:shadow-md hover:scale-[1.02] hover:border-brass/70 flex flex-col justify-between space-y-4 relative overflow-hidden ${
                           c.on ? 'border-brass/50 bg-gradient-to-b from-amber-50/20 to-white' : 'border-ink/10 opacity-75'
                         }`}
                       >
@@ -8297,6 +8576,148 @@ export default function App() {
                 Close Passbook
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Wallet Adjust Modal */}
+      {adminWalletAdjustModal && (
+        <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-brass/40 my-8 space-y-4 animate-in zoom-in-95 duration-150 relative">
+            <div className="flex items-start justify-between border-b border-ink/10 pb-3">
+              <div>
+                <span className="text-[10px] uppercase font-extrabold text-brass tracking-wider">Aura Wallet Adjustment</span>
+                <h3 className="serif text-lg font-bold text-ink mt-0.5">{adminWalletAdjustModal.name}</h3>
+                <p className="text-xs text-ink/60 font-mono">+91 {adminWalletAdjustModal.mobile.replace(/[^0-9]/g, '').slice(-10)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdminWalletAdjustModal(null)}
+                className="w-7 h-7 rounded-full bg-bone hover:bg-ink hover:text-bone text-xs font-bold transition flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-300/60 flex items-center justify-between text-xs">
+              <span className="font-semibold text-amber-950">Current Balance:</span>
+              <b className="text-sm font-black text-amber-900">
+                ✦ {(adminWalletAdjustModal.points !== undefined ? adminWalletAdjustModal.points : 500).toLocaleString('en-IN')} Pts ({inr(adminWalletAdjustModal.points !== undefined ? adminWalletAdjustModal.points : 500)})
+              </b>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const amt = Math.abs(parseInt(adjustPointsAmount, 10));
+                if (!amt || isNaN(amt)) return showToast('Please enter a valid points amount');
+                const targetMob = adminWalletAdjustModal.mobile.replace(/[^0-9]/g, '').slice(-10);
+
+                try {
+                  const res = await fetch('/api/admin/wallets/adjust', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      mobile: targetMob,
+                      points: amt,
+                      type: adjustPointsType,
+                      description: adjustPointsReason.trim() || (adjustPointsType === 'CREDIT' ? 'Loyalty bonus credit' : 'Points adjustment')
+                    })
+                  });
+                  const json = await res.json();
+                  if (json.success) {
+                    showToast(json.message);
+                    setUsers(prev => prev.map(u => {
+                      if (u.mobile.replace(/[^0-9]/g, '').slice(-10) === targetMob) {
+                        const cur = u.points !== undefined ? Number(u.points) : 500;
+                        const next = adjustPointsType === 'CREDIT' ? cur + amt : Math.max(0, cur - amt);
+                        return { ...u, points: next };
+                      }
+                      return u;
+                    }));
+                    if (currentUser && currentUser.mobile.replace(/[^0-9]/g, '').slice(-10) === targetMob) {
+                      setWalletPoints(prev => adjustPointsType === 'CREDIT' ? prev + amt : Math.max(0, prev - amt));
+                    }
+                    setAdminWalletAdjustModal(null);
+                  } else {
+                    showToast(json.message || 'Error updating wallet');
+                  }
+                } catch (err) {
+                  showToast('Error syncing wallet with server');
+                }
+              }}
+              className="space-y-3"
+            >
+              <div>
+                <label className="text-xs font-bold text-ink block mb-1">Adjustment Action</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAdjustPointsType('CREDIT')}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      adjustPointsType === 'CREDIT'
+                        ? 'bg-emerald-700 text-white shadow-xs'
+                        : 'bg-bone text-ink/70 hover:bg-ink/10'
+                    }`}
+                  >
+                    <span>+ Credit Points</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdjustPointsType('DEBIT')}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      adjustPointsType === 'DEBIT'
+                        ? 'bg-rose-700 text-white shadow-xs'
+                        : 'bg-bone text-ink/70 hover:bg-ink/10'
+                    }`}
+                  >
+                    <span>− Debit Points</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-ink block mb-1">Points Amount (1 Pt = ₹1)</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  required
+                  value={adjustPointsAmount}
+                  onChange={e => setAdjustPointsAmount(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-ink/20 text-sm font-bold text-ink focus:border-brass outline-none"
+                  placeholder="e.g. 250"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-ink block mb-1">Reason / Note</label>
+                <input
+                  type="text"
+                  required
+                  value={adjustPointsReason}
+                  onChange={e => setAdjustPointsReason(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-ink/20 text-xs text-ink focus:border-brass outline-none"
+                  placeholder="e.g. VIP loyalty bonus, Return goodwill"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAdminWalletAdjustModal(null)}
+                  className="px-4 py-2 rounded-xl border border-ink/20 text-xs font-bold hover:bg-bone transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-brass text-ink font-extrabold text-xs hover:brightness-105 transition shadow-sm cursor-pointer"
+                >
+                  Confirm {adjustPointsType === 'CREDIT' ? 'Credit' : 'Debit'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

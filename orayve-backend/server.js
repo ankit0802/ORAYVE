@@ -1686,11 +1686,14 @@ app.get('/api/admin/users', async (req, res) => {
   if (pool) {
     try {
       const q = await pool.query(`
-        SELECT full_name as name, COALESCE(age, 25) as age, COALESCE(email, '') as email, 
-               mobile_number as mobile, COALESCE(is_banned, FALSE) as banned, 
-               COALESCE(to_char(created_at, 'DD/MM/YYYY'), '23/11/2026') as at 
-        FROM public.users 
-        ORDER BY created_at DESC;
+        SELECT u.full_name as name, COALESCE(u.age, 25) as age, COALESCE(u.email, '') as email, 
+               u.mobile_number as mobile, COALESCE(u.is_banned, FALSE) as banned, 
+               COALESCE(to_char(u.created_at, 'DD/MM/YYYY'), '23/11/2026') as at,
+               COALESCE(w.balance_points, 500) as points,
+               COALESCE(to_char(w.updated_at, 'DD/MM/YYYY HH24:MI'), 'Active') as wallet_updated
+        FROM public.users u
+        LEFT JOIN public.user_wallets w ON (w.user_mobile = u.mobile_number OR w.user_mobile = RIGHT(u.mobile_number, 10))
+        ORDER BY u.created_at DESC;
       `);
       if (q.rows.length > 0) {
         return res.json({ success: true, data: q.rows });
@@ -1699,7 +1702,55 @@ app.get('/api/admin/users', async (req, res) => {
       console.error('[DB] Error fetching users:', e.message);
     }
   }
-  res.json({ success: true, data: USERS });
+  const mapped = USERS.map(u => ({ ...u, points: u.points !== undefined ? u.points : 500 }));
+  res.json({ success: true, data: mapped });
+});
+
+// Admin Aura Wallet Points Adjustment API
+app.post('/api/admin/wallets/adjust', async (req, res) => {
+  const { mobile, points, type, description } = req.body;
+  if (!mobile || points === undefined) {
+    return res.status(400).json({ success: false, message: 'Mobile and points required' });
+  }
+  const cleanMob = String(mobile).replace(/[^0-9]/g, '').slice(-10);
+  const delta = Math.round(Number(points));
+  if (delta === 0) return res.status(400).json({ success: false, message: 'Points change must be non-zero' });
+  const isCredit = type !== 'DEBIT';
+  const change = isCredit ? Math.abs(delta) : -Math.abs(delta);
+
+  let newBalance = 500;
+  if (pool) {
+    try {
+      const q = await pool.query(`
+        INSERT INTO public.user_wallets (user_mobile, balance_points, updated_at)
+        VALUES ($1, GREATEST(0, 500 + $2), NOW())
+        ON CONFLICT (user_mobile)
+        DO UPDATE SET balance_points = GREATEST(0, public.user_wallets.balance_points + $2), updated_at = NOW()
+        RETURNING balance_points;
+      `, [cleanMob, change]);
+
+      if (q.rows.length > 0) newBalance = q.rows[0].balance_points;
+
+      await pool.query(`
+        INSERT INTO public.wallet_transactions (user_mobile, type, points, amount, description, status)
+        VALUES ($1, $2, $3, $3, $4, 'SUCCESS');
+      `, [cleanMob, isCredit ? 'CREDIT' : 'DEBIT', Math.abs(delta), description || (isCredit ? 'Admin loyalty bonus' : 'Admin adjustment')]);
+    } catch (e) {
+      console.error('[DB] Admin wallet adjust error:', e.message);
+    }
+  }
+
+  const u = USERS.find(x => x.mobile.replace(/[^0-9]/g, '').slice(-10) === cleanMob);
+  if (u) {
+    u.points = Math.max(0, (u.points || 500) + change);
+    newBalance = u.points;
+  }
+
+  res.json({
+    success: true,
+    message: `Wallet successfully ${isCredit ? 'credited' : 'adjusted'} by ${Math.abs(delta)} points. New balance: ${newBalance} Pts`,
+    data: { mobile: cleanMob, points: newBalance }
+  });
 });
 
 app.post('/api/admin/users', async (req, res) => {
