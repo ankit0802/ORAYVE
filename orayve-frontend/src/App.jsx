@@ -4535,7 +4535,8 @@ export default function App() {
                                       (cleanTitle && cleanTitle.includes(prod.title.toLowerCase()))
                                     ) || products.find(prod => prod.cat === item.cat) || products[0];
                                     const matchedVar = matchedProd?.v?.find(v => v.id === item.vid || v.color?.toLowerCase() === (item.color || '').toLowerCase()) || matchedProd?.v?.[0];
-                                    const itemPhoto = item.img || (matchedVar?.photo ? imgUrl(matchedVar) : null) || (matchedProd?.imgs?.[0]) || FB;
+                                    const rawPhoto = item.img || (matchedVar?.photo ? imgUrl(matchedVar) : null) || (matchedProd?.v?.[0]?.photo ? imgUrl(matchedProd.v[0]) : null) || (matchedProd?.imgs?.[0]) || FB;
+                                    const itemPhoto = (rawPhoto.startsWith('http') || rawPhoto.startsWith('data:')) ? rawPhoto : imgUrl({ photo: rawPhoto });
 
                                     const userPhoneClean = (currentUser?.mobile || currentUser?.phone || '').replace(/\D/g, '').slice(-10);
                                     const pId = matchedProd?.id || item.pid;
@@ -5130,7 +5131,8 @@ export default function App() {
                                       (cleanTitle && cleanTitle.includes(prod.title.toLowerCase()))
                                     ) || products.find(p => p.cat === item.cat) || products[0];
                                     const matchedVar = matchedProd?.v?.find(v => v.id === item.vid || v.color?.toLowerCase() === (item.color || '').toLowerCase()) || matchedProd?.v?.[0];
-                                    const itemPhoto = item.img || (matchedVar?.photo ? imgUrl(matchedVar) : null) || (matchedProd?.imgs?.[0]) || FB;
+                                    const rawPhoto = item.img || (matchedVar?.photo ? imgUrl(matchedVar) : null) || (matchedProd?.v?.[0]?.photo ? imgUrl(matchedProd.v[0]) : null) || (matchedProd?.imgs?.[0]) || FB;
+                                    const itemPhoto = (rawPhoto.startsWith('http') || rawPhoto.startsWith('data:')) ? rawPhoto : imgUrl({ photo: rawPhoto });
 
                                     return (
                                       <div key={idx} className="p-2 rounded-xl bg-bone/30 border border-ink/10 flex flex-col justify-between hover:border-brass/50 transition">
