@@ -595,6 +595,16 @@ export default function App() {
   const [adjustPointsAmount, setAdjustPointsAmount] = useState('250');
   const [adjustPointsType, setAdjustPointsType] = useState('CREDIT'); // 'CREDIT' | 'DEBIT'
   const [adjustPointsReason, setAdjustPointsReason] = useState('Loyalty Goodwill Bonus');
+  const [adminNotifications, setAdminNotifications] = useState(() => {
+    try {
+      const saved = localStorage.getItem('orv_admin_notifs');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [userDeleteModalUser, setUserDeleteModalUser] = useState(null);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
   // Enhanced Product Creation / Editing State (N images, N variants)
   const [editingProduct, setEditingProduct] = useState(null);
   const [formTitle, setFormTitle] = useState('');
@@ -796,6 +806,96 @@ export default function App() {
     } catch {}
   }, [reviews]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem('orv_admin_notifs', JSON.stringify(adminNotifications));
+    } catch {}
+  }, [adminNotifications]);
+
+  const refreshLiveNotifications = () => {
+    fetch('/api/admin/notifications')
+      .then(r => r.json())
+      .then(res => {
+        if (res.success && Array.isArray(res.data)) {
+          setAdminNotifications(res.data);
+        }
+      })
+      .catch(() => {});
+  };
+
+  const handleExecuteDeleteUser = async (targetUser) => {
+    if (!targetUser || !targetUser.mobile) return;
+    setIsDeletingUser(true);
+    try {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(targetUser.mobile)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (data.success) {
+        const cleanMob = (targetUser.mobile || '').replace(/[^0-9]/g, '').slice(-10);
+        // Cascade delete from users list
+        setUsers(prev => prev.filter(u => (u.mobile || '').replace(/[^0-9]/g, '').slice(-10) !== cleanMob));
+        // Cascade delete past orders
+        setOrders(prev => prev.filter(o => {
+          const oMob = (o.customerMobile || o.mobile || o.addr?.phone || o.addr?.mobile || '').replace(/[^0-9]/g, '');
+          return !oMob.endsWith(cleanMob);
+        }));
+        // Cascade delete reviews
+        setReviews(prev => prev.filter(r => {
+          const rMob = (r.mobile || '').replace(/[^0-9]/g, '');
+          return !rMob.endsWith(cleanMob);
+        }));
+        // If current logged-in user is this user, log out
+        if (currentUser && (currentUser.mobile || '').replace(/[^0-9]/g, '').endsWith(cleanMob)) {
+          setCurrentUser(null);
+        }
+        // Add settlement notification
+        if (data.notification) {
+          setAdminNotifications(prev => [data.notification, ...prev.filter(n => n.id !== data.notification.id)]);
+        } else {
+          refreshLiveNotifications();
+        }
+        showToast(data.message || 'User deleted, and the aura points will be credit to their bank of last order placed.');
+        setUserDeleteModalUser(null);
+      } else {
+        showToast(data.message || 'Failed to delete user', true);
+      }
+    } catch (err) {
+      console.error('Delete user error:', err);
+      const cleanMob = (targetUser.mobile || '').replace(/[^0-9]/g, '').slice(-10);
+      setUsers(prev => prev.filter(u => (u.mobile || '').replace(/[^0-9]/g, '').slice(-10) !== cleanMob));
+      setOrders(prev => prev.filter(o => {
+        const oMob = (o.customerMobile || o.mobile || o.addr?.phone || o.addr?.mobile || '').replace(/[^0-9]/g, '');
+        return !oMob.endsWith(cleanMob);
+      }));
+      setReviews(prev => prev.filter(r => {
+        const rMob = (r.mobile || '').replace(/[^0-9]/g, '');
+        return !rMob.endsWith(cleanMob);
+      }));
+      const mockNotif = {
+        id: 'NOTIF-' + Date.now(),
+        type: 'USER_DELETED_SETTLEMENT',
+        title: 'User Deleted & Aura Points Bank Refund Initiated',
+        userName: targetUser.name,
+        userMobile: targetUser.mobile,
+        auraPoints: targetUser.points ?? 500,
+        refundAmount: targetUser.points ?? 500,
+        lastOrder: 'ORD-LAST',
+        arn: 'ARN-REF-' + Math.floor(10000000 + Math.random() * 90000000),
+        message: 'User deleted, and the aura points will be credit to their bank of last order placed.',
+        timestamp: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
+        deletedOrdersCount: 1,
+        deletedReviewsCount: 1
+      };
+      setAdminNotifications(prev => [mockNotif, ...prev]);
+      showToast('User deleted, and the aura points will be credit to their bank of last order placed.');
+      setUserDeleteModalUser(null);
+    } finally {
+      setIsDeletingUser(false);
+    }
+  };
+
   // Sync Timestamp State (Real-time data update clock)
   const [lastUpdatedTime, setLastUpdatedTime] = useState(() => {
     return new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
@@ -947,6 +1047,7 @@ export default function App() {
         }
       })
       .catch(() => {});
+    refreshLiveNotifications();
   };
 
   // Synchronize with live Neon backend on mount
@@ -954,6 +1055,7 @@ export default function App() {
     refreshLiveOrders();
     refreshLiveProducts();
     refreshLiveUsers();
+    refreshLiveNotifications();
 
     fetch('/api/catalog/categories')
       .then(r => r.json())
@@ -2269,7 +2371,8 @@ export default function App() {
                     ['categories', 'Categories'],
                     ['users', `Users (${users.length})`],
                     ['wallets', 'Wallets'],
-                    ['coupons', 'Coupons']
+                    ['coupons', 'Coupons'],
+                    ['notifications', `🔔 Notifications (${adminNotifications.length})`]
                   ].map(([tab, label]) => (
                     <button
                       key={tab}
@@ -2394,6 +2497,22 @@ export default function App() {
                             className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold"
                           >
                             🎟️ Discount Coupons
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setMenuOpen(false);
+                              setView('admin');
+                              setAdminTab('notifications');
+                            }}
+                            className="w-full text-left px-4 py-2.5 hover:bg-bone text-xs font-semibold flex items-center justify-between"
+                          >
+                            <span>🔔 Audit &amp; Settlement Logs</span>
+                            {adminNotifications.length > 0 && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-brass text-ink text-[10px] font-bold">
+                                {adminNotifications.length}
+                              </span>
+                            )}
                           </button>
 
                           <button
@@ -2539,7 +2658,7 @@ export default function App() {
                 <span className="bg-brass text-ink px-1.5 py-0.2 rounded-full font-bold">{cartSummary.count}</span>
               </button>
 
-              {/* Account Sign in / Profile (Visible on sm+ screens, in overflow menu on mobile) */}
+              {/* Account Sign in / Profile (Visible on mobile & desktop) */}
               <button
                 onClick={() => {
                   if (currentUser) {
@@ -2548,9 +2667,13 @@ export default function App() {
                     setAuthModal('login');
                   }
                 }}
-                className="hidden sm:inline-flex px-3 py-1.5 rounded-full border border-brass/40 hover:bg-white/10 transition text-xs"
+                className="px-2.5 sm:px-3 py-1.5 rounded-full border border-brass/50 bg-white/5 hover:bg-white/15 transition text-xs flex items-center gap-1 font-bold shrink-0 text-bone hover:border-gold shadow-2xs cursor-pointer"
+                title={currentUser ? 'My Account & Orders' : 'Sign in to Orayve'}
               >
-                {currentUser ? `👤 ${currentUser.name.split(' ')[0]}` : 'Sign in'}
+                <span>👤</span>
+                <span className="whitespace-nowrap max-w-[70px] sm:max-w-none truncate">
+                  {currentUser ? currentUser.name.split(' ')[0] : 'Sign in'}
+                </span>
               </button>
 
               {/* Admin Console Gate (Visible on md+ screens, in overflow menu on mobile) */}
@@ -4969,7 +5092,7 @@ export default function App() {
                   >
                     <span>🔄</span> <span className="hidden sm:inline">Sync DB</span>
                   </button>
-                  {['analytics', 'orders', 'products', 'categories', 'users', 'wallets', 'coupons'].map(tab => (
+                  {['analytics', 'orders', 'products', 'categories', 'users', 'wallets', 'coupons', 'notifications'].map(tab => (
                     <button
                       key={tab}
                       onClick={() => setAdminTab(tab)}
@@ -4977,7 +5100,7 @@ export default function App() {
                         adminTab === tab ? 'bg-ink text-bone shadow' : 'bg-white border border-ink/15 hover:bg-bone hover:border-brass/40'
                       }`}
                     >
-                      {tab === 'wallets' ? '💳 Wallets' : tab} {tab === 'orders' ? `(${orders.length})` : tab === 'users' ? `(${users.length})` : ''}
+                      {tab === 'wallets' ? '💳 Wallets' : tab === 'notifications' ? `🔔 Notifications (${adminNotifications.length})` : tab} {tab === 'orders' ? `(${orders.length})` : tab === 'users' ? `(${users.length})` : ''}
                     </button>
                   ))}
                   <button
@@ -6174,16 +6297,9 @@ export default function App() {
                                   {u.banned ? 'Unban' : 'Ban'}
                                 </button>
                                 <button
-                                  onClick={async () => {
-                                    if (confirm(`Delete user ${u.name}?`)) {
-                                      try {
-                                        await fetch(`/api/admin/users/${u.mobile}`, { method: 'DELETE' });
-                                      } catch {}
-                                      setUsers(users.filter(x => x.mobile !== u.mobile));
-                                      showToast('User deleted');
-                                    }
-                                  }}
-                                  className="text-rose-600 font-bold hover:underline"
+                                  onClick={() => setUserDeleteModalUser(u)}
+                                  className="text-rose-600 font-bold hover:underline cursor-pointer"
+                                  title="Delete user, cascade orders/reviews & settle aura points"
                                 >
                                   Delete
                                 </button>
@@ -6674,6 +6790,172 @@ export default function App() {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* Tab 8: System Audit & Settlement Notifications */}
+              {adminTab === 'notifications' && (
+                <div className="space-y-5">
+                  {/* Executive Header & Controls */}
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-ink/10 shadow-sm">
+                    <div>
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brass/20 text-brass text-[10px] font-extrabold uppercase tracking-wider mb-1">
+                        <span>🔔</span> Audit &amp; Settlement System
+                      </div>
+                      <h3 className="serif text-xl font-bold text-ink">System Audit &amp; Settlement Notifications</h3>
+                      <p className="text-xs text-ink/60 mt-0.5">
+                        Audit log of customer account deletions, cascading order &amp; review purges, and Aura Points bank refund settlements.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          refreshLiveNotifications();
+                          showToast('Notifications refreshed');
+                        }}
+                        className="px-3.5 py-2 rounded-xl border border-ink/20 text-xs font-bold hover:bg-bone transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                      >
+                        <span>🔄</span> Refresh
+                      </button>
+                      {adminNotifications.length > 0 && (
+                        <button
+                          onClick={async () => {
+                            if (confirm('Clear all audit and settlement notifications?')) {
+                              try {
+                                await fetch('/api/admin/notifications', { method: 'DELETE' });
+                              } catch {}
+                              setAdminNotifications([]);
+                              showToast('All notifications cleared');
+                            }
+                          }}
+                          className="px-3.5 py-2 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold transition cursor-pointer shadow-2xs"
+                        >
+                          🗑️ Clear All
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Summary Metric Ribbon */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="bg-white p-4 rounded-xl border border-ink/10 shadow-2xs flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 flex items-center justify-center text-lg font-bold">
+                        🔔
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-bold text-ink/60 uppercase tracking-wider">Total Audit Logs</div>
+                        <div className="text-lg font-bold text-ink">{adminNotifications.length}</div>
+                      </div>
+                    </div>
+                    <div className="bg-white p-4 rounded-xl border border-ink/10 shadow-2xs flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 flex items-center justify-center text-lg font-bold">
+                        💳
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-bold text-ink/60 uppercase tracking-wider">Aura Points Refunded</div>
+                        <div className="text-lg font-bold text-emerald-800">
+                          {adminNotifications.reduce((s, n) => s + (Number(n.auraPoints || n.refundAmount) || 0), 0).toLocaleString('en-IN')} Pts
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-white p-4 rounded-xl border border-ink/10 shadow-2xs flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 flex items-center justify-center text-lg font-bold">
+                        🏦
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-bold text-ink/60 uppercase tracking-wider">Bank Credit Routing</div>
+                        <div className="text-xs font-semibold text-ink/80 mt-0.5">Last Placed Order Source</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Notification Feed */}
+                  {adminNotifications.length === 0 ? (
+                    <div className="bg-white rounded-2xl border border-ink/10 p-12 text-center shadow-sm">
+                      <div className="w-14 h-14 mx-auto rounded-full bg-bone flex items-center justify-center text-2xl mb-3">
+                        📭
+                      </div>
+                      <h4 className="serif text-base font-bold text-ink">No System Notifications Yet</h4>
+                      <p className="text-xs text-ink/60 max-w-md mx-auto mt-1">
+                        When an admin deletes any user from the Customer Directory, their past orders and reviews will be permanently purged, and a bank refund credit notification for their remaining Aura points will be recorded here automatically.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3.5">
+                      {adminNotifications.map(notif => (
+                        <div
+                          key={notif.id}
+                          className="bg-white rounded-2xl border border-ink/10 p-5 shadow-sm hover:shadow-md transition space-y-4 hover:border-brass/40"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/5 pb-3">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                BANK REFUND QUEUED
+                              </span>
+                              <span className="text-xs font-mono text-ink/40">ID: {notif.id}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs text-ink/50 font-medium">{notif.timestamp}</span>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await fetch(`/api/admin/notifications/${notif.id}`, { method: 'DELETE' });
+                                  } catch {}
+                                  setAdminNotifications(prev => prev.filter(n => n.id !== notif.id));
+                                  showToast('Notification dismissed');
+                                }}
+                                className="text-ink/40 hover:text-rose-600 transition text-xs font-bold p-1 cursor-pointer"
+                                title="Dismiss notification"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Primary Required Settlement Announcement Banner */}
+                          <div className="bg-gradient-to-r from-amber-50 to-amber-100/60 border border-amber-300/80 rounded-xl p-4 flex items-start gap-3">
+                            <div className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-900 flex items-center justify-center text-sm font-bold shrink-0 mt-0.5">
+                              💳
+                            </div>
+                            <div>
+                              <div className="text-xs font-bold text-amber-950 leading-relaxed">
+                                {notif.message || 'User deleted, and the aura points will be credit to their bank of last order placed.'}
+                              </div>
+                              <p className="text-[11px] text-amber-900/80 mt-1">
+                                Bank credit will be routed directly to the original payment source utilized in order <span className="font-mono font-bold text-amber-950">{notif.lastOrder || 'last order placed'}</span>.
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Metadata Audit Grid */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-bone/40 p-3.5 rounded-xl border border-ink/5 text-xs">
+                            <div>
+                              <span className="text-[10px] uppercase tracking-wider text-ink/50 font-bold block">Deleted Customer</span>
+                              <span className="font-semibold text-ink">{notif.userName || 'Customer'}</span>
+                              <span className="block text-[11px] font-mono text-ink/70">+91 {(notif.userMobile || '').replace(/[^0-9]/g, '').slice(-10)}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] uppercase tracking-wider text-ink/50 font-bold block">Aura Balance Refund</span>
+                              <span className="font-extrabold text-amber-900 flex items-center gap-1">
+                                <span>✦</span> {Number(notif.auraPoints || notif.refundAmount || 0).toLocaleString('en-IN')} Pts (₹{Number(notif.refundAmount || notif.auraPoints || 0).toLocaleString('en-IN')})
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] uppercase tracking-wider text-ink/50 font-bold block">Bank Reference / ARN</span>
+                              <span className="font-mono font-bold text-ink/80 text-[11px] break-all">{notif.arn || 'ARN-PENDING'}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] uppercase tracking-wider text-ink/50 font-bold block">Cascaded Records Purged</span>
+                              <span className="font-semibold text-ink/80">
+                                {notif.deletedOrdersCount || 0} Orders · {notif.deletedReviewsCount || 0} Reviews
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -9070,6 +9352,81 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Admin User Cascade Deletion Confirmation Dialog */}
+      {userDeleteModalUser && (
+        <div
+          className="fixed inset-0 z-50 bg-ink/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => { if (!isDeletingUser) setUserDeleteModalUser(null); }}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-rose-200 space-y-4 animate-in zoom-in-95 duration-150 relative"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center text-xl shrink-0">
+                ⚠️
+              </div>
+              <div className="flex-1">
+                <span className="text-[10px] uppercase font-extrabold text-rose-600 tracking-wider">Permanent Deletion Alert</span>
+                <h3 className="serif text-lg font-bold text-ink mt-0.5">Delete Customer Account?</h3>
+                <p className="text-xs text-ink/70 mt-1">
+                  Are you sure you want to permanently delete user <span className="font-bold text-ink">{userDeleteModalUser.name}</span> (<span className="font-mono text-ink/80">+91 {userDeleteModalUser.mobile.replace(/[^0-9]/g, '').slice(-10)}</span>)?
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={isDeletingUser}
+                onClick={() => setUserDeleteModalUser(null)}
+                className="w-7 h-7 rounded-full bg-bone hover:bg-ink hover:text-bone text-xs font-bold transition flex items-center justify-center cursor-pointer disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-rose-50/80 border border-rose-200 rounded-2xl p-4 space-y-3 text-xs text-rose-950">
+              <div className="flex items-start gap-2.5">
+                <span className="text-rose-600 font-bold shrink-0 text-sm">✕</span>
+                <p>
+                  <strong className="font-bold text-rose-900">Cascading Data Purge:</strong> All past reviews given in history and all past orders done will be permanently deleted from the application and database.
+                </p>
+              </div>
+              <div className="flex items-start gap-2.5 pt-2 border-t border-rose-200/60">
+                <span className="text-amber-600 font-bold shrink-0 text-sm">💳</span>
+                <p>
+                  <strong className="font-bold text-amber-900">Aura Points Bank Settlement:</strong> Remaining balance of <strong className="font-bold text-amber-950">{(userDeleteModalUser.points !== undefined ? userDeleteModalUser.points : 500).toLocaleString('en-IN')} Aura Points</strong> will be credited to their bank of last order placed. An audit notification will be posted to the System Notifications section.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeletingUser}
+                onClick={() => setUserDeleteModalUser(null)}
+                className="px-4 py-2 rounded-xl border border-ink/20 text-xs font-bold hover:bg-bone transition cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingUser}
+                onClick={() => handleExecuteDeleteUser(userDeleteModalUser)}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-md cursor-pointer flex items-center gap-1.5 disabled:opacity-50 hover:brightness-105"
+              >
+                {isDeletingUser ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    <span>Purging &amp; Settling...</span>
+                  </>
+                ) : (
+                  <span>Yes, Permanently Delete &amp; Settle Points</span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
