@@ -32,3 +32,5 @@ Thumbs.db
 # OS Temporary
 *.tmp
 *.log
+.netlify/
+*.zip
