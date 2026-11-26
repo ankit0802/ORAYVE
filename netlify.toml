@@ -1,9 +1,8 @@
 # Netlify Configuration for ORAYVE Luxury E-Commerce Platform
 
 [build]
-  base = "orayve-frontend"
   publish = "dist"
-  command = "npm run build"
+  command = "node build.js"
 
 [build.environment]
   NODE_VERSION = "22"

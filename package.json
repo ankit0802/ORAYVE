@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "postinstall": "cd orayve-backend && npm install",
-    "build": "npm --prefix orayve-frontend install && npm --prefix orayve-frontend run build && cd orayve-backend && npm install",
+    "build": "node build.js",
     "start": "node orayve-backend/server.js"
   },
   "dependencies": {
