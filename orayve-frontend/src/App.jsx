@@ -4379,12 +4379,18 @@ export default function App() {
                                   <span>Subtotal</span>
                                 </div>
 
-                                {(o.items || []).map((item, idx) => {
-                                  const q = Number(item.qty || item.q || 1);
-                                  const p = Number(item.price || 0);
-                                  const matchedProd = products.find(prod => prod.id === item.pid || prod.title.toLowerCase() === (item.title || '').toLowerCase());
-                                  const matchedVar = matchedProd?.v?.find(v => v.id === item.vid || v.color?.toLowerCase() === (item.color || '').toLowerCase()) || matchedProd?.v?.[0];
-                                  const itemPhoto = item.img || (matchedVar?.photo ? imgUrl(matchedVar) : null) || (matchedProd?.imgs?.[0]) || FB;
+                                  {(o.items || []).map((item, idx) => {
+                                    const q = Number(item.qty || item.q || 1);
+                                    const p = Number(item.price || 0);
+                                    const cleanTitle = (item.title || '').trim().toLowerCase();
+                                    const matchedProd = products.find(prod => 
+                                      (item.pid && prod.id === item.pid) ||
+                                      prod.title.trim().toLowerCase() === cleanTitle ||
+                                      (cleanTitle && prod.title.toLowerCase().includes(cleanTitle)) ||
+                                      (cleanTitle && cleanTitle.includes(prod.title.toLowerCase()))
+                                    ) || products.find(prod => prod.cat === item.cat) || products[0];
+                                    const matchedVar = matchedProd?.v?.find(v => v.id === item.vid || v.color?.toLowerCase() === (item.color || '').toLowerCase()) || matchedProd?.v?.[0];
+                                    const itemPhoto = item.img || (matchedVar?.photo ? imgUrl(matchedVar) : null) || (matchedProd?.imgs?.[0]) || FB;
 
                                   const userPhoneClean = (currentUser?.mobile || currentUser?.phone || '').replace(/\D/g, '').slice(-10);
                                   const pId = matchedProd?.id || item.pid;
@@ -4959,24 +4965,71 @@ export default function App() {
                                 </div>
                               )}
 
-                              {/* Line Items */}
+                              {/* Line Items with Luxury Thumbnails & Product Links */}
                               <div className="space-y-2 pt-1">
-                                <p className="text-[10px] uppercase font-bold text-ink/50 tracking-wider">Order Items</p>
-                                <div className="divide-y divide-ink/5">
+                                <div className="flex items-center justify-between text-[10px] uppercase font-bold text-ink/50 tracking-wider">
+                                  <span>Order Items ({o.items?.length || 0})</span>
+                                  <span>Subtotal</span>
+                                </div>
+                                <div className="space-y-2">
                                   {(o.items || []).map((item, idx) => {
                                     const qty = Number(item.qty || item.q || 1);
                                     const price = Number(item.price || 0);
+                                    const cleanTitle = (item.title || '').trim().toLowerCase();
+                                    const matchedProd = products.find(prod => 
+                                      (item.pid && prod.id === item.pid) ||
+                                      prod.title.trim().toLowerCase() === cleanTitle ||
+                                      (cleanTitle && prod.title.toLowerCase().includes(cleanTitle)) ||
+                                      (cleanTitle && cleanTitle.includes(prod.title.toLowerCase()))
+                                    ) || products.find(p => p.cat === item.cat) || products[0];
+                                    const matchedVar = matchedProd?.v?.find(v => v.id === item.vid || v.color?.toLowerCase() === (item.color || '').toLowerCase()) || matchedProd?.v?.[0];
+                                    const itemPhoto = item.img || (matchedVar?.photo ? imgUrl(matchedVar) : null) || (matchedProd?.imgs?.[0]) || FB;
+
                                     return (
-                                      <div key={idx} className="py-1.5 flex justify-between items-center text-xs">
-                                        <div>
-                                          <span className="font-semibold">{item.title}</span>
-                                          <span className="text-ink/60 text-[11px] ml-2">
-                                            ({item.color || 'Standard'}) · SKU: {item.sku || 'N/A'} · HSN: {item.hsn || '71171990'}
-                                          </span>
+                                      <div key={idx} className="p-2.5 rounded-xl bg-bone/30 border border-ink/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-brass/40 transition">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                          {/* Small Product Thumbnail */}
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (matchedProd) openProduct(matchedProd.id);
+                                            }}
+                                            title={matchedProd ? `Open ${matchedProd.title} store page` : item.title}
+                                            className="w-12 h-12 rounded-lg overflow-hidden border border-ink/10 bg-white shrink-0 cursor-pointer hover:scale-105 transition shadow-2xs group"
+                                          >
+                                            <img
+                                              src={itemPhoto}
+                                              alt={item.title}
+                                              className="w-full h-full object-cover group-hover:opacity-90"
+                                              onError={e => { e.currentTarget.src = FB; }}
+                                            />
+                                          </button>
+
+                                          <div className="min-w-0">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                if (matchedProd) openProduct(matchedProd.id);
+                                              }}
+                                              className="font-bold text-xs text-ink hover:text-amber-800 text-left line-clamp-1 block transition cursor-pointer"
+                                            >
+                                              {item.title}
+                                            </button>
+                                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[11px] text-ink/60">
+                                              <span className="px-1.5 py-0.2 rounded bg-bone border border-ink/10 font-medium">
+                                                {item.color || 'Standard'}
+                                              </span>
+                                              <span>·</span>
+                                              <span>SKU: {item.sku || 'N/A'}</span>
+                                              <span>·</span>
+                                              <span>HSN: {item.hsn || '71171990'}</span>
+                                            </div>
+                                          </div>
                                         </div>
-                                        <div className="text-right">
-                                          <span className="text-ink/70 mr-3">{inr(price)} × {qty}</span>
-                                          <b className="font-bold">{inr(price * qty)}</b>
+
+                                        <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-1 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-ink/5">
+                                          <b className="text-xs font-bold text-ink">{inr(price * qty)}</b>
+                                          <span className="text-[10px] text-ink/60">{inr(price)} × {qty}</span>
                                         </div>
                                       </div>
                                     );
