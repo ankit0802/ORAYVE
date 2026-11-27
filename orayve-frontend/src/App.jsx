@@ -175,14 +175,17 @@ export const computeOrderGstDetails = (order) => {
     rateBreakdown[k].totalGst = Math.round(rateBreakdown[k].totalGst * 100) / 100;
   });
 
+  const auraPoints = Number(order.auraPoints || 0);
+
   return {
     subtotalGross: orderSub,
     discount: orderDisc,
+    auraPoints,
     taxableSubtotal: Math.round(totalTaxable * 100) / 100,
     totalCgst: Math.round(totalCgst * 100) / 100,
     totalSgst: Math.round(totalSgst * 100) / 100,
     totalGst: Math.round(totalGst * 100) / 100,
-    grandTotal: Number(order.total || (orderSub - orderDisc)),
+    grandTotal: Number(order.total !== undefined ? order.total : Math.max(0, orderSub - orderDisc - auraPoints)),
     rateBreakdown,
     itemDetails
   };
@@ -619,6 +622,8 @@ export default function App() {
   const [selectedAddrId, setSelectedAddrId] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('UPI');
   const [lastPlacedOrder, setLastPlacedOrder] = useState(null);
+  const [applyAuraPoints, setApplyAuraPoints] = useState(false);
+  const [redeemedAuraPoints, setRedeemedAuraPoints] = useState(0);
 
   // Modals & Popovers
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1299,6 +1304,26 @@ export default function App() {
     };
   }, [cart, products, appliedCoupon, coupons]);
 
+  // Maximum Aura points redeemable for checkout
+  // Rule 1: Up to 80% of wallet points
+  // Rule 2: Cannot pay 100% with points (minimum 30% cash/card/UPI payment required, i.e. max 70% of bill can be covered by points)
+  const maxAuraRedeemable = useMemo(() => {
+    if (!currentUser || walletPoints <= 0) return 0;
+    const netBill = Math.max(0, cartSummary.sub - cartSummary.disc);
+    const maxFromWallet = Math.floor(walletPoints * 0.80);
+    const maxFromBill = Math.max(0, Math.floor(netBill * 0.70));
+    return Math.min(maxFromWallet, maxFromBill);
+  }, [currentUser, walletPoints, cartSummary.sub, cartSummary.disc]);
+
+  const effectiveAuraDiscount = useMemo(() => {
+    if (!applyAuraPoints) return 0;
+    return Math.min(redeemedAuraPoints, maxAuraRedeemable);
+  }, [applyAuraPoints, redeemedAuraPoints, maxAuraRedeemable]);
+
+  const checkoutPayableTotal = useMemo(() => {
+    return Math.max(0, cartSummary.total - effectiveAuraDiscount);
+  }, [cartSummary.total, effectiveAuraDiscount]);
+
   // ----------------------------------------------------------------------
   // Product Creation & Editing Helpers (N Images & Dynamic N Variants)
   // ----------------------------------------------------------------------
@@ -1886,6 +1911,25 @@ export default function App() {
       ]);
     }
 
+    // If order used Aura points, restore them upon full cancellation!
+    const spentAuraOnCancel = Number(cancelModalOrder.auraPoints || 0);
+    if (spentAuraOnCancel > 0) {
+      setWalletPoints(prev => prev + spentAuraOnCancel);
+      setWalletTransactions(prev => [
+        {
+          id: 'tx_aura_refund_' + Date.now(),
+          type: 'CREDIT',
+          points: spentAuraOnCancel,
+          amount: spentAuraOnCancel,
+          orderId: cancelModalOrder.id,
+          description: `Restoration of ${spentAuraOnCancel} Aura Points from cancelled Order #${cancelModalOrder.id}`,
+          status: 'SUCCESS',
+          date: 'Just now'
+        },
+        ...prev
+      ]);
+    }
+
     try {
       await fetch(`/api/orders/${cancelModalOrder.id}/cancel`, {
         method: 'POST',
@@ -2003,12 +2047,37 @@ export default function App() {
       console.warn('Backend return sync warning:', err);
     }
 
+    const isAllItems = returnSelectedItems.length >= returnModalOrder.items.length;
+    const spentAuraOnReturn = Number(returnModalOrder.auraPoints || 0);
+
+    // If all items returned and wallet refund selected: restore Aura points!
+    if (!isReplace && isAllItems && spentAuraOnReturn > 0) {
+      setWalletPoints(prev => prev + spentAuraOnReturn);
+      setWalletTransactions(prev => [
+        {
+          id: 'tx_aura_return_' + Date.now(),
+          type: 'CREDIT',
+          points: spentAuraOnReturn,
+          amount: spentAuraOnReturn,
+          orderId: returnModalOrder.id,
+          description: `Restoration of ${spentAuraOnReturn} Aura Points from full return of Order #${returnModalOrder.id}`,
+          status: 'SUCCESS',
+          date: 'Just now'
+        },
+        ...prev
+      ]);
+    }
+
     setIsSubmittingReturn(false);
     setReturnModalOrder(null);
     if (isReplace) {
       showToast('Replacement request submitted. Pickup assignment in process.');
     } else if (isWallet) {
-      showToast(`Return submitted. ₹${returnModalOrder.total} will be refunded instantly to your Aura Wallet upon pickup!`);
+      showToast(
+        isAllItems && spentAuraOnReturn > 0
+          ? `Full return submitted! ₹${returnModalOrder.total} and ${spentAuraOnReturn} Aura Points refunded to your wallet!`
+          : `Return submitted. ₹${returnModalOrder.total} will be refunded to your Aura Wallet upon pickup!`
+      );
     } else {
       showToast('Return submitted. Refund will be credited to original payment source within 3-5 business days.');
     }
@@ -2071,7 +2140,8 @@ export default function App() {
     }));
 
     try {
-      await fetch(`/api/admin/orders/${orderId}/status`, {
+      const targetOrder = orders.find(o => o.id === orderId);
+      const res = await fetch(`/api/admin/orders/${orderId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'x-admin-role': adminRole },
         body: JSON.stringify({
@@ -2080,6 +2150,18 @@ export default function App() {
           returnInfo: customReturnInfo
         })
       });
+      const data = await res.json().catch(() => ({}));
+      if (data && data.restoredPoints > 0 && targetOrder) {
+        const orderPhone = (targetOrder.mobile || targetOrder.addr?.phone || '').replace(/\D/g, '').slice(-10);
+        if (orderPhone) {
+          setUsers(prev => prev.map(u => {
+            if ((u.mobile || u.phone || '').replace(/\D/g, '').slice(-10) === orderPhone) {
+              return { ...u, points: (Number(u.points) || 0) + data.restoredPoints };
+            }
+            return u;
+          }));
+        }
+      }
       showToast(`Order status updated to ${STAT[nextStatus] || 'Updated'}`);
     } catch (err) {
       showToast(`Order status updated to ${STAT[nextStatus] || 'Updated'}`);
@@ -2262,6 +2344,9 @@ export default function App() {
     const invId = `INV-${year}-${rand}`;
     const userMobile = currentUser?.mobile || addr.mobile || addr.phone || addr.m || '9999999999';
 
+    const auraPtsUsed = effectiveAuraDiscount;
+    const finalTotalAmount = checkoutPayableTotal;
+
     const orderData = {
       mobile: userMobile,
       id: orderId,
@@ -2272,7 +2357,8 @@ export default function App() {
       coupon: appliedCoupon,
       sub: cartSummary.sub,
       disc: cartSummary.disc,
-      total: cartSummary.total,
+      auraPoints: auraPtsUsed,
+      total: finalTotalAmount,
       addr,
       items: cartSummary.items.map(i => ({
         title: i.p.title,
@@ -2287,6 +2373,26 @@ export default function App() {
       }))
     };
     orderData.gst = computeOrderGstDetails(orderData);
+
+    // If Aura points were redeemed, deduct from user passbook immediately
+    if (auraPtsUsed > 0) {
+      setWalletPoints(prev => Math.max(0, prev - auraPtsUsed));
+      setWalletTransactions(prev => [
+        {
+          id: 'tx_redeem_' + Date.now(),
+          type: 'DEBIT',
+          points: auraPtsUsed,
+          amount: auraPtsUsed,
+          orderId: orderId,
+          description: `Redeemed ${auraPtsUsed} Aura Points for Order #${orderId}`,
+          status: 'SUCCESS',
+          date: 'Just now'
+        },
+        ...prev
+      ]);
+      setApplyAuraPoints(false);
+      setRedeemedAuraPoints(0);
+    }
 
     // Decrement stock client-side immediately
     setProducts(prev => prev.map(p => {
@@ -2312,7 +2418,8 @@ export default function App() {
           addr,
           items: orderData.items,
           pay: paymentMethod,
-          coupon: appliedCoupon
+          coupon: appliedCoupon,
+          auraPoints: auraPtsUsed
         })
       });
       const data = await res.json();
@@ -4458,17 +4565,136 @@ export default function App() {
                 </div>
 
               {/* Order Summary box */}
-              <div className="bg-white p-5 rounded-xl border border-ink/10 h-fit space-y-3 shadow-sm text-xs">
-                <h3 className="serif text-lg font-bold">Order Summary</h3>
-                <div className="space-y-1.5 border-b border-ink/10 pb-3">
+              <div className="bg-white p-5 rounded-2xl border border-ink/15 h-fit space-y-3.5 shadow-sm text-xs">
+                <div className="flex justify-between items-center pb-2 border-b border-ink/10">
+                  <h3 className="serif text-lg font-bold text-ink">Order Summary</h3>
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-brass">
+                    {cartSummary.count} {cartSummary.count === 1 ? 'Item' : 'Items'}
+                  </span>
+                </div>
+
+                {/* Aura Wallet Passbook Redemption Module */}
+                {currentUser && walletPoints > 0 ? (
+                  <div className="p-3.5 rounded-xl bg-gradient-to-br from-amber-50/90 via-amber-100/40 to-bone border border-brass/40 shadow-xs space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-base">✦</span>
+                        <span className="font-extrabold text-xs text-ink tracking-wide">Aura Wallet Points</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-amber-900 bg-amber-200/80 px-2 py-0.5 rounded-full border border-amber-300">
+                        {walletPoints.toLocaleString('en-IN')} Pts Available
+                      </span>
+                    </div>
+
+                    {maxAuraRedeemable > 0 ? (
+                      <div className="space-y-2">
+                        <label className="flex items-center justify-between p-2 rounded-lg bg-white/80 border border-brass/30 cursor-pointer hover:bg-white transition">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={applyAuraPoints}
+                              onChange={e => {
+                                const isChecked = e.target.checked;
+                                setApplyAuraPoints(isChecked);
+                                if (isChecked) setRedeemedAuraPoints(maxAuraRedeemable);
+                                else setRedeemedAuraPoints(0);
+                              }}
+                              className="rounded text-brass focus:ring-brass cursor-pointer"
+                            />
+                            <span className="font-bold text-xs text-ink">
+                              {applyAuraPoints ? 'Redeeming Aura Points' : 'Apply Aura Points to Bill'}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-extrabold text-amber-800">
+                            Save up to {inr(maxAuraRedeemable)}
+                          </span>
+                        </label>
+
+                        {applyAuraPoints && (
+                          <div className="space-y-2 pt-1 border-t border-brass/20 text-[11px] animate-in fade-in duration-200">
+                            <div className="flex items-center justify-between">
+                              <span className="text-ink/80 font-medium">Points to Redeem (1 Pt = ₹1):</span>
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max={maxAuraRedeemable}
+                                  value={redeemedAuraPoints}
+                                  onChange={e => {
+                                    const val = Math.max(0, Math.min(maxAuraRedeemable, parseInt(e.target.value) || 0));
+                                    setRedeemedAuraPoints(val);
+                                  }}
+                                  className="w-20 text-center font-bold text-xs py-1 px-1.5 rounded-lg border border-brass bg-white text-ink"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setRedeemedAuraPoints(maxAuraRedeemable)}
+                                  className="text-[10px] font-extrabold text-brass hover:text-ink px-2 py-1 rounded bg-white border border-brass/40 hover:bg-brass/20 transition cursor-pointer"
+                                >
+                                  Max
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Range slider for smooth points adjustment */}
+                            <input
+                              type="range"
+                              min="1"
+                              max={maxAuraRedeemable}
+                              value={redeemedAuraPoints}
+                              onChange={e => setRedeemedAuraPoints(parseInt(e.target.value))}
+                              className="w-full accent-amber-600 cursor-pointer"
+                            />
+
+                            {/* Transparent rules and caps */}
+                            <div className="grid grid-cols-2 gap-1.5 text-[10px] pt-1">
+                              <div className="p-1.5 bg-white/90 rounded-lg border border-black/5">
+                                <p className="font-bold text-ink">✦ 80% Wallet Cap</p>
+                                <p className="text-ink/60">Max {Math.floor(walletPoints * 0.80)} Pts usable</p>
+                              </div>
+                              <div className="p-1.5 bg-white/90 rounded-lg border border-black/5">
+                                <p className="font-bold text-ink">✦ Min 30% Payment</p>
+                                <p className="text-ink/60">Non-zero bill rule</p>
+                              </div>
+                            </div>
+                            <p className="text-[10px] text-emerald-800 font-semibold pt-0.5">
+                              ✓ Remaining passbook balance after order: <b>{(walletPoints - effectiveAuraDiscount).toLocaleString('en-IN')} Pts</b>
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-ink/60">
+                        Order total requires at least ₹100 net balance before Aura points redemption.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-xl bg-bone/70 border border-ink/10 text-[11px] text-ink/60 flex items-center gap-2">
+                    <span>✦</span>
+                    <span>Sign in to redeem your Aura Club wallet points on this order.</span>
+                  </div>
+                )}
+
+                {/* Financial Summary Lines */}
+                <div className="space-y-1.5 border-b border-ink/10 pb-3 pt-1">
                   <div className="flex justify-between">
-                    <span className="text-ink/75">Subtotal ({cartSummary.count} {cartSummary.count === 1 ? 'item' : 'items'})</span>
+                    <span className="text-ink/75">Subtotal (Gross Value)</span>
                     <span className="font-mono font-semibold">{inr(cartSummary.sub)}</span>
                   </div>
                   {cartSummary.disc > 0 && (
                     <div className="flex justify-between text-emerald-700 font-semibold">
                       <span>Coupon {appliedCoupon}</span>
                       <span className="font-mono">−{inr(cartSummary.disc)}</span>
+                    </div>
+                  )}
+                  {effectiveAuraDiscount > 0 && (
+                    <div className="flex justify-between text-amber-800 font-extrabold bg-amber-50 p-1.5 rounded-lg border border-amber-200">
+                      <span className="flex items-center gap-1">
+                        <span>✦</span>
+                        <span>Aura Points Applied ({effectiveAuraDiscount} Pts):</span>
+                      </span>
+                      <span className="font-mono">−{inr(effectiveAuraDiscount)}</span>
                     </div>
                   )}
                   <div className="flex justify-between text-[11px] text-ink/70 pt-1 border-t border-ink/5">
@@ -4484,9 +4710,10 @@ export default function App() {
                     <span className="text-emerald-700 font-semibold">FREE</span>
                   </div>
                 </div>
+
                 <div className="flex justify-between font-bold text-base text-ink">
                   <span>Total Payable</span>
-                  <span className="font-mono font-black">{inr(cartSummary.total)}</span>
+                  <span className="font-mono font-black">{inr(checkoutPayableTotal)}</span>
                 </div>
                 <p className="text-[10px] text-ink/50 leading-relaxed">
                   ✓ Official GST Tax Invoice included. All taxes &amp; duties calculated per Indian CBIC guidelines.
@@ -4496,9 +4723,9 @@ export default function App() {
                     if (!selectedAddrId) return showToast('Select or add a delivery address', true);
                     setCheckoutStep(2);
                   }}
-                  className="w-full py-3 rounded-xl bg-ink text-bone hover:bg-brass hover:text-ink font-semibold text-sm transition shadow"
+                  className="w-full py-3.5 rounded-xl bg-ink text-bone hover:bg-brass hover:text-ink font-bold text-sm transition shadow-lg cursor-pointer uppercase tracking-wider"
                 >
-                  Continue to Payment
+                  Continue to Payment · {inr(checkoutPayableTotal)}
                 </button>
               </div>
             </div>
@@ -4510,7 +4737,12 @@ export default function App() {
             <div className="max-w-xl mx-auto bg-white rounded-2xl border border-ink/15 overflow-hidden shadow-lg">
               <div className="bg-ink text-bone p-5">
                 <p className="text-[10px] uppercase tracking-widest text-gold">Secure Checkout (Demo)</p>
-                <p className="text-2xl font-bold">{inr(cartSummary.total)}</p>
+                <p className="text-2xl font-bold">{inr(checkoutPayableTotal)}</p>
+                {effectiveAuraDiscount > 0 && (
+                  <span className="inline-block mt-1 text-[11px] font-bold text-amber-300 bg-white/10 px-2.5 py-0.5 rounded-full border border-amber-300/30">
+                    ✦ Includes −{inr(effectiveAuraDiscount)} from {effectiveAuraDiscount} Aura Points
+                  </span>
+                )}
               </div>
 
               <div className="p-6 space-y-3">
@@ -4534,15 +4766,15 @@ export default function App() {
                 <div className="pt-3 flex gap-3">
                   <button
                     onClick={() => setCheckoutStep(1)}
-                    className="px-4 py-3 rounded-xl border text-xs font-semibold hover:bg-bone transition"
+                    className="px-4 py-3 rounded-xl border text-xs font-semibold hover:bg-bone transition cursor-pointer"
                   >
                     Back
                   </button>
                   <button
                     onClick={handlePlaceOrder}
-                    className="flex-1 py-3 rounded-xl bg-ink text-bone hover:bg-brass hover:text-ink font-bold text-sm transition shadow"
+                    className="flex-1 py-3 rounded-xl bg-ink text-bone hover:bg-brass hover:text-ink font-bold text-sm transition shadow-lg cursor-pointer uppercase tracking-wider"
                   >
-                    Place Order · {inr(cartSummary.total)}
+                    Place Order · {inr(checkoutPayableTotal)}
                   </button>
                 </div>
               </div>
@@ -4715,6 +4947,11 @@ export default function App() {
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-2.5">
+                                  {Number(o.auraPoints || 0) > 0 && (
+                                    <span className="text-[11px] font-bold text-brass bg-brass/10 px-2 py-0.5 rounded-full border border-brass/30 inline-flex items-center gap-1 shadow-2xs">
+                                      <span>✦</span> -{o.auraPoints} Pts (-{inr(o.auraPoints)})
+                                    </span>
+                                  )}
                                   <b className="text-base text-ink mr-1">{inr(o.total)}</b>
                                   <button
                                     onClick={() => setInvoiceModalOrder(o)}
@@ -5689,6 +5926,11 @@ export default function App() {
                                   {o.coupon && (
                                     <p className="text-[11px] text-brass font-bold mt-1">🎟️ Coupon Applied: {o.coupon}</p>
                                   )}
+                                  {Number(o.auraPoints || 0) > 0 && (
+                                    <p className="text-[11px] text-brass font-bold mt-0.5 flex items-center gap-1">
+                                      <span>✦</span> Aura Points Redeemed: -{o.auraPoints} Pts (-{inr(o.auraPoints)})
+                                    </p>
+                                  )}
                                 </div>
                                 <div>
                                   <p className="text-[10px] uppercase font-bold text-ink/50 tracking-wider">Shipping Destination</p>
@@ -5920,10 +6162,16 @@ export default function App() {
                               </div>
 
                               {/* Pricing Breakdown */}
-                              <div className="pt-3 border-t border-ink/10 flex justify-between items-center text-xs">
-                                <span className="text-ink/60">
-                                  Subtotal: {inr(o.sub || o.total)} {o.disc > 0 ? `· Discount: -${inr(o.disc)}` : ''}
-                                </span>
+                              <div className="pt-3 border-t border-ink/10 flex flex-wrap justify-between items-center gap-2 text-xs">
+                                <div className="flex flex-wrap items-center gap-2 text-ink/60">
+                                  <span>Subtotal: {inr(o.sub || o.total)}</span>
+                                  {o.disc > 0 && <span className="text-emerald-700 font-medium">· Discount: -{inr(o.disc)}</span>}
+                                  {Number(o.auraPoints || 0) > 0 && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-brass/15 text-brass font-bold text-[11px] border border-brass/30">
+                                      <span>✦</span> Aura Points: -{o.auraPoints} Pts (-{inr(o.auraPoints)})
+                                    </span>
+                                  )}
+                                </div>
                                 <div className="text-right">
                                   <span className="text-ink/60 mr-2">Grand Total:</span>
                                   <b className="text-base text-brass font-bold">{inr(o.total)}</b>
@@ -8958,6 +9206,15 @@ export default function App() {
                         <span className="font-mono">−{inr(gst.discount)}</span>
                       </div>
                     )}
+                    {invoiceModalOrder.auraPoints > 0 && (
+                      <div className="flex justify-between text-xs text-amber-800 font-extrabold bg-amber-50 p-1 rounded-md border border-amber-200">
+                        <span className="flex items-center gap-1">
+                          <span>✦</span>
+                          <span>Aura Points Redeemed ({invoiceModalOrder.auraPoints} Pts):</span>
+                        </span>
+                        <span className="font-mono font-black">−{inr(invoiceModalOrder.auraPoints)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-xs pt-1 border-t border-ink/10">
                       <span className="text-ink/70">Total Taxable Value:</span>
                       <span className="font-mono font-semibold">{inr(gst.taxableSubtotal)}</span>
@@ -9547,6 +9804,18 @@ export default function App() {
                 </p>
               </div>
 
+              {cancelModalOrder.auraPoints > 0 && (
+                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-300 text-[11px] text-emerald-950 space-y-1">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <span>✦</span>
+                    <span>Aura Points Restoration:</span>
+                  </p>
+                  <p>
+                    Your <b>{cancelModalOrder.auraPoints} spent Aura Points</b> will be restored <b>in full</b> back to your Aura Wallet passbook upon cancellation.
+                  </p>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-ink/10">
                 <button
                   type="button"
@@ -9804,6 +10073,30 @@ export default function App() {
                       )}
                     </p>
                   </div>
+
+                  {/* Aura Points Refund Rule Notice (Full Return vs Partial Return) */}
+                  {returnModalOrder.auraPoints > 0 && returnModalType === 'RETURN' && (() => {
+                    const isAllItemsSelected = returnSelectedItems.length >= (returnModalOrder.items?.length || 1);
+                    return (
+                      <div className={`p-3 rounded-xl border text-[11px] leading-relaxed ${
+                        isAllItemsSelected
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                          : 'bg-amber-50 border-amber-300 text-amber-950'
+                      }`}>
+                        <p className="font-bold flex items-center gap-1.5">
+                          <span>{isAllItemsSelected ? '✦' : '⚠️'}</span>
+                          <span>{isAllItemsSelected ? 'Full Order Return: Aura Points Restored' : 'Partial Return Policy: Aura Points Forfeiture'}</span>
+                        </p>
+                        <p className="mt-0.5">
+                          {isAllItemsSelected ? (
+                            <>Since all products in this order are selected for return, your <b>{returnModalOrder.auraPoints} spent Aura Points</b> will be fully credited back to your Aura Wallet passbook upon return completion.</>
+                          ) : (
+                            <>You are returning only part of this order ({returnSelectedItems.length} of {returnModalOrder.items.length} items). Per Orayve policy, spent Aura Points (<b>{returnModalOrder.auraPoints} Pts</b>) are forfeited and <b>cannot be restored on partial returns</b>. To restore spent Aura Points, all items must be returned.</>
+                          )}
+                        </p>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

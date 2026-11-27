@@ -833,8 +833,8 @@ function numberToWordsServer(num) {
 }
 
 // POST /api/checkout/place-order
-app.post('/api/checkout/place-order', (req, res) => {
-  const { mobile, addr, items, pay, coupon } = req.body;
+app.post('/api/checkout/place-order', async (req, res) => {
+  const { mobile, addr, items, pay, coupon, auraPoints } = req.body;
   if (!items || !items.length || !addr) {
     return res.status(400).json({ success: false, message: 'Cart items and address required' });
   }
@@ -880,7 +880,35 @@ app.post('/api/checkout/place-order', (req, res) => {
     }
   }
 
-  const finalTotal = Math.max(0, subtotal - discount);
+  const netBeforeAura = Math.max(0, subtotal - discount);
+
+  // Aura Points Redemption Calculation & Rule Enforcement
+  // Rule 1: Max 80% of user's wallet points can be redeemed in one bill.
+  // Rule 2: Cannot pay 100% of bill with points (min 30% gateway payment required, i.e. max 70% of bill can be covered by points).
+  let actualAuraPoints = 0;
+  const requestedAura = Math.max(0, parseInt(auraPoints || 0));
+
+  if (requestedAura > 0) {
+    let userWalletBalance = 500;
+    if (pool && mobile) {
+      try {
+        const cleanMob = mobile.replace(/[^0-9]/g, '').slice(-10);
+        const wQ = await pool.query('SELECT balance_points FROM public.user_wallets WHERE user_mobile = $1', [cleanMob]);
+        if (wQ.rows.length) {
+          userWalletBalance = parseInt(wQ.rows[0].balance_points) || 0;
+        }
+      } catch (e) {
+        console.warn('[DB] Error checking wallet for checkout:', e.message);
+      }
+    }
+
+    const maxFromWallet = Math.floor(userWalletBalance * 0.80);
+    const maxFromBill = Math.max(0, Math.floor(netBeforeAura * 0.70));
+    const allowedLimit = Math.min(maxFromWallet, maxFromBill);
+    actualAuraPoints = Math.min(requestedAura, allowedLimit);
+  }
+
+  const finalTotal = Math.max(0, netBeforeAura - actualAuraPoints);
   const year = new Date().getFullYear();
   const randNum = Math.floor(100000 + Math.random() * 900000);
   const orderId = `ORD-${year}-${randNum}`;
@@ -911,6 +939,19 @@ app.post('/api/checkout/place-order', (req, res) => {
     }
   }
 
+  // Deduct Aura points from user's live wallet if applied
+  if (actualAuraPoints > 0) {
+    await debitWallet(mobile, actualAuraPoints, orderId, `Aura Points redemption for Order #${orderId}`);
+    ADMIN_NOTIFICATIONS.unshift({
+      id: `notif_${Date.now()}`,
+      title: '✦ Aura Points Redeemed',
+      message: `Customer ${mobile} redeemed ${actualAuraPoints} Aura Points (-₹${actualAuraPoints}) on Order #${orderId}. Net Paid: ₹${finalTotal}.`,
+      type: 'WALLET',
+      date: 'Just now',
+      unread: true
+    });
+  }
+
   const gstBreakdown = computeServerGstDetails({
     sub: subtotal,
     disc: discount,
@@ -928,6 +969,7 @@ app.post('/api/checkout/place-order', (req, res) => {
     coupon: coupon || '',
     sub: subtotal,
     disc: discount,
+    auraPoints: actualAuraPoints,
     total: finalTotal,
     addr,
     items: processedItems,
@@ -939,10 +981,10 @@ app.post('/api/checkout/place-order', (req, res) => {
   // Persist order and line items to Neon PostgreSQL
   if (pool) {
     pool.query(`
-      INSERT INTO public.orders (order_number, invoice_number, user_mobile, shipping_address_snapshot, subtotal_amount, discount_amount, final_amount, payment_method, payment_status, order_status, coupon_code)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PAID', 0, $9)
+      INSERT INTO public.orders (order_number, invoice_number, user_mobile, shipping_address_snapshot, subtotal_amount, discount_amount, final_amount, payment_method, payment_status, order_status, coupon_code, aura_points_redeemed)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PAID', 0, $9, $10)
       RETURNING order_id;
-    `, [orderId, invNumber, mobile, JSON.stringify({ ...addr, gst: gstBreakdown }), subtotal, discount, finalTotal, pay, coupon || ''])
+    `, [orderId, invNumber, mobile, JSON.stringify({ ...addr, gst: gstBreakdown }), subtotal, discount, finalTotal, pay, coupon || '', actualAuraPoints])
     .then(res => {
       const oId = res.rows[0]?.order_id;
       if (oId) {
@@ -973,6 +1015,7 @@ app.get('/api/orders', async (req, res) => {
           o.shipping_address_snapshot as addr,
           o.subtotal_amount as sub,
           o.discount_amount as disc,
+          o.aura_points_redeemed as "auraPoints",
           o.final_amount as total,
           o.payment_method as pay,
           o.order_status as status,
@@ -1077,6 +1120,7 @@ app.get('/api/orders', async (req, res) => {
           coupon: r.coupon || '',
           sub: parseFloat(r.sub),
           disc: parseFloat(r.disc || 0),
+          auraPoints: parseInt(r.auraPoints) || 0,
           total: parseFloat(r.total),
           addr: parsedAddr,
           items: r.items || [],
@@ -1252,6 +1296,12 @@ app.get('/api/orders/:id/invoice', (req, res) => {
   if (gst.discount > 0) {
     doc.font('Helvetica').fillColor('#1E4D3B').text(`Coupon Discount (${order.coupon || 'PROMO'}):`, 335, summaryBoxY + 17);
     doc.text(`-₹${gst.discount.toLocaleString('en-IN')}`, 450, summaryBoxY + 17, { align: 'right', width: 100 });
+  }
+
+  if (order.auraPoints > 0) {
+    const auraY = summaryBoxY + (gst.discount > 0 ? 27 : 17);
+    doc.font('Helvetica-Bold').fillColor('#B8905C').text(`Aura Points Redeemed (${order.auraPoints} Pts):`, 335, auraY);
+    doc.text(`-₹${order.auraPoints.toLocaleString('en-IN')}`, 450, auraY, { align: 'right', width: 100 });
   }
 
   doc.font('Helvetica').fillColor('#555555').text('Total Taxable Value:', 335, summaryBoxY + 28);
@@ -1577,6 +1627,38 @@ async function creditWallet(mobile, points, orderId, description) {
   }
 }
 
+// Helper to debit points from User's Aura Wallet
+async function debitWallet(mobile, points, orderId, description) {
+  if (!mobile || !points) return;
+  const cleanMob = mobile.replace(/[^0-9]/g, '').slice(-10);
+  const pts = Math.round(Number(points));
+  if (pts <= 0) return;
+
+  if (pool) {
+    try {
+      await pool.query(`
+        INSERT INTO public.user_wallets (user_mobile, balance_points, updated_at)
+        VALUES ($1, GREATEST(0, 500 - $2), NOW())
+        ON CONFLICT (user_mobile) 
+        DO UPDATE SET balance_points = GREATEST(0, public.user_wallets.balance_points - $2), updated_at = NOW();
+      `, [cleanMob, pts]);
+
+      await pool.query(`
+        INSERT INTO public.wallet_transactions (user_mobile, type, points, amount, order_id, description, status)
+        VALUES ($1, 'DEBIT', $2, $3, $4, $5, 'SUCCESS');
+      `, [cleanMob, pts, pts, orderId || null, description || 'Aura Points Redeemed']);
+
+      await pool.query(`
+        UPDATE public.users 
+        SET wallet_points = GREATEST(0, COALESCE(wallet_points, 500) - $1)
+        WHERE RIGHT(regexp_replace(mobile_number, '[^0-9]', '', 'g'), 10) = $2 OR mobile_number = $2;
+      `, [pts, cleanMob]);
+    } catch (e) {
+      console.error('[DB] debitWallet error:', e.message);
+    }
+  }
+}
+
 // GET /api/wallet (Fetches user's Aura Credit Points and full passbook history)
 app.get('/api/wallet', async (req, res) => {
   const { mobile } = req.query;
@@ -1705,6 +1787,12 @@ app.post('/api/orders/:id/cancel', async (req, res) => {
     const refundPoints = Math.round(Number(order.total || 0));
     const userMob = order.mobile || order.addr?.phone || order.addr?.mobile;
     await creditWallet(userMob, refundPoints, orderId, `Instant Cancellation Refund for Order #${orderId}`);
+  }
+
+  // Restore spent Aura points upon full cancellation
+  if (order.auraPoints > 0) {
+    const userMob = order.mobile || order.addr?.phone || order.addr?.mobile;
+    await creditWallet(userMob, order.auraPoints, orderId, `Restoration of ${order.auraPoints} spent Aura Points from cancelled Order #${orderId}`);
   }
 
   res.json({
@@ -1874,6 +1962,13 @@ app.put('/api/admin/orders/:id/status', guardSuperAdminWrite, async (req, res) =
     if (isWallet) {
       const userMob = order.mobile || order.addr?.phone || order.addr?.mobile;
       creditWallet(userMob, order.total, order.id, `${nextStatus === 5 ? 'Cancellation' : 'Return'} Refund for Order #${order.id}`).catch(() => {});
+    }
+
+    // Restore spent Aura points ONLY if full order cancellation or full order return (forfeited on partial returns)
+    const isFullReturnOrCancel = (nextStatus === 5) || (order?.returnInfo?.items?.length >= (order?.items?.length || 1));
+    if (isFullReturnOrCancel && order.auraPoints > 0) {
+      const userMob = order.mobile || order.addr?.phone || order.addr?.mobile;
+      creditWallet(userMob, order.auraPoints, order.id, `Restoration of ${order.auraPoints} spent Aura Points from ${nextStatus === 5 ? 'cancelled' : 'full return of'} Order #${order.id}`).catch(() => {});
     }
   }
 
@@ -2648,6 +2743,7 @@ async function loadOrdersFromDatabase() {
           coupon: r.coupon || '',
           sub: parseFloat(r.sub),
           disc: parseFloat(r.disc || 0),
+          auraPoints: parseInt(r.auraPoints) || 0,
           total: parseFloat(r.total),
           addr: parsedAddr,
           items: r.items || []
