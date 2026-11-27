@@ -439,6 +439,58 @@ const INDIAN_STATES = [
 ];
 
 // ============================================================================
+// LUXURY WELCOME AUDIO CHIME (Web Audio API Synthesizer)
+// ============================================================================
+export function playLuxuryWelcomeChime() {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+    // Celestial pentatonic chime chord: C5, E5, G5, B5, C6, E6
+    const notes = [523.25, 659.25, 783.99, 987.77, 1046.50, 1318.51];
+    const startTime = ctx.currentTime + 0.05;
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = idx % 2 === 0 ? 'sine' : 'triangle';
+      osc.frequency.setValueAtTime(freq, startTime + idx * 0.12);
+
+      // Smooth attack with resonant exponential decay
+      gain.gain.setValueAtTime(0.0001, startTime + idx * 0.12);
+      gain.gain.linearRampToValueAtTime(0.24, startTime + idx * 0.12 + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + idx * 0.12 + 1.8);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(startTime + idx * 0.12);
+      osc.stop(startTime + idx * 0.12 + 2.0);
+    });
+
+    // High shimmer crystal sparkle overtone
+    setTimeout(() => {
+      try {
+        const shimmerOsc = ctx.createOscillator();
+        const shimmerGain = ctx.createGain();
+        shimmerOsc.type = 'sine';
+        shimmerOsc.frequency.setValueAtTime(1567.98, ctx.currentTime); // G6
+        shimmerGain.gain.setValueAtTime(0.12, ctx.currentTime);
+        shimmerGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.4);
+        shimmerOsc.connect(shimmerGain);
+        shimmerGain.connect(ctx.destination);
+        shimmerOsc.start(ctx.currentTime);
+        shimmerOsc.stop(ctx.currentTime + 1.5);
+      } catch {}
+    }, 420);
+  } catch (e) {
+    console.warn('[Audio] Web Audio chime initialization skipped:', e);
+  }
+}
+
+// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
@@ -572,6 +624,8 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [authModal, setAuthModal] = useState(null); // 'login' | 'reg' | null
   const [authAfterRedirect, setAuthAfterRedirect] = useState(false);
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [welcomeCelebrationUser, setWelcomeCelebrationUser] = useState(null);
   const [infoTopic, setInfoTopic] = useState(null);
   const [invoiceModalOrder, setInvoiceModalOrder] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
@@ -7990,21 +8044,46 @@ export default function App() {
                   if (!cleanDigits) return showToast('Please enter your mobile number', true);
                   const fullMobile = rawMobile.startsWith('+') ? rawMobile : `${selectedCountry.code}${cleanDigits}`;
 
-                  if (authModal === 'login') {
-                    const pass = (authPasswordInput || fd.get('password') || '').trim();
-                    if (!pass) return showToast('Please enter your password', true);
+                  setIsAuthSubmitting(true);
+                  const t0 = Date.now();
 
-                    try {
-                      const res = await fetch('/api/auth/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ mobile: fullMobile, password: pass })
-                      }).then(r => r.json());
+                  try {
+                    if (authModal === 'login') {
+                      const pass = (authPasswordInput || fd.get('password') || '').trim();
+                      if (!pass) return showToast('Please enter your password', true);
 
-                      if (res.success && res.data?.user) {
-                        setCurrentUser(res.data.user);
-                        setUsers(prev => prev.some(x => x.mobile === res.data.user.mobile) ? prev : [...prev, res.data.user]);
-                        showToast(res.message || `Welcome back, ${res.data.user.name.split(' ')[0]}`);
+                      try {
+                        const res = await fetch('/api/auth/login', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ mobile: fullMobile, password: pass })
+                        }).then(r => r.json());
+
+                        if (res.success && res.data?.user) {
+                          setCurrentUser(res.data.user);
+                          setUsers(prev => prev.some(x => x.mobile === res.data.user.mobile) ? prev : [...prev, res.data.user]);
+                          showToast(res.message || `Welcome back, ${res.data.user.name.split(' ')[0]}`);
+                          setAuthPasswordInput('');
+                          setAuthModal(null);
+                          setIsCountryDropdownOpen(false);
+                          if (authAfterRedirect) {
+                            setAuthAfterRedirect(false);
+                            proceedToCheckout();
+                          }
+                        } else if (res.requireReset) {
+                          showToast(res.message, true);
+                          setAuthModal('forgot');
+                          setForgotStep(1);
+                        } else {
+                          return showToast(res.message || 'Incorrect mobile or password.', true);
+                        }
+                      } catch {
+                        // Resilient fallback
+                        const u = users.find(x => x.mobile === fullMobile || x.mobile === cleanDigits);
+                        if (!u) return showToast('No account found — please register', true);
+                        if (u.banned) return showToast('Account suspended. Contact support.', true);
+                        setCurrentUser(u);
+                        showToast(`Welcome back, ${u.name.split(' ')[0]}`);
                         setAuthPasswordInput('');
                         setAuthModal(null);
                         setIsCountryDropdownOpen(false);
@@ -8012,108 +8091,100 @@ export default function App() {
                           setAuthAfterRedirect(false);
                           proceedToCheckout();
                         }
-                      } else if (res.requireReset) {
-                        showToast(res.message, true);
-                        setAuthModal('forgot');
-                        setForgotStep(1);
-                      } else {
-                        return showToast(res.message || 'Incorrect mobile or password.', true);
                       }
-                    } catch {
-                      // Resilient fallback
-                      const u = users.find(x => x.mobile === fullMobile || x.mobile === cleanDigits);
-                      if (!u) return showToast('No account found — please register', true);
-                      if (u.banned) return showToast('Account suspended. Contact support.', true);
-                      setCurrentUser(u);
-                      showToast(`Welcome back, ${u.name.split(' ')[0]}`);
-                      setAuthPasswordInput('');
-                      setAuthModal(null);
-                      setIsCountryDropdownOpen(false);
-                      if (authAfterRedirect) {
-                        setAuthAfterRedirect(false);
-                        proceedToCheckout();
-                      }
-                    }
-                  } else {
-                    // Registration Flow
-                    const name = (fd.get('name') || '').trim();
-                    const age = +fd.get('age') || 25;
-                    const email = (fd.get('email') || '').trim();
-                    const pass = (authPasswordInput || fd.get('password') || '').trim();
-                    const confirmPass = (authConfirmPassInput || fd.get('confirmPassword') || '').trim();
-                    const otp = (fd.get('otp') || '').trim();
+                    } else {
+                      // Registration Flow
+                      const name = (fd.get('name') || '').trim();
+                      const age = +fd.get('age') || 25;
+                      const email = (fd.get('email') || '').trim();
+                      const pass = (authPasswordInput || fd.get('password') || '').trim();
+                      const confirmPass = (authConfirmPassInput || fd.get('confirmPassword') || '').trim();
+                      const otp = (fd.get('otp') || '').trim();
 
-                    if (!name) return showToast('Please enter your full name', true);
-                    if (!email) return showToast('Please enter your email', true);
-                    if (!pass || pass.length < 6) return showToast('Password must be at least 6 characters long', true);
-                    if (pass !== confirmPass) return showToast('Password and Confirm Password do not match', true);
-                    if (!otp) return showToast('Please enter the 6-digit OTP sent to your phone', true);
+                      if (!name) return showToast('Please enter your full name', true);
+                      if (!email) return showToast('Please enter your email', true);
+                      if (!pass || pass.length < 6) return showToast('Password must be at least 6 characters long', true);
+                      if (pass !== confirmPass) return showToast('Password and Confirm Password do not match', true);
+                      if (!otp) return showToast('Please enter the 6-digit OTP sent to your phone', true);
 
-                    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-                    if (!emailRegex.test(email)) {
-                      return showToast('Please enter a valid email address (e.g. name@domain.com)', true);
-                    }
-
-                    try {
-                      const res = await fetch('/api/auth/register', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                          name, 
-                          age, 
-                          email, 
-                          mobile: fullMobile, 
-                          password: pass, 
-                          confirmPassword: confirmPass, 
-                          otp 
-                        })
-                      }).then(r => r.json());
-
-                      if (!res.success) {
-                        return showToast(res.message || 'Registration failed', true);
+                      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+                      if (!emailRegex.test(email)) {
+                        return showToast('Please enter a valid email address (e.g. name@domain.com)', true);
                       }
 
-                      const registeredUser = res.data?.user || {
-                        name,
-                        age,
-                        email,
-                        mobile: fullMobile,
-                        at: new Date().toLocaleDateString('en-IN'),
-                        banned: false
-                      };
+                      try {
+                        const res = await fetch('/api/auth/register', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ 
+                            name, 
+                            age, 
+                            email, 
+                            mobile: fullMobile, 
+                            password: pass, 
+                            confirmPassword: confirmPass, 
+                            otp 
+                          })
+                        }).then(r => r.json());
 
-                      setUsers(prev => [...prev.filter(x => x.mobile !== fullMobile), registeredUser]);
-                      setCurrentUser(registeredUser);
-                      showToast(`Welcome, ${registeredUser.name.split(' ')[0]}`);
-                      setAuthPasswordInput('');
-                      setAuthConfirmPassInput('');
-                      setAuthModal(null);
-                      setIsCountryDropdownOpen(false);
-                      if (authAfterRedirect) {
-                        setAuthAfterRedirect(false);
-                        proceedToCheckout();
-                      }
-                    } catch {
-                      const nu = {
-                        name,
-                        age,
-                        email,
-                        mobile: fullMobile,
-                        at: new Date().toLocaleDateString('en-IN'),
-                        banned: false
-                      };
-                      setUsers(prev => [...prev.filter(x => x.mobile !== fullMobile), nu]);
-                      setCurrentUser(nu);
-                      showToast(`Welcome, ${nu.name.split(' ')[0]}`);
-                      setAuthPasswordInput('');
-                      setAuthConfirmPassInput('');
-                      setAuthModal(null);
-                      setIsCountryDropdownOpen(false);
-                      if (authAfterRedirect) {
-                        setAuthAfterRedirect(false);
-                        proceedToCheckout();
+                        if (!res.success) {
+                          return showToast(res.message || 'Registration failed', true);
+                        }
+
+                        const registeredUser = res.data?.user || {
+                          name,
+                          age,
+                          email,
+                          mobile: fullMobile,
+                          at: new Date().toLocaleDateString('en-IN'),
+                          banned: false
+                        };
+
+                        setUsers(prev => [...prev.filter(x => x.mobile !== fullMobile), registeredUser]);
+                        setCurrentUser(registeredUser);
+                        // Trigger luxury audio chime and first-time sky-to-screen celebration
+                        playLuxuryWelcomeChime();
+                        setWelcomeCelebrationUser(registeredUser);
+                        showToast(`Welcome to ORAYVE, ${registeredUser.name.split(' ')[0]}! ✦`);
+                        setAuthPasswordInput('');
+                        setAuthConfirmPassInput('');
+                        setAuthModal(null);
+                        setIsCountryDropdownOpen(false);
+                        if (authAfterRedirect) {
+                          setAuthAfterRedirect(false);
+                          proceedToCheckout();
+                        }
+                      } catch {
+                        const nu = {
+                          name,
+                          age,
+                          email,
+                          mobile: fullMobile,
+                          at: new Date().toLocaleDateString('en-IN'),
+                          banned: false
+                        };
+                        setUsers(prev => [...prev.filter(x => x.mobile !== fullMobile), nu]);
+                        setCurrentUser(nu);
+                        // Trigger luxury audio chime and first-time sky-to-screen celebration
+                        playLuxuryWelcomeChime();
+                        setWelcomeCelebrationUser(nu);
+                        showToast(`Welcome to ORAYVE, ${nu.name.split(' ')[0]}! ✦`);
+                        setAuthPasswordInput('');
+                        setAuthConfirmPassInput('');
+                        setAuthModal(null);
+                        setIsCountryDropdownOpen(false);
+                        if (authAfterRedirect) {
+                          setAuthAfterRedirect(false);
+                          proceedToCheckout();
+                        }
                       }
                     }
+                  } finally {
+                    const elapsed = Date.now() - t0;
+                    if (elapsed < 650) {
+                      await new Promise(r => setTimeout(r, 650 - elapsed));
+                    }
+                    setIsAuthSubmitting(false);
                   }
                 }}
                 className="space-y-3.5"
@@ -8375,12 +8446,52 @@ export default function App() {
                   </>
                 )}
 
-                {/* Primary Action Button */}
+                {/* Real-time Submitting Progress Notification */}
+                {isAuthSubmitting && (
+                  <div className="p-3 bg-bone rounded-xl border border-brass/50 flex items-center gap-3 shadow-inner animate-pulse">
+                    <div className="w-8 h-8 rounded-full bg-ink flex items-center justify-center shrink-0 border border-brass/50 shadow-xs">
+                      <span className="animate-spin text-brass text-sm">✦</span>
+                    </div>
+                    <div className="flex-1 min-w-0 text-left">
+                      <p className="text-xs font-bold text-ink">
+                        {authModal === 'login' ? 'Connecting to Orayve Security Vault' : 'Creating New Member Record'}
+                      </p>
+                      <p className="text-[10px] text-ink/70 truncate">
+                        {authModal === 'login' ? 'Verifying bcrypt credentials...' : 'Assigning 250 Aura points & registering phone...'}
+                      </p>
+                    </div>
+                    <span className="text-[10px] uppercase tracking-wider font-extrabold text-brass px-2 py-0.5 rounded-full bg-brass/10 border border-brass/30 shrink-0">
+                      Loading
+                    </span>
+                  </div>
+                )}
+
+                {/* Primary Action Button with Luxury Loading Animation */}
                 <button
                   type="submit"
-                  className="w-full py-3 rounded-xl bg-ink text-bone font-bold text-xs hover:bg-brass hover:text-ink transition shadow-lg mt-2 uppercase tracking-wider"
+                  disabled={isAuthSubmitting}
+                  className={`w-full py-3.5 rounded-xl font-extrabold text-xs transition duration-200 shadow-lg mt-2 uppercase tracking-wider relative overflow-hidden ${
+                    isAuthSubmitting
+                      ? 'bg-ink/85 text-gold border border-brass/50 cursor-not-allowed shadow-inner'
+                      : 'bg-ink text-bone hover:bg-brass hover:text-ink active:scale-[0.99] border border-ink cursor-pointer'
+                  }`}
                 >
-                  {authModal === 'login' ? 'Sign In to Account' : 'Verify Mobile & Complete Registration'}
+                  {isAuthSubmitting ? (
+                    <div className="flex items-center justify-center gap-2.5">
+                      <svg className="animate-spin h-4 w-4 text-gold shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span className="tracking-widest uppercase font-extrabold text-[11px] text-bone">
+                        {authModal === 'login' ? 'Authenticating Vault Access...' : 'Crafting Membership & Initializing Vault...'}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-2">
+                      <span>{authModal === 'login' ? '🔒 Sign In to Account' : '✨ Verify Mobile & Complete Registration'}</span>
+                      <span className="text-gold">→</span>
+                    </div>
+                  )}
                 </button>
 
                 {/* Bottom switcher helper */}
@@ -8418,6 +8529,187 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ==================================================================== */}
+      {/* FIRST-TIME REGISTRATION SKY-TO-SCREEN WELCOME CELEBRATION MODAL      */}
+      {/* ==================================================================== */}
+      {welcomeCelebrationUser && (() => {
+        // Select 4 iconic signature showcase pieces from the catalog for the sky-to-screen cascade
+        const showcaseProducts = [
+          products.find(p => p.cat === 'Rings') || products[0],
+          products.find(p => p.cat === 'Chains & Necklaces') || products[1],
+          products.find(p => p.cat === 'Wallets') || products[2],
+          products.find(p => p.cat === 'Handbags' || p.cat === 'Gents Wrist Watches') || products[3]
+        ].filter(Boolean);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto bg-black/85 backdrop-blur-md">
+            {/* Background Animated Stardust Specks */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+              <div className="absolute top-0 left-1/4 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl animate-pulse" />
+              <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-brass/15 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+              {/* Floating particles */}
+              {[...Array(12)].map((_, i) => (
+                <div
+                  key={i}
+                  className="absolute rounded-full bg-gold/60"
+                  style={{
+                    width: `${(i % 3) + 2}px`,
+                    height: `${(i % 3) + 2}px`,
+                    top: `${(i * 8.5) % 95}%`,
+                    left: `${(i * 11) % 92}%`,
+                    animation: `stardustFloat ${6 + (i % 5)}s linear infinite`,
+                    animationDelay: `${(i * 0.4)}s`
+                  }}
+                />
+              ))}
+            </div>
+
+            <div className="relative w-full max-w-4xl bg-gradient-to-b from-[#1C1B29] via-[#242233] to-[#161520] rounded-3xl border border-brass/50 shadow-2xl p-5 sm:p-8 text-center text-bone my-auto overflow-hidden">
+              {/* Top Radial Glow Bar */}
+              <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-brass to-transparent" />
+
+              {/* Action Controls in Header: Sound Replay & Close */}
+              <div className="flex justify-between items-center mb-2">
+                <button
+                  type="button"
+                  onClick={playLuxuryWelcomeChime}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-brass/20 border border-brass/30 text-gold text-[11px] font-bold transition cursor-pointer shadow-xs"
+                  title="Replay luxury audio chime"
+                >
+                  <span>🔊</span>
+                  <span>Replay Chime</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWelcomeCelebrationUser(null);
+                    showToast(`Welcome to ORAYVE, ${welcomeCelebrationUser.name.split(' ')[0]}! Explore our curated vault.`);
+                  }}
+                  className="w-8 h-8 rounded-full border border-bone/20 flex items-center justify-center text-bone/70 hover:text-bone hover:bg-white/10 text-xs font-bold transition cursor-pointer"
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Royal Crown Monogram & Initiation Badge */}
+              <div className="flex flex-col items-center justify-center">
+                <div className="relative w-14 h-14 rounded-full bg-brass/20 border border-brass/60 flex items-center justify-center shadow-lg mb-2">
+                  <span className="text-2xl animate-bounce">👑</span>
+                  <div className="absolute inset-0 rounded-full border border-gold/40 animate-ping opacity-30" />
+                </div>
+                <span className="text-[10px] sm:text-xs uppercase tracking-[0.3em] font-extrabold text-gold">
+                  ✦ Exclusive Member Initiation ✦
+                </span>
+              </div>
+
+              {/* Grand Typography: WELCOME TO ORAYVE */}
+              <div className="animate-celestial-title mt-2 space-y-1">
+                <h1 className="serif text-3xl sm:text-5xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-300 drop-shadow-md">
+                  WELCOME TO ORAYVE
+                </h1>
+                <p className="text-xs sm:text-sm font-medium tracking-wider text-bone/80 uppercase">
+                  Small Details. Big Presence.
+                </p>
+                <p className="text-xs sm:text-sm text-bone/90 max-w-lg mx-auto pt-1">
+                  Honored to welcome you to the Private Vault, <span className="text-gold font-bold">{welcomeCelebrationUser.name}</span>. Your membership has been inaugurated.
+                </p>
+              </div>
+
+              {/* Welcome Bonus Perk Pill */}
+              <div className="inline-flex items-center gap-2 px-4 py-2 mt-3 rounded-full bg-brass/15 border border-brass/40 text-amber-200 text-xs font-bold shadow-md">
+                <span>✨</span>
+                <span>250 Aura Welcome Points Credited to Your Passbook</span>
+                <span>✨</span>
+              </div>
+
+              {/* SKY-TO-SCREEN PRODUCT CASCADE */}
+              <div className="mt-6 mb-4">
+                <div className="flex items-center justify-center gap-2 mb-3">
+                  <span className="h-px w-8 bg-brass/40" />
+                  <span className="text-[10px] sm:text-xs uppercase tracking-widest font-extrabold text-gold">
+                    ✦ Signature Pieces Arrived from the Vault ✦
+                  </span>
+                  <span className="h-px w-8 bg-brass/40" />
+                </div>
+
+                {/* Staggered Animated Cards Dropping From Sky */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 text-left">
+                  {showcaseProducts.map((p, idx) => {
+                    const animClass = idx === 0 
+                      ? 'animate-drop-sky-1' 
+                      : idx === 1 
+                        ? 'animate-drop-sky-2' 
+                        : idx === 2 
+                          ? 'animate-drop-sky-3' 
+                          : 'animate-drop-sky-4';
+                    const price = p.v && p.v[0] ? p.v[0].price : 999;
+                    const imgUrl = (p.images && p.images[0]) || (p.v && p.v[0] && p.v[0].img) || 'https://images.unsplash.com/photo-1605100804763-247f67b3557e?auto=format&fit=crop&w=600&q=80';
+
+                    return (
+                      <div
+                        key={p.id || idx}
+                        className={`${animClass} group relative rounded-2xl bg-black/40 border border-brass/40 p-2.5 sm:p-3 hover:border-gold hover:bg-black/60 transition duration-300 shadow-xl overflow-hidden cursor-pointer`}
+                        onClick={() => {
+                          setWelcomeCelebrationUser(null);
+                          setDetailProduct(p);
+                          setView('product');
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                      >
+                        {/* Shimmer Glint Effect */}
+                        <div className="glint-overlay" />
+
+                        {/* Image with hover zoom */}
+                        <div className="relative aspect-square rounded-xl overflow-hidden bg-ink/50 mb-2 border border-white/5">
+                          <img
+                            src={imgUrl}
+                            alt={p.title}
+                            className="w-full h-full object-cover group-hover:scale-108 transition duration-500"
+                          />
+                          <span className="absolute top-1.5 left-1.5 text-[9px] px-1.5 py-0.5 rounded-md bg-black/75 text-gold font-bold uppercase tracking-wider backdrop-blur-xs border border-gold/30">
+                            {p.cat}
+                          </span>
+                        </div>
+
+                        {/* Title & Price */}
+                        <div className="space-y-0.5 min-w-0">
+                          <h3 className="serif text-xs sm:text-sm font-bold text-bone truncate group-hover:text-gold transition">
+                            {p.title}
+                          </h3>
+                          <div className="flex items-center justify-between pt-0.5">
+                            <span className="text-xs font-bold text-amber-200">
+                              ₹{price.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-[10px] text-brass group-hover:translate-x-0.5 transition font-bold">
+                              Inspect →
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Primary Call to Action Button */}
+              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWelcomeCelebrationUser(null);
+                    showToast(`Welcome to ORAYVE! Your private vault is ready.`);
+                  }}
+                  className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-brass via-gold to-brass text-ink font-extrabold text-xs uppercase tracking-widest hover:brightness-110 active:scale-95 transition shadow-lg shadow-brass/25 cursor-pointer"
+                >
+                  ✦ Enter Orayve & Begin Shopping ✦
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ==================================================================== */}
       {/* HELP & POLICIES MODAL                                                */}
