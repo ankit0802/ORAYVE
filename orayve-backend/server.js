@@ -16,7 +16,63 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'orayve-super-secret-jwt-key-2026';
-const ADMIN_PASS = process.env.ADMIN_PASS || 'orayve@2026';
+// Super Admin Master Credential - Requested strictly as Aura@2210
+const SUPER_ADMIN_PASS = process.env.SUPER_ADMIN_PASS || 'Aura@2210';
+
+let ADMIN_USERS = [
+  {
+    id: 'admin_super_01',
+    username: 'superadmin',
+    full_name: 'Executive Super Admin',
+    email: 'admin@orayve.in',
+    password_hash: 'Aura@2210',
+    role: 'SUPER_ADMIN',
+    is_active: true,
+    created_at: new Date().toISOString()
+  }
+];
+
+// Helper to load admin users from PostgreSQL
+async function loadAdminUsersFromDb() {
+  if (!pool) return;
+  try {
+    const q = await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.admin_users (
+        id VARCHAR(64) PRIMARY KEY,
+        username VARCHAR(100) UNIQUE NOT NULL,
+        full_name VARCHAR(255) NOT NULL,
+        email VARCHAR(255),
+        password_hash TEXT NOT NULL,
+        role VARCHAR(32) NOT NULL DEFAULT 'VIEWER_ADMIN',
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    const res = await pool.query('SELECT id, username, full_name, email, password_hash, role, is_active, created_at FROM public.admin_users;');
+    if (res.rows.length > 0) {
+      ADMIN_USERS = [
+        ADMIN_USERS[0],
+        ...res.rows.filter(r => r.username !== 'superadmin')
+      ];
+    }
+  } catch (err) {
+    console.error('[DB] Error loading admin users:', err.message);
+  }
+}
+loadAdminUsersFromDb();
+
+// Strict guard: Viewer Admins are read-only and cannot perform CRUD modifications
+const guardSuperAdminWrite = (req, res, next) => {
+  const role = req.headers['x-admin-role'] || '';
+  if (role === 'VIEWER_ADMIN') {
+    return res.status(403).json({
+      success: false,
+      message: 'Access Denied: Read-only Viewer Admin cannot perform modification operations. Super Admin privileges required.'
+    });
+  }
+  next();
+};
 
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] }));
 app.use(express.json({ limit: '10mb' }));
@@ -1229,14 +1285,206 @@ app.get('/api/orders/:id/invoice', (req, res) => {
 // 4. ADMIN CONSOLE & OPERATIONS APIS
 // ============================================================================
 
-// POST /api/admin/login
-app.post('/api/admin/login', (req, res) => {
-  const { passcode } = req.body;
-  if (passcode === ADMIN_PASS || passcode === 'SuperAdmin@2026') {
-    const token = jwt.sign({ role: 'ROLE_ADMIN' }, JWT_SECRET, { expiresIn: '1d' });
-    return res.json({ success: true, message: 'Admin console unlocked', token });
+// POST /api/admin/login (Supports Super Admin passcode 'Aura@2210' and Sub-Admin accounts)
+app.post('/api/admin/login', async (req, res) => {
+  const { passcode, username, password } = req.body;
+  const inputKey = (passcode || password || '').trim();
+  const inputUser = (username || '').trim().toLowerCase();
+
+  // 1. Super Admin Authentication (Strictly Aura@2210)
+  if (inputKey === SUPER_ADMIN_PASS || (inputUser === 'superadmin' && inputKey === SUPER_ADMIN_PASS) || inputKey === 'Aura@2210') {
+    const token = jwt.sign({ role: 'SUPER_ADMIN', username: 'superadmin' }, JWT_SECRET, { expiresIn: '7d' });
+    return res.json({
+      success: true,
+      role: 'SUPER_ADMIN',
+      name: 'Super Admin',
+      username: 'superadmin',
+      message: 'Super Admin console unlocked with full CRUD permissions',
+      token
+    });
   }
-  res.status(401).json({ success: false, message: 'Wrong admin passcode' });
+
+  // 2. Staff / Sub-Admin Authentication (Read-only Viewer)
+  let staff = ADMIN_USERS.find(u => 
+    (u.username && u.username.toLowerCase() === inputUser) || 
+    (u.email && u.email.toLowerCase() === inputUser)
+  );
+
+  if (!staff && pool) {
+    try {
+      const q = await pool.query(
+        'SELECT id, username, full_name, email, password_hash, role, is_active FROM public.admin_users WHERE LOWER(username) = $1 OR LOWER(email) = $1;',
+        [inputUser]
+      );
+      if (q.rows.length) {
+        staff = q.rows[0];
+      }
+    } catch (e) {
+      console.error('[DB] Admin login error:', e.message);
+    }
+  }
+
+  if (staff) {
+    if (staff.is_active === false) {
+      return res.status(403).json({ success: false, message: 'Admin account has been suspended by Super Admin' });
+    }
+
+    const matches = staff.password_hash === inputKey || (staff.password_hash && bcrypt.compareSync(inputKey, staff.password_hash));
+    if (matches) {
+      const role = staff.role || 'VIEWER_ADMIN';
+      const token = jwt.sign({ role, username: staff.username, id: staff.id }, JWT_SECRET, { expiresIn: '7d' });
+      return res.json({
+        success: true,
+        role,
+        name: staff.full_name || staff.username,
+        username: staff.username,
+        message: role === 'SUPER_ADMIN' ? 'Super Admin console unlocked' : 'Staff Admin console unlocked (Read-Only Access)',
+        token
+      });
+    }
+  }
+
+  res.status(401).json({ success: false, message: 'Invalid admin credentials or passcode' });
+});
+
+// POST /api/admin/register (Register Staff Admin with Read-Only Viewer permissions)
+app.post('/api/admin/register', async (req, res) => {
+  const { username, full_name, email, password } = req.body;
+  const uname = (username || '').trim().toLowerCase();
+  const fname = (full_name || '').trim();
+  const pass = (password || '').trim();
+  const em = (email || '').trim().toLowerCase();
+
+  if (!uname || !pass || !fname) {
+    return res.status(400).json({ success: false, message: 'Full name, username, and password are required' });
+  }
+
+  if (uname === 'superadmin') {
+    return res.status(400).json({ success: false, message: 'Username "superadmin" is reserved for Super Admin' });
+  }
+
+  // Check if username exists
+  const existing = ADMIN_USERS.find(u => u.username && u.username.toLowerCase() === uname);
+  if (existing) {
+    return res.status(409).json({ success: false, message: 'Username already registered as admin' });
+  }
+
+  const salt = bcrypt.genSaltSync(10);
+  const passwordHash = bcrypt.hashSync(pass, salt);
+  const newStaff = {
+    id: 'admin_' + Date.now(),
+    username: uname,
+    full_name: fname,
+    email: em || null,
+    password_hash: passwordHash,
+    role: 'VIEWER_ADMIN', // Strict zero-power viewer
+    is_active: true,
+    created_at: new Date().toISOString()
+  };
+
+  ADMIN_USERS.push(newStaff);
+
+  if (pool) {
+    try {
+      await pool.query(`
+        INSERT INTO public.admin_users (id, username, full_name, email, password_hash, role, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (username) DO UPDATE 
+        SET full_name = EXCLUDED.full_name, email = EXCLUDED.email, password_hash = EXCLUDED.password_hash;
+      `, [newStaff.id, newStaff.username, newStaff.full_name, newStaff.email, newStaff.password_hash, newStaff.role, newStaff.is_active]);
+    } catch (e) {
+      console.error('[DB] Error persisting new staff admin:', e.message);
+    }
+  }
+
+  const token = jwt.sign({ role: 'VIEWER_ADMIN', username: newStaff.username, id: newStaff.id }, JWT_SECRET, { expiresIn: '7d' });
+  res.json({
+    success: true,
+    message: 'Staff Admin successfully registered with Viewer (Read-Only) permissions',
+    data: {
+      id: newStaff.id,
+      username: newStaff.username,
+      name: newStaff.full_name,
+      role: newStaff.role
+    },
+    token
+  });
+});
+
+// GET /api/admin/staff (List all admin accounts for Super Admin)
+app.get('/api/admin/staff', async (req, res) => {
+  if (pool) {
+    try {
+      const q = await pool.query('SELECT id, username, full_name, email, role, is_active, created_at FROM public.admin_users ORDER BY created_at ASC;');
+      const dbStaff = q.rows;
+      const superAdminEntry = {
+        id: 'admin_super_01',
+        username: 'superadmin',
+        full_name: 'Executive Super Admin',
+        email: 'admin@orayve.in',
+        role: 'SUPER_ADMIN',
+        is_active: true,
+        created_at: 'System Initialized'
+      };
+      const merged = [superAdminEntry, ...dbStaff.filter(s => s.username !== 'superadmin')];
+      return res.json({ success: true, data: merged });
+    } catch (e) {
+      console.error('[DB] Error querying staff admins:', e.message);
+    }
+  }
+  const safeList = ADMIN_USERS.map(u => ({
+    id: u.id,
+    username: u.username,
+    full_name: u.full_name,
+    email: u.email,
+    role: u.role,
+    is_active: u.is_active,
+    created_at: u.created_at
+  }));
+  res.json({ success: true, data: safeList });
+});
+
+// PATCH /api/admin/staff/:id/password (Super Admin resets sub-admin password)
+app.patch('/api/admin/staff/:id/password', guardSuperAdminWrite, async (req, res) => {
+  const staffId = req.params.id;
+  const { newPassword } = req.body;
+  if (!newPassword || newPassword.trim().length < 4) {
+    return res.status(400).json({ success: false, message: 'New password must be at least 4 characters' });
+  }
+
+  const staff = ADMIN_USERS.find(u => u.id === staffId);
+  const hash = bcrypt.hashSync(newPassword.trim(), 10);
+  if (staff) {
+    staff.password_hash = hash;
+  }
+
+  if (pool) {
+    try {
+      await pool.query('UPDATE public.admin_users SET password_hash = $1, updated_at = NOW() WHERE id = $2;', [hash, staffId]);
+    } catch (e) {
+      console.error('[DB] Error updating staff password:', e.message);
+    }
+  }
+
+  res.json({ success: true, message: 'Staff admin password updated successfully' });
+});
+
+// DELETE /api/admin/staff/:id (Super Admin revokes staff admin access)
+app.delete('/api/admin/staff/:id', guardSuperAdminWrite, async (req, res) => {
+  const staffId = req.params.id;
+  if (staffId === 'admin_super_01') {
+    return res.status(403).json({ success: false, message: 'Super Admin account cannot be deleted' });
+  }
+
+  ADMIN_USERS = ADMIN_USERS.filter(u => u.id !== staffId);
+  if (pool) {
+    try {
+      await pool.query('DELETE FROM public.admin_users WHERE id = $1;', [staffId]);
+    } catch (e) {
+      console.error('[DB] Error deleting staff admin:', e.message);
+    }
+  }
+  res.json({ success: true, message: 'Staff admin access revoked' });
 });
 
 // GET /api/admin/analytics
@@ -1586,7 +1834,7 @@ app.post('/api/orders/:id/simulate-time', async (req, res) => {
 });
 
 // PUT /api/admin/orders/:id/status
-app.put('/api/admin/orders/:id/status', async (req, res) => {
+app.put('/api/admin/orders/:id/status', guardSuperAdminWrite, async (req, res) => {
   const { status, cancelInfo, returnInfo } = req.body;
   const nextStatus = parseInt(status);
   const order = ORDERS.find(o => o.id === req.params.id);
@@ -1633,7 +1881,7 @@ app.put('/api/admin/orders/:id/status', async (req, res) => {
 });
 
 // POST /api/admin/products
-app.post('/api/admin/products', (req, res) => {
+app.post('/api/admin/products', guardSuperAdminWrite, (req, res) => {
   const { title, cat, design, coupon, imgs, variants } = req.body;
   if (!title || !cat || !variants || !variants.length) {
     return res.status(400).json({ success: false, message: 'Title, category, and variants required' });
@@ -1694,7 +1942,7 @@ app.post('/api/admin/products', (req, res) => {
 });
 
 // PUT /api/admin/products/:id
-app.put('/api/admin/products/:id', (req, res) => {
+app.put('/api/admin/products/:id', guardSuperAdminWrite, (req, res) => {
   const index = PRODUCTS.findIndex(p => p.id === req.params.id);
   if (index === -1) return res.status(404).json({ success: false, message: 'Product not found' });
   
@@ -1725,7 +1973,7 @@ app.put('/api/admin/products/:id', (req, res) => {
 });
 
 // DELETE /api/admin/products/:id
-app.delete('/api/admin/products/:id', (req, res) => {
+app.delete('/api/admin/products/:id', guardSuperAdminWrite, (req, res) => {
   const index = PRODUCTS.findIndex(p => p.id === req.params.id);
   if (index === -1) return res.status(404).json({ success: false, message: 'Product not found' });
   PRODUCTS.splice(index, 1);
@@ -1878,7 +2126,7 @@ app.post('/api/catalog/products/:id/reviews', async (req, res) => {
 });
 
 // Categories CRUD
-app.post('/api/admin/categories', (req, res) => {
+app.post('/api/admin/categories', guardSuperAdminWrite, (req, res) => {
   const { name, hsn } = req.body;
   if (!name) return res.status(400).json({ success: false, message: 'Category name required' });
   if (CATEGORIES.some(c => c.name.toLowerCase() === name.trim().toLowerCase())) {
@@ -1888,7 +2136,7 @@ app.post('/api/admin/categories', (req, res) => {
   res.json({ success: true, message: 'Category created' });
 });
 
-app.put('/api/admin/categories/:name', (req, res) => {
+app.put('/api/admin/categories/:name', guardSuperAdminWrite, (req, res) => {
   const oldName = req.params.name;
   const { name, hsn } = req.body;
   const cat = CATEGORIES.find(c => c.name === oldName);
@@ -1907,7 +2155,7 @@ app.put('/api/admin/categories/:name', (req, res) => {
   res.json({ success: true, message: 'Category updated and products cascaded' });
 });
 
-app.delete('/api/admin/categories/:name', (req, res) => {
+app.delete('/api/admin/categories/:name', guardSuperAdminWrite, (req, res) => {
   const name = req.params.name;
   if (PRODUCTS.some(p => p.cat === name)) {
     return res.status(400).json({ success: false, message: 'Cannot delete: Delete or move its products first' });
@@ -1942,7 +2190,7 @@ app.get('/api/admin/users', async (req, res) => {
 });
 
 // Admin Aura Wallet Points Adjustment API
-app.post('/api/admin/wallets/adjust', async (req, res) => {
+app.post('/api/admin/wallets/adjust', guardSuperAdminWrite, async (req, res) => {
   const { mobile, points, type, description } = req.body;
   if (!mobile || points === undefined) {
     return res.status(400).json({ success: false, message: 'Mobile and points required' });
@@ -2020,7 +2268,7 @@ app.post('/api/admin/users', async (req, res) => {
   res.json({ success: true, message: 'User created', data: nu });
 });
 
-app.patch('/api/admin/users/:mobile/ban', async (req, res) => {
+app.patch('/api/admin/users/:mobile/ban', guardSuperAdminWrite, async (req, res) => {
   const m = req.params.mobile;
   let bannedVal = req.body.banned !== undefined ? !!req.body.banned : true;
 
@@ -2043,7 +2291,7 @@ app.patch('/api/admin/users/:mobile/ban', async (req, res) => {
 });
 
 // DELETE /api/admin/users/:mobile (Cascading Deletion of User, Past Orders, Reviews, and Aura Bank Refund Settlement)
-app.delete('/api/admin/users/:mobile', async (req, res) => {
+app.delete('/api/admin/users/:mobile', guardSuperAdminWrite, async (req, res) => {
   const m = (req.params.mobile || '').trim();
   const cleanDigits = m.replace(/[^0-9]/g, '');
   const last10 = cleanDigits.slice(-10);
@@ -2286,7 +2534,7 @@ app.get('/api/admin/notifications', async (req, res) => {
 });
 
 // DELETE /api/admin/notifications/:id (Delete individual notification)
-app.delete('/api/admin/notifications/:id', async (req, res) => {
+app.delete('/api/admin/notifications/:id', guardSuperAdminWrite, async (req, res) => {
   const notifId = req.params.id;
   ADMIN_NOTIFICATIONS = ADMIN_NOTIFICATIONS.filter(n => n.id !== notifId);
   if (pool) {
@@ -2298,7 +2546,7 @@ app.delete('/api/admin/notifications/:id', async (req, res) => {
 });
 
 // DELETE /api/admin/notifications (Clear all notifications)
-app.delete('/api/admin/notifications', async (req, res) => {
+app.delete('/api/admin/notifications', guardSuperAdminWrite, async (req, res) => {
   ADMIN_NOTIFICATIONS = [];
   if (pool) {
     try {
@@ -2313,7 +2561,7 @@ app.get('/api/admin/coupons', (req, res) => {
   res.json({ success: true, data: COUPONS });
 });
 
-app.post('/api/admin/coupons', (req, res) => {
+app.post('/api/admin/coupons', guardSuperAdminWrite, (req, res) => {
   const { code, type, val, max, min, on } = req.body;
   const cd = (code || '').trim().toUpperCase();
   if (COUPONS.some(c => c.code === cd)) return res.status(409).json({ success: false, message: 'Coupon already exists' });
@@ -2322,14 +2570,14 @@ app.post('/api/admin/coupons', (req, res) => {
   res.json({ success: true, message: 'Coupon created', data: newC });
 });
 
-app.patch('/api/admin/coupons/:code/toggle', (req, res) => {
+app.patch('/api/admin/coupons/:code/toggle', guardSuperAdminWrite, (req, res) => {
   const c = COUPONS.find(x => x.code === req.params.code.toUpperCase());
   if (!c) return res.status(404).json({ success: false, message: 'Coupon not found' });
   c.on = !c.on;
   res.json({ success: true, message: `Coupon is now ${c.on ? 'Active' : 'Paused'}`, data: c });
 });
 
-app.delete('/api/admin/coupons/:code', (req, res) => {
+app.delete('/api/admin/coupons/:code', guardSuperAdminWrite, (req, res) => {
   COUPONS = COUPONS.filter(c => c.code !== req.params.code.toUpperCase());
   res.json({ success: true, message: 'Coupon deleted' });
 });

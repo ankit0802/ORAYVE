@@ -217,6 +217,18 @@ export async function initDatabase() {
         status VARCHAR(20) DEFAULT 'SUCCESS',
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS public.admin_users (
+        id VARCHAR(64) PRIMARY KEY,
+        username VARCHAR(100) UNIQUE NOT NULL,
+        full_name VARCHAR(255) NOT NULL,
+        email VARCHAR(255),
+        password_hash TEXT NOT NULL,
+        role VARCHAR(32) NOT NULL DEFAULT 'VIEWER_ADMIN',
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
 
     client.release();

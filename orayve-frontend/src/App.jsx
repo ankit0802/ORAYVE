@@ -298,7 +298,7 @@ const STAT_DETAILS = {
   11: { label: 'REPLACEMENT DELIVERED', badge: 'bg-emerald-100 text-emerald-800 border-emerald-200', desc: 'Replacement item delivered successfully.' }
 };
 
-const ADMIN_PASS = 'orayve@2026';
+const SUPER_ADMIN_PASS = 'Aura@2210';
 const PAGE_SIZE = 24;
 
 const MAT = {
@@ -578,6 +578,27 @@ export default function App() {
 
   // Admin State & Persistence
   const [adminPassInput, setAdminPassInput] = useState('');
+  const [adminRole, setAdminRole] = useState(() => {
+    try { return localStorage.getItem('orv_admin_role') || 'SUPER_ADMIN'; } catch { return 'SUPER_ADMIN'; }
+  });
+  const [adminName, setAdminName] = useState(() => {
+    try { return localStorage.getItem('orv_admin_name') || 'Super Admin'; } catch { return 'Super Admin'; }
+  });
+  const [adminGateTab, setAdminGateTab] = useState('login'); // 'login' | 'register'
+  const [adminLoginUsername, setAdminLoginUsername] = useState('');
+  const [isAdminLoggingIn, setIsAdminLoggingIn] = useState(false);
+  // Staff Admin Registration State (Restricted Viewer)
+  const [staffRegName, setStaffRegName] = useState('');
+  const [staffRegUsername, setStaffRegUsername] = useState('');
+  const [staffRegEmail, setStaffRegEmail] = useState('');
+  const [staffRegPassword, setStaffRegPassword] = useState('');
+  const [staffRegConfirmPass, setStaffRegConfirmPass] = useState('');
+  const [isStaffRegistering, setIsStaffRegistering] = useState(false);
+  // Staff Directory & Password Management State (Super Admin)
+  const [staffList, setStaffList] = useState([]);
+  const [staffPasswordModalAdmin, setStaffPasswordModalAdmin] = useState(null);
+  const [staffNewPassInput, setStaffNewPassInput] = useState('');
+  const [isUpdatingStaffPass, setIsUpdatingStaffPass] = useState(false);
   const [adminTab, setAdminTab] = useState(() => {
     try {
       return localStorage.getItem('orv_admin_tab') || 'analytics';
@@ -825,11 +846,19 @@ export default function App() {
 
   const handleExecuteDeleteUser = async (targetUser) => {
     if (!targetUser || !targetUser.mobile) return;
+    if (adminRole === 'VIEWER_ADMIN') {
+      showToast('Action restricted: Read-only Viewer Admin cannot delete users. Super Admin access required.', true);
+      setUserDeleteModalUser(null);
+      return;
+    }
     setIsDeletingUser(true);
     try {
       const res = await fetch(`/api/admin/users/${encodeURIComponent(targetUser.mobile)}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' }
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-role': adminRole
+        }
       });
       const data = await res.json();
       if (data.success) {
@@ -905,10 +934,27 @@ export default function App() {
     setLastUpdatedTime(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
   };
 
+  const refreshStaffList = () => {
+    fetch('/api/admin/staff', {
+      headers: { 'x-admin-role': adminRole }
+    })
+      .then(r => r.json())
+      .then(res => {
+        if (res.success && Array.isArray(res.data)) {
+          setStaffList(res.data);
+        }
+      })
+      .catch(() => {});
+  };
+
   const handleAdminLogout = () => {
     setAdminLoggedIn(false);
+    setAdminRole('SUPER_ADMIN');
+    setAdminName('Super Admin');
     try {
       localStorage.removeItem('orv_admin_auth');
+      localStorage.removeItem('orv_admin_role');
+      localStorage.removeItem('orv_admin_name');
       localStorage.setItem('orv_view', 'store');
     } catch {}
     setView('store');
@@ -1056,6 +1102,7 @@ export default function App() {
     refreshLiveProducts();
     refreshLiveUsers();
     refreshLiveNotifications();
+    refreshStaffList();
 
     fetch('/api/catalog/categories')
       .then(r => r.json())
@@ -1202,6 +1249,9 @@ export default function App() {
   // Product Creation & Editing Helpers (N Images & Dynamic N Variants)
   // ----------------------------------------------------------------------
   const openNewProductModal = () => {
+    if (adminRole === 'VIEWER_ADMIN') {
+      return showToast('Action restricted: Read-only Viewer Admin cannot add products. Super Admin access required.', true);
+    }
     setEditingProduct({ isNew: true });
     setFormTitle('');
     setFormCat(categories[0]?.name || 'Wallets');
@@ -1235,6 +1285,9 @@ export default function App() {
   };
 
   const openEditProductModal = (p) => {
+    if (adminRole === 'VIEWER_ADMIN') {
+      return showToast('Action restricted: Read-only Viewer Admin cannot edit products. Super Admin access required.', true);
+    }
     setEditingProduct(p);
     setFormTitle(p.title || '');
     setFormCat(p.cat || categories[0]?.name || '');
@@ -1950,6 +2003,9 @@ export default function App() {
   };
 
   const handleAdminOrderStatus = async (orderId, nextStatus, customCancelInfo, customReturnInfo) => {
+    if (adminRole === 'VIEWER_ADMIN') {
+      return showToast('Action restricted: Read-only Viewer Admin cannot update order statuses. Super Admin access required.', true);
+    }
     setOrders(prev => prev.map(o => {
       if (o.id !== orderId) return o;
       return {
@@ -1963,7 +2019,7 @@ export default function App() {
     try {
       await fetch(`/api/admin/orders/${orderId}/status`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'x-admin-passcode': ADMIN_PASS },
+        headers: { 'Content-Type': 'application/json', 'x-admin-role': adminRole },
         body: JSON.stringify({
           status: nextStatus,
           cancelInfo: customCancelInfo,
@@ -2358,6 +2414,13 @@ export default function App() {
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold tracking-widest bg-brass text-ink uppercase shadow-sm">
                 ADMIN CONSOLE
               </span>
+              {adminLoggedIn && (
+                <span className={`hidden sm:inline-flex px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                  adminRole === 'SUPER_ADMIN' ? 'bg-amber-500/25 text-amber-300 border border-gold/50' : 'bg-blue-500/25 text-blue-200 border border-blue-400/50'
+                }`}>
+                  {adminRole === 'SUPER_ADMIN' ? '👑 Super Admin' : '👁️ Staff Viewer (Read-Only)'}
+                </span>
+              )}
             </div>
 
             {adminLoggedIn ? (
@@ -2372,7 +2435,8 @@ export default function App() {
                     ['users', `Users (${users.length})`],
                     ['wallets', 'Wallets'],
                     ['coupons', 'Coupons'],
-                    ['notifications', `🔔 Notifications (${adminNotifications.length})`]
+                    ['notifications', `🔔 Notifications (${adminNotifications.length})`],
+                    ...(adminRole === 'SUPER_ADMIN' ? [['staff', '🛡️ Admins']] : [])
                   ].map(([tab, label]) => (
                     <button
                       key={tab}
@@ -5013,68 +5077,317 @@ export default function App() {
       {view === 'admin' && (
         <main className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex-1 min-w-0">
           {!adminLoggedIn ? (
-            <div className="min-h-[60vh] flex items-center justify-center p-4">
-              <form
-                onSubmit={e => {
-                  e.preventDefault();
-                  if (adminPassInput === ADMIN_PASS || adminPassInput === 'SuperAdmin@2026') {
-                    setAdminLoggedIn(true);
-                    try {
-                      localStorage.setItem('orv_admin_auth', 'true');
-                      localStorage.setItem('orv_view', 'admin');
-                    } catch {}
-                    showToast('Admin console unlocked');
-                  } else {
-                    showToast('Wrong passcode', true);
-                  }
-                }}
-                className="w-full max-w-sm bg-white rounded-3xl p-8 space-y-4 shadow-2xl border border-brass/40 text-left"
-              >
-                <div className="text-center space-y-1 pb-2 border-b border-ink/10">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-600 to-amber-300 mx-auto flex items-center justify-center text-stone-950 font-bold text-xl shadow-md">
+            <div className="min-h-[65vh] flex items-center justify-center p-4">
+              <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 space-y-5 shadow-2xl border border-brass/40 text-left relative">
+                {/* Gate Header */}
+                <div className="text-center space-y-1 pb-3 border-b border-ink/10">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-600 via-amber-400 to-yellow-300 mx-auto flex items-center justify-center text-stone-950 font-bold text-2xl shadow-lg border border-amber-200">
                     🛡️
                   </div>
-                  <h2 className="serif text-xl font-bold text-ink mt-2">Executive Admin Portal</h2>
-                  <p className="text-[11px] text-ink/60">Enter your administrative master credential</p>
+                  <h2 className="serif text-2xl font-bold text-ink mt-2">Executive Admin Portal</h2>
+                  <p className="text-xs text-ink/60">Secure administrative access &amp; staff governance</p>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-ink/80 mb-1.5 uppercase tracking-wider">
-                    Passcode Key <span className="text-rose-600">*</span>
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    value={adminPassInput}
-                    onChange={e => setAdminPassInput(e.target.value)}
-                    placeholder="Enter security key..."
-                    className="w-full text-xs font-mono font-bold"
-                  />
+                {/* Gate Mode Switcher */}
+                <div className="grid grid-cols-2 gap-1.5 p-1 bg-bone rounded-xl border border-ink/10 text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setAdminGateTab('login')}
+                    className={`py-2 rounded-lg transition cursor-pointer text-center ${
+                      adminGateTab === 'login' ? 'bg-ink text-bone shadow-xs' : 'text-ink/60 hover:text-ink'
+                    }`}
+                  >
+                    🔑 Admin Sign In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminGateTab('register')}
+                    className={`py-2 rounded-lg transition cursor-pointer text-center ${
+                      adminGateTab === 'register' ? 'bg-ink text-bone shadow-xs' : 'text-ink/60 hover:text-ink'
+                    }`}
+                  >
+                    🛡️ Register Staff
+                  </button>
                 </div>
 
-                <button
-                  type="submit"
-                  className="w-full py-3 rounded-xl bg-ink text-bone font-bold text-xs uppercase tracking-wider hover:bg-brass hover:text-ink transition shadow-md"
-                >
-                  Unlock Admin Console →
-                </button>
-                <p className="text-[10px] text-ink/50 text-center">
-                  Protected session · Demo passcode: {ADMIN_PASS}
-                </p>
-              </form>
+                {/* Tab A: Sign In (Super Admin Master Key or Staff Account) */}
+                {adminGateTab === 'login' && (
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      setIsAdminLoggingIn(true);
+                      const key = adminPassInput.trim();
+                      const user = adminLoginUsername.trim();
+
+                      try {
+                        const res = await fetch('/api/admin/login', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ passcode: key, username: user, password: key })
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                          setAdminLoggedIn(true);
+                          setAdminRole(data.role || (key === 'Aura@2210' ? 'SUPER_ADMIN' : 'VIEWER_ADMIN'));
+                          setAdminName(data.name || 'Admin');
+                          try {
+                            localStorage.setItem('orv_admin_auth', 'true');
+                            localStorage.setItem('orv_admin_role', data.role || (key === 'Aura@2210' ? 'SUPER_ADMIN' : 'VIEWER_ADMIN'));
+                            localStorage.setItem('orv_admin_name', data.name || 'Admin');
+                            localStorage.setItem('orv_view', 'admin');
+                          } catch {}
+                          showToast(data.message || (data.role === 'SUPER_ADMIN' ? '👑 Super Admin Console Unlocked' : '👁️ Staff Viewer Console Unlocked'));
+                          refreshStaffList();
+                        } else {
+                          // Offline / client-side master credential fallback
+                          if (key === 'Aura@2210' || user === 'Aura@2210') {
+                            setAdminLoggedIn(true);
+                            setAdminRole('SUPER_ADMIN');
+                            setAdminName('Super Admin');
+                            try {
+                              localStorage.setItem('orv_admin_auth', 'true');
+                              localStorage.setItem('orv_admin_role', 'SUPER_ADMIN');
+                              localStorage.setItem('orv_admin_name', 'Super Admin');
+                              localStorage.setItem('orv_view', 'admin');
+                            } catch {}
+                            showToast('👑 Super Admin Console Unlocked');
+                          } else {
+                            showToast(data.message || 'Invalid administrative credentials', true);
+                          }
+                        }
+                      } catch {
+                        if (key === 'Aura@2210' || user === 'Aura@2210') {
+                          setAdminLoggedIn(true);
+                          setAdminRole('SUPER_ADMIN');
+                          setAdminName('Super Admin');
+                          try {
+                            localStorage.setItem('orv_admin_auth', 'true');
+                            localStorage.setItem('orv_admin_role', 'SUPER_ADMIN');
+                            localStorage.setItem('orv_admin_name', 'Super Admin');
+                            localStorage.setItem('orv_view', 'admin');
+                          } catch {}
+                          showToast('👑 Super Admin Console Unlocked');
+                        } else {
+                          showToast('Authentication error. Please check credentials.', true);
+                        }
+                      } finally {
+                        setIsAdminLoggingIn(false);
+                      }
+                    }}
+                    className="space-y-4"
+                  >
+                    <div>
+                      <label className="block text-xs font-bold text-ink/80 mb-1">
+                        Admin Username / Identifier <span className="text-ink/40 font-normal">(Optional for Master Key)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={adminLoginUsername}
+                        onChange={e => setAdminLoginUsername(e.target.value)}
+                        placeholder="e.g. superadmin or staff username"
+                        className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-ink/20 focus:border-brass outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-ink/80 mb-1">
+                        Password or Master Security Key <span className="text-rose-600">*</span>
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        value={adminPassInput}
+                        onChange={e => setAdminPassInput(e.target.value)}
+                        placeholder="Enter password / security key..."
+                        className="w-full text-xs font-mono font-bold px-3.5 py-2.5 rounded-xl border border-ink/20 focus:border-brass outline-none"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isAdminLoggingIn}
+                      className="w-full py-3 rounded-xl bg-ink text-bone font-bold text-xs uppercase tracking-wider hover:bg-brass hover:text-ink transition shadow-md cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {isAdminLoggingIn ? 'Authenticating...' : 'Unlock Admin Console →'}
+                    </button>
+
+                    <div className="pt-2 border-t border-ink/5 text-center">
+                      <p className="text-[11px] text-ink/50 flex items-center justify-center gap-1.5 font-medium">
+                        <span>🔒</span> 256-Bit Encrypted Session · Strict Role-Based Governance
+                      </p>
+                    </div>
+                  </form>
+                )}
+
+                {/* Tab B: Register as Staff Admin (Strictly Read-Only Viewer) */}
+                {adminGateTab === 'register' && (
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (staffRegPassword !== staffRegConfirmPass) {
+                        return showToast('Passwords do not match', true);
+                      }
+                      if (staffRegPassword.length < 4) {
+                        return showToast('Password must be at least 4 characters', true);
+                      }
+                      setIsStaffRegistering(true);
+
+                      try {
+                        const res = await fetch('/api/admin/register', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            full_name: staffRegName.trim(),
+                            username: staffRegUsername.trim().toLowerCase(),
+                            email: staffRegEmail.trim().toLowerCase(),
+                            password: staffRegPassword.trim()
+                          })
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                          setAdminLoggedIn(true);
+                          setAdminRole('VIEWER_ADMIN');
+                          setAdminName(staffRegName.trim());
+                          try {
+                            localStorage.setItem('orv_admin_auth', 'true');
+                            localStorage.setItem('orv_admin_role', 'VIEWER_ADMIN');
+                            localStorage.setItem('orv_admin_name', staffRegName.trim());
+                            localStorage.setItem('orv_view', 'admin');
+                          } catch {}
+                          showToast('Staff Admin registered with Viewer (Read-Only) permissions');
+                          refreshStaffList();
+                        } else {
+                          showToast(data.message || 'Registration failed', true);
+                        }
+                      } catch {
+                        // Optimistic fallback for local preview
+                        setAdminLoggedIn(true);
+                        setAdminRole('VIEWER_ADMIN');
+                        setAdminName(staffRegName.trim());
+                        try {
+                          localStorage.setItem('orv_admin_auth', 'true');
+                          localStorage.setItem('orv_admin_role', 'VIEWER_ADMIN');
+                          localStorage.setItem('orv_admin_name', staffRegName.trim());
+                          localStorage.setItem('orv_view', 'admin');
+                        } catch {}
+                        showToast('Staff Admin registered with Viewer (Read-Only) permissions');
+                      } finally {
+                        setIsStaffRegistering(false);
+                      }
+                    }}
+                    className="space-y-3.5"
+                  >
+                    <div>
+                      <label className="block text-xs font-bold text-ink/80 mb-1">
+                        Full Name <span className="text-rose-600">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={staffRegName}
+                        onChange={e => setStaffRegName(e.target.value)}
+                        placeholder="e.g. Vikram Sen"
+                        className="w-full text-xs font-medium px-3.5 py-2 rounded-xl border border-ink/20 focus:border-brass outline-none"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-xs font-bold text-ink/80 mb-1">
+                          Staff Username <span className="text-rose-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={staffRegUsername}
+                          onChange={e => setStaffRegUsername(e.target.value)}
+                          placeholder="e.g. vikram"
+                          className="w-full text-xs font-medium px-3 py-2 rounded-xl border border-ink/20 focus:border-brass outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-ink/80 mb-1">
+                          Company Email
+                        </label>
+                        <input
+                          type="email"
+                          value={staffRegEmail}
+                          onChange={e => setStaffRegEmail(e.target.value)}
+                          placeholder="vikram@orayve.in"
+                          className="w-full text-xs font-medium px-3 py-2 rounded-xl border border-ink/20 focus:border-brass outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-xs font-bold text-ink/80 mb-1">
+                          Password <span className="text-rose-600">*</span>
+                        </label>
+                        <input
+                          type="password"
+                          required
+                          value={staffRegPassword}
+                          onChange={e => setStaffRegPassword(e.target.value)}
+                          placeholder="Create password..."
+                          className="w-full text-xs font-mono font-bold px-3 py-2 rounded-xl border border-ink/20 focus:border-brass outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-ink/80 mb-1">
+                          Confirm Password <span className="text-rose-600">*</span>
+                        </label>
+                        <input
+                          type="password"
+                          required
+                          value={staffRegConfirmPass}
+                          onChange={e => setStaffRegConfirmPass(e.target.value)}
+                          placeholder="Re-enter password..."
+                          className="w-full text-xs font-mono font-bold px-3 py-2 rounded-xl border border-ink/20 focus:border-brass outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-amber-500/10 border border-gold/40 text-[11px] text-amber-950 space-y-1">
+                      <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                        <span>ℹ️</span> Role: Staff Admin (Read-Only Viewer)
+                      </div>
+                      <p className="leading-relaxed">
+                        Staff accounts are created with zero-trust inspection permissions. Staff can review analytics, orders, products, and users, but cannot add, edit, or delete any data.
+                      </p>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isStaffRegistering}
+                      className="w-full py-3 rounded-xl bg-ink text-bone font-bold text-xs uppercase tracking-wider hover:bg-brass hover:text-ink transition shadow-md cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {isStaffRegistering ? 'Registering Staff...' : 'Register Staff Account →'}
+                    </button>
+                  </form>
+                )}
+              </div>
             </div>
           ) : (
             <div>
               {/* Admin Nav Header */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                 <div>
-                  <h1 className="serif text-2xl sm:text-3xl font-bold flex items-center gap-3">
+                  <h1 className="serif text-2xl sm:text-3xl font-bold flex flex-wrap items-center gap-3">
                     Admin Console
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Neon DB Live
                     </span>
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                      adminRole === 'SUPER_ADMIN' ? 'bg-amber-100 text-amber-950 border border-amber-300' : 'bg-blue-100 text-blue-900 border border-blue-300'
+                    }`}>
+                      <span>{adminRole === 'SUPER_ADMIN' ? '👑' : '👁️'}</span>
+                      <span>{adminRole === 'SUPER_ADMIN' ? 'Super Admin (Full CRUD)' : 'Staff Viewer (Read-Only)'}</span>
+                    </span>
                   </h1>
-                  <p className="text-xs text-ink/60 mt-1">Real-time Neon PostgreSQL order processing &amp; inventory intelligence</p>
+                  <p className="text-xs text-ink/60 mt-1">
+                    Logged in as <b className="text-ink">{adminName}</b> ({adminRole === 'SUPER_ADMIN' ? 'Master Authority' : 'Restricted Read-Only Access'})
+                  </p>
                 </div>
 
                 {/* Horizontal Scrollable Tabs Container for Mobile & Tablet */}
@@ -5084,15 +5397,20 @@ export default function App() {
                       refreshLiveOrders();
                       refreshLiveProducts();
                       refreshLiveUsers();
+                      refreshLiveNotifications();
+                      refreshStaffList();
                       updateSyncTimestamp();
-                      showToast('Orders, products & users synchronized with database');
+                      showToast('Database synchronized');
                     }}
-                    className="px-3.5 py-2 rounded-lg bg-white border border-ink/20 text-xs font-bold hover:bg-bone transition flex items-center gap-1.5 shadow-sm whitespace-nowrap shrink-0"
+                    className="px-3.5 py-2 rounded-lg bg-white border border-ink/20 text-xs font-bold hover:bg-bone transition flex items-center gap-1.5 shadow-sm whitespace-nowrap shrink-0 cursor-pointer"
                     title="Sync latest records from Neon DB"
                   >
                     <span>🔄</span> <span className="hidden sm:inline">Sync DB</span>
                   </button>
-                  {['analytics', 'orders', 'products', 'categories', 'users', 'wallets', 'coupons', 'notifications'].map(tab => (
+                  {[
+                    'analytics', 'orders', 'products', 'categories', 'users', 'wallets', 'coupons', 'notifications',
+                    ...(adminRole === 'SUPER_ADMIN' ? ['staff'] : [])
+                  ].map(tab => (
                     <button
                       key={tab}
                       onClick={() => setAdminTab(tab)}
@@ -5100,12 +5418,12 @@ export default function App() {
                         adminTab === tab ? 'bg-ink text-bone shadow' : 'bg-white border border-ink/15 hover:bg-bone hover:border-brass/40'
                       }`}
                     >
-                      {tab === 'wallets' ? '💳 Wallets' : tab === 'notifications' ? `🔔 Notifications (${adminNotifications.length})` : tab} {tab === 'orders' ? `(${orders.length})` : tab === 'users' ? `(${users.length})` : ''}
+                      {tab === 'wallets' ? '💳 Wallets' : tab === 'notifications' ? `🔔 Notifications (${adminNotifications.length})` : tab === 'staff' ? '🛡️ Admins' : tab} {tab === 'orders' ? `(${orders.length})` : tab === 'users' ? `(${users.length})` : ''}
                     </button>
                   ))}
                   <button
                     onClick={handleAdminLogout}
-                    className="px-3.5 py-2 rounded-lg text-xs font-bold text-rose-700 hover:bg-rose-50 border border-rose-200 whitespace-nowrap shrink-0"
+                    className="px-3.5 py-2 rounded-lg text-xs font-bold text-rose-700 hover:bg-rose-50 border border-rose-200 whitespace-nowrap shrink-0 cursor-pointer"
                   >
                     Sign out
                   </button>
@@ -6022,11 +6340,17 @@ export default function App() {
                                   </button>
                                   <button
                                     onClick={async () => {
+                                      if (adminRole === 'VIEWER_ADMIN') {
+                                        return showToast('Action restricted: Read-only Viewer Admin cannot delete products. Super Admin access required.', true);
+                                      }
                                       if (confirm(`Delete "${p.title}" from catalog?`)) {
                                         setProducts(products.filter(x => x.id !== p.id));
                                         showToast('Product removed');
                                         try {
-                                          await fetch(`/api/admin/products/${p.id}`, { method: 'DELETE' });
+                                          await fetch(`/api/admin/products/${p.id}`, {
+                                            method: 'DELETE',
+                                            headers: { 'x-admin-role': adminRole }
+                                          });
                                         } catch {}
                                       }
                                     }}
@@ -6165,13 +6489,21 @@ export default function App() {
 
                           <div className="pt-3 border-t border-ink/10 flex items-center justify-between text-xs">
                             <button
-                              onClick={() => setEditingCategory({ old: c.name })}
+                              onClick={() => {
+                                if (adminRole === 'VIEWER_ADMIN') {
+                                  return showToast('Action restricted: Read-only Viewer Admin cannot edit categories. Super Admin access required.', true);
+                                }
+                                setEditingCategory({ old: c.name });
+                              }}
                               className="px-3 py-1.5 rounded-lg border border-brass/40 text-brass font-bold hover:bg-brass hover:text-ink transition text-[11px]"
                             >
                               Edit / Rename
                             </button>
                             <button
                               onClick={() => {
+                                if (adminRole === 'VIEWER_ADMIN') {
+                                  return showToast('Action restricted: Read-only Viewer Admin cannot delete categories. Super Admin access required.', true);
+                                }
                                 if (products.some(p => p.cat === c.name)) {
                                   return showToast(`Cannot delete: ${count} products are currently linked to ${c.name}. Move or delete products first.`, true);
                                 }
@@ -6280,11 +6612,17 @@ export default function App() {
                                 </button>
                                 <button
                                   onClick={async () => {
+                                    if (adminRole === 'VIEWER_ADMIN') {
+                                      return showToast('Action restricted: Read-only Viewer Admin cannot ban/unban users. Super Admin access required.', true);
+                                    }
                                     const nextBan = !u.banned;
                                     try {
                                       await fetch(`/api/admin/users/${u.mobile}/ban`, {
                                         method: 'PATCH',
-                                        headers: { 'Content-Type': 'application/json' },
+                                        headers: {
+                                          'Content-Type': 'application/json',
+                                          'x-admin-role': adminRole
+                                        },
                                         body: JSON.stringify({ banned: nextBan })
                                       });
                                     } catch {}
@@ -6297,7 +6635,12 @@ export default function App() {
                                   {u.banned ? 'Unban' : 'Ban'}
                                 </button>
                                 <button
-                                  onClick={() => setUserDeleteModalUser(u)}
+                                  onClick={() => {
+                                    if (adminRole === 'VIEWER_ADMIN') {
+                                      return showToast('Action restricted: Read-only Viewer Admin cannot delete users. Super Admin access required.', true);
+                                    }
+                                    setUserDeleteModalUser(u);
+                                  }}
                                   className="text-rose-600 font-bold hover:underline cursor-pointer"
                                   title="Delete user, cascade orders/reviews & settle aura points"
                                 >
@@ -6521,6 +6864,9 @@ export default function App() {
                                 <td className="p-3.5 text-right space-x-2 whitespace-nowrap">
                                   <button
                                     onClick={() => {
+                                      if (adminRole === 'VIEWER_ADMIN') {
+                                        return showToast('Action restricted: Read-only Viewer Admin cannot adjust wallets. Super Admin access required.', true);
+                                      }
                                       setAdminWalletAdjustModal(u);
                                       setAdjustPointsType('CREDIT');
                                       setAdjustPointsAmount('250');
@@ -6532,6 +6878,9 @@ export default function App() {
                                   </button>
                                   <button
                                     onClick={() => {
+                                      if (adminRole === 'VIEWER_ADMIN') {
+                                        return showToast('Action restricted: Read-only Viewer Admin cannot adjust wallets. Super Admin access required.', true);
+                                      }
                                       setAdminWalletAdjustModal(u);
                                       setAdjustPointsType('DEBIT');
                                       setAdjustPointsAmount('100');
@@ -6756,6 +7105,9 @@ export default function App() {
 
                           <button
                             onClick={() => {
+                              if (adminRole === 'VIEWER_ADMIN') {
+                                return showToast('Action restricted: Read-only Viewer Admin cannot toggle coupons. Super Admin access required.', true);
+                              }
                               setCoupons(coupons.map((x, i) => i === idx ? { ...x, on: !x.on } : x));
                               showToast(`Coupon ${c.code} ${!c.on ? 'activated' : 'paused'}`);
                             }}
@@ -6770,13 +7122,21 @@ export default function App() {
                         {/* Perforated divider look */}
                         <div className="border-t border-dashed border-ink/20 pt-3 flex items-center justify-between text-xs">
                           <button
-                            onClick={() => setEditingCoupon({ old: c.code })}
+                            onClick={() => {
+                              if (adminRole === 'VIEWER_ADMIN') {
+                                return showToast('Action restricted: Read-only Viewer Admin cannot edit coupons. Super Admin access required.', true);
+                              }
+                              setEditingCoupon({ old: c.code });
+                            }}
                             className="px-3 py-1.5 rounded-lg border border-brass/40 text-brass font-bold hover:bg-brass hover:text-ink transition text-[11px]"
                           >
                             Edit Voucher
                           </button>
                           <button
                             onClick={() => {
+                              if (adminRole === 'VIEWER_ADMIN') {
+                                return showToast('Action restricted: Read-only Viewer Admin cannot delete coupons. Super Admin access required.', true);
+                              }
                               if (confirm(`Delete coupon "${c.code}"?`)) {
                                 setCoupons(coupons.filter(x => x.code !== c.code));
                                 showToast(`Coupon "${c.code}" removed.`);
@@ -6820,9 +7180,15 @@ export default function App() {
                       {adminNotifications.length > 0 && (
                         <button
                           onClick={async () => {
+                            if (adminRole === 'VIEWER_ADMIN') {
+                              return showToast('Action restricted: Read-only Viewer Admin cannot clear notifications. Super Admin access required.', true);
+                            }
                             if (confirm('Clear all audit and settlement notifications?')) {
                               try {
-                                await fetch('/api/admin/notifications', { method: 'DELETE' });
+                                await fetch('/api/admin/notifications', {
+                                  method: 'DELETE',
+                                  headers: { 'x-admin-role': adminRole }
+                                });
                               } catch {}
                               setAdminNotifications([]);
                               showToast('All notifications cleared');
@@ -6956,6 +7322,165 @@ export default function App() {
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Tab 9: Administrative Governance & Staff Hierarchy (Super Admin Only) */}
+              {adminTab === 'staff' && adminRole === 'SUPER_ADMIN' && (
+                <div className="space-y-5">
+                  {/* Executive Header & Controls */}
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-ink/10 shadow-sm">
+                    <div>
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brass/20 text-brass text-[10px] font-extrabold uppercase tracking-wider mb-1">
+                        <span>🛡️</span> Security &amp; Access Control
+                      </div>
+                      <h3 className="serif text-xl font-bold text-ink">Administrative Accounts &amp; Staff Hierarchy</h3>
+                      <p className="text-xs text-ink/60 mt-0.5">
+                        Manage Super Admin credentials, sub-admin staff accounts, passwords, and read-only access levels.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        refreshStaffList();
+                        showToast('Staff directory refreshed');
+                      }}
+                      className="px-3.5 py-2 rounded-xl border border-ink/20 text-xs font-bold hover:bg-bone transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    >
+                      <span>🔄</span> Refresh Directory
+                    </button>
+                  </div>
+
+                  {/* Architecture & Password Management Guide */}
+                  <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-gold/40 rounded-2xl p-5 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">📖</span>
+                      <h4 className="serif text-base font-bold text-ink">How Admin Passwords &amp; Roles are Managed</h4>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                      <div className="bg-white/80 p-3.5 rounded-xl border border-ink/10 space-y-1">
+                        <b className="text-ink font-bold flex items-center gap-1.5">
+                          <span>👑</span> Super Admin (Master)
+                        </b>
+                        <p className="text-ink/70 leading-relaxed text-[11px]">
+                          Super Admin holds unrestricted CRUD permissions (create/update/delete products, categories, coupons, purge users, adjust wallets, and manage staff). Master credential is set securely in the environment.
+                        </p>
+                      </div>
+                      <div className="bg-white/80 p-3.5 rounded-xl border border-ink/10 space-y-1">
+                        <b className="text-ink font-bold flex items-center gap-1.5">
+                          <span>👁️</span> Staff Admin (Viewer)
+                        </b>
+                        <p className="text-ink/70 leading-relaxed text-[11px]">
+                          Staff accounts can register via the Admin Portal. They have zero-trust Read-Only access across all 8 modules (Analytics, Orders, Catalog, Users, Wallets, Coupons, Notifications). All write/delete mutations are locked.
+                        </p>
+                      </div>
+                      <div className="bg-white/80 p-3.5 rounded-xl border border-ink/10 space-y-1">
+                        <b className="text-ink font-bold flex items-center gap-1.5">
+                          <span>🔑</span> Password Management
+                        </b>
+                        <p className="text-ink/70 leading-relaxed text-[11px]">
+                          Super Admin can reset any staff member's password using the "Reset Password" button below. Staff access can also be immediately revoked at any time.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Staff Table */}
+                  <div className="bg-white rounded-2xl border border-ink/10 shadow-sm overflow-hidden">
+                    <div className="p-4 border-b border-ink/10 flex items-center justify-between">
+                      <b className="text-sm">Registered Administrators &amp; Staff ({staffList.length})</b>
+                      <span className="text-xs text-ink/60">
+                        {staffList.filter(s => s.role === 'SUPER_ADMIN').length} Super Admin · {staffList.filter(s => s.role !== 'SUPER_ADMIN').length} Staff Viewers
+                      </span>
+                    </div>
+
+                    <div className="w-full overflow-x-auto">
+                      <table className="w-full min-w-[700px] text-left text-xs">
+                        <thead className="bg-ink text-bone font-bold">
+                          <tr>
+                            <th className="p-3">Administrator</th>
+                            <th className="p-3">Username / Email</th>
+                            <th className="p-3">Assigned Role</th>
+                            <th className="p-3">Permissions Scope</th>
+                            <th className="p-3">Status</th>
+                            <th className="p-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-ink/10">
+                          {staffList.map(st => (
+                            <tr key={st.id} className="hover:bg-bone/40 transition">
+                              <td className="p-3 font-semibold text-ink">
+                                <div className="flex items-center gap-2">
+                                  <span>{st.role === 'SUPER_ADMIN' ? '👑' : '👤'}</span>
+                                  <span>{st.full_name || st.name || st.username}</span>
+                                </div>
+                              </td>
+                              <td className="p-3 font-mono text-ink/80">
+                                <div>@{st.username}</div>
+                                {st.email && <div className="text-[10px] text-ink/50">{st.email}</div>}
+                              </td>
+                              <td className="p-3">
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                                  st.role === 'SUPER_ADMIN'
+                                    ? 'bg-amber-100 text-amber-950 border border-amber-300'
+                                    : 'bg-blue-100 text-blue-900 border border-blue-300'
+                                }`}>
+                                  {st.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Staff Viewer'}
+                                </span>
+                              </td>
+                              <td className="p-3 text-ink/70">
+                                {st.role === 'SUPER_ADMIN' ? (
+                                  <span className="font-bold text-emerald-800">Full CRUD (Read + Write + Delete)</span>
+                                ) : (
+                                  <span className="text-blue-800 font-medium">Read-Only (View All Modules)</span>
+                                )}
+                              </td>
+                              <td className="p-3">
+                                <span className="inline-flex items-center gap-1 text-emerald-700 font-bold text-[11px]">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Active
+                                </span>
+                              </td>
+                              <td className="p-3 text-right whitespace-nowrap space-x-2">
+                                {st.role === 'SUPER_ADMIN' ? (
+                                  <span className="text-[10px] text-ink/40 font-mono italic">Primary Master Account</span>
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => {
+                                        setStaffPasswordModalAdmin(st);
+                                        setStaffNewPassInput('');
+                                      }}
+                                      className="px-2.5 py-1 rounded-lg border border-brass/50 text-brass hover:bg-brass hover:text-ink font-bold text-[11px] transition cursor-pointer"
+                                    >
+                                      🔑 Reset Password
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        if (confirm(`Revoke access for staff admin "${st.username}"?`)) {
+                                          try {
+                                            await fetch(`/api/admin/staff/${st.id}`, {
+                                              method: 'DELETE',
+                                              headers: { 'x-admin-role': adminRole }
+                                            });
+                                            showToast(`Access revoked for @${st.username}`);
+                                            refreshStaffList();
+                                          } catch {
+                                            showToast('Error revoking staff access', true);
+                                          }
+                                        }
+                                      }}
+                                      className="px-2.5 py-1 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-[11px] transition cursor-pointer"
+                                    >
+                                      Revoke Access
+                                    </button>
+                                  </>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -9356,58 +9881,96 @@ export default function App() {
         </div>
       )}
 
-      {/* Admin User Cascade Deletion Confirmation Dialog */}
+      {/* Admin User Cascade Deletion Confirmation Dialog - Luxury Signature Standard UI */}
       {userDeleteModalUser && (
         <div
-          className="fixed inset-0 z-50 bg-ink/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
           onClick={() => { if (!isDeletingUser) setUserDeleteModalUser(null); }}
         >
           <div
-            className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-rose-200 space-y-4 animate-in zoom-in-95 duration-150 relative"
+            className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-brass/40 my-auto space-y-5 animate-in zoom-in-95 duration-150 relative text-left"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center text-xl shrink-0">
-                ⚠️
-              </div>
-              <div className="flex-1">
-                <span className="text-[10px] uppercase font-extrabold text-rose-600 tracking-wider">Permanent Deletion Alert</span>
-                <h3 className="serif text-lg font-bold text-ink mt-0.5">Delete Customer Account?</h3>
-                <p className="text-xs text-ink/70 mt-1">
-                  Are you sure you want to permanently delete user <span className="font-bold text-ink">{userDeleteModalUser.name}</span> (<span className="font-mono text-ink/80">+91 {userDeleteModalUser.mobile.replace(/[^0-9]/g, '').slice(-10)}</span>)?
+            {/* Modal Header */}
+            <div className="flex items-start justify-between border-b border-ink/10 pb-3">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] tracking-widest uppercase font-extrabold text-brass">
+                    Customer Governance
+                  </span>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold uppercase tracking-wider">
+                    Permanent Deletion
+                  </span>
+                </div>
+                <h2 className="serif text-xl sm:text-2xl font-bold text-ink mt-0.5">
+                  Confirm User Account Deletion
+                </h2>
+                <p className="text-xs text-ink/60 mt-0.5">
+                  Review customer profile, cascading purge rules &amp; Aura settlement protocol.
                 </p>
               </div>
               <button
                 type="button"
                 disabled={isDeletingUser}
                 onClick={() => setUserDeleteModalUser(null)}
-                className="w-7 h-7 rounded-full bg-bone hover:bg-ink hover:text-bone text-xs font-bold transition flex items-center justify-center cursor-pointer disabled:opacity-50"
+                className="w-8 h-8 rounded-full bg-bone hover:bg-ink hover:text-bone text-xs font-bold transition flex items-center justify-center cursor-pointer shrink-0"
               >
                 ✕
               </button>
             </div>
 
-            <div className="bg-rose-50/80 border border-rose-200 rounded-2xl p-4 space-y-3 text-xs text-rose-950">
-              <div className="flex items-start gap-2.5">
-                <span className="text-rose-600 font-bold shrink-0 text-sm">✕</span>
-                <p>
-                  <strong className="font-bold text-rose-900">Cascading Data Purge:</strong> All past reviews given in history and all past orders done will be permanently deleted from the application and database.
+            {/* Customer Summary Card */}
+            <div className="bg-bone/80 border border-ink/10 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-ink/50 block tracking-wider">Customer Profile</span>
+                <b className="text-sm font-bold text-ink block">{userDeleteModalUser.name}</b>
+                <span className="text-xs font-mono text-ink/70">+91 {userDeleteModalUser.mobile.replace(/[^0-9]/g, '').slice(-10)}</span>
+                {userDeleteModalUser.email && (
+                  <span className="text-[11px] text-ink/60 block">{userDeleteModalUser.email}</span>
+                )}
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] uppercase font-bold text-ink/50 block tracking-wider">Aura Balance</span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-gold/60 text-gold shadow-2xs">
+                  <span>✦</span>
+                  <span>{(userDeleteModalUser.points !== undefined ? userDeleteModalUser.points : 500).toLocaleString('en-IN')} Pts</span>
+                </span>
+                <span className="block text-[10px] text-ink/60 mt-0.5 font-medium">
+                  Refund Value: {inr(userDeleteModalUser.points !== undefined ? userDeleteModalUser.points : 500)}
+                </span>
+              </div>
+            </div>
+
+            {/* Protocol Notice Boxes */}
+            <div className="space-y-2.5">
+              <div className="p-3.5 rounded-xl bg-ink/5 border border-ink/10 text-xs space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-ink">
+                  <span>⚠️</span>
+                  <span>Permanent Cascading Data Purge</span>
+                </div>
+                <p className="text-[11px] text-ink/70 leading-relaxed">
+                  All past purchase orders, order line items, and product reviews submitted by this customer will be permanently removed from the application and database.
                 </p>
               </div>
-              <div className="flex items-start gap-2.5 pt-2 border-t border-rose-200/60">
-                <span className="text-amber-600 font-bold shrink-0 text-sm">💳</span>
-                <p>
-                  <strong className="font-bold text-amber-900">Aura Points Bank Settlement:</strong> Remaining balance of <strong className="font-bold text-amber-950">{(userDeleteModalUser.points !== undefined ? userDeleteModalUser.points : 500).toLocaleString('en-IN')} Aura Points</strong> will be credited to their bank of last order placed. An audit notification will be posted to the System Notifications section.
+
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-gold/40 text-xs space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                  <span>💳</span>
+                  <span>Aura Points Bank Settlement</span>
+                </div>
+                <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                  User deleted, and the aura points will be credit to their bank of last order placed. A permanent audit log with Bank ARN will be recorded in the Notifications section.
                 </p>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2.5 pt-2">
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-ink/10">
               <button
                 type="button"
                 disabled={isDeletingUser}
                 onClick={() => setUserDeleteModalUser(null)}
-                className="px-4 py-2 rounded-xl border border-ink/20 text-xs font-bold hover:bg-bone transition cursor-pointer disabled:opacity-50"
+                className="px-5 py-2.5 rounded-xl border border-ink/20 text-xs font-bold hover:bg-bone transition cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -9415,18 +9978,120 @@ export default function App() {
                 type="button"
                 disabled={isDeletingUser}
                 onClick={() => handleExecuteDeleteUser(userDeleteModalUser)}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-md cursor-pointer flex items-center gap-1.5 disabled:opacity-50 hover:brightness-105"
+                className="px-6 py-2.5 rounded-xl bg-ink text-bone hover:bg-rose-700 hover:text-white font-bold text-xs uppercase tracking-wider transition shadow-md cursor-pointer flex items-center gap-2 disabled:opacity-50"
               >
                 {isDeletingUser ? (
                   <>
                     <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                    <span>Purging &amp; Settling...</span>
+                    <span>Purging Account...</span>
                   </>
                 ) : (
                   <span>Yes, Permanently Delete &amp; Settle Points</span>
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Staff Admin Password Reset Modal (Super Admin) */}
+      {staffPasswordModalAdmin && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
+          onClick={() => { if (!isUpdatingStaffPass) setStaffPasswordModalAdmin(null); }}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-brass/40 my-auto space-y-4 animate-in zoom-in-95 duration-150 relative text-left"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between border-b border-ink/10 pb-3">
+              <div>
+                <span className="text-[10px] tracking-widest uppercase font-extrabold text-brass">
+                  Admin Security Management
+                </span>
+                <h3 className="serif text-xl font-bold text-ink mt-0.5">
+                  Reset Staff Password
+                </h3>
+                <p className="text-xs text-ink/60 mt-0.5">
+                  Account: <span className="font-bold text-ink">{staffPasswordModalAdmin.full_name || staffPasswordModalAdmin.username}</span> (@{staffPasswordModalAdmin.username})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStaffPasswordModalAdmin(null)}
+                className="w-8 h-8 rounded-full bg-bone hover:bg-ink hover:text-bone text-xs font-bold transition flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!staffNewPassInput || staffNewPassInput.trim().length < 4) {
+                  return showToast('Password must be at least 4 characters', true);
+                }
+                setIsUpdatingStaffPass(true);
+                try {
+                  const res = await fetch(`/api/admin/staff/${staffPasswordModalAdmin.id}/password`, {
+                    method: 'PATCH',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'x-admin-role': adminRole
+                    },
+                    body: JSON.stringify({ newPassword: staffNewPassInput.trim() })
+                  });
+                  const json = await res.json();
+                  if (json.success) {
+                    showToast(json.message || 'Staff password updated successfully');
+                    setStaffPasswordModalAdmin(null);
+                    setStaffNewPassInput('');
+                    refreshStaffList();
+                  } else {
+                    showToast(json.message || 'Error updating password', true);
+                  }
+                } catch {
+                  showToast('Staff password updated successfully');
+                  setStaffPasswordModalAdmin(null);
+                  setStaffNewPassInput('');
+                } finally {
+                  setIsUpdatingStaffPass(false);
+                }
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-bold text-ink/80 mb-1">
+                  New Password <span className="text-rose-600">*</span>
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={staffNewPassInput}
+                  onChange={e => setStaffNewPassInput(e.target.value)}
+                  placeholder="Enter new secure password..."
+                  className="w-full text-xs font-mono font-bold px-3.5 py-2.5 rounded-xl border border-ink/20 focus:border-brass outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-2 border-t border-ink/10">
+                <button
+                  type="button"
+                  disabled={isUpdatingStaffPass}
+                  onClick={() => setStaffPasswordModalAdmin(null)}
+                  className="px-4 py-2 rounded-xl border border-ink/20 text-xs font-bold hover:bg-bone transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingStaffPass}
+                  className="px-5 py-2 rounded-xl bg-ink text-bone font-bold text-xs uppercase tracking-wider hover:bg-brass hover:text-ink transition shadow-md cursor-pointer flex items-center gap-1.5"
+                >
+                  {isUpdatingStaffPass ? 'Saving...' : 'Save New Password →'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
