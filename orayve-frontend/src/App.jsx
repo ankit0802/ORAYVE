@@ -905,6 +905,20 @@ export default function App() {
       .catch(() => {});
   };
 
+  const refreshLiveCoupons = (asAdmin = adminLoggedIn) => {
+    const url = asAdmin ? '/api/admin/coupons' : '/api/coupons';
+    fetch(url, {
+      headers: asAdmin ? { 'x-admin-role': adminRole } : {}
+    })
+      .then(r => r.json())
+      .then(res => {
+        if (res.success && Array.isArray(res.data)) {
+          setCoupons(res.data);
+        }
+      })
+      .catch(() => {});
+  };
+
   const handleExecuteDeleteUser = async (targetUser) => {
     if (!targetUser || !targetUser.mobile) return;
     if (adminRole === 'VIEWER_ADMIN') {
@@ -1172,12 +1186,7 @@ export default function App() {
       })
       .catch(() => {});
 
-    fetch('/api/coupons')
-      .then(r => r.json())
-      .then(res => {
-        if (res.success && res.data) setCoupons(res.data);
-      })
-      .catch(() => {});
+    refreshLiveCoupons(adminLoggedIn);
   }, []);
 
   // Persist Admin Session & View across page refreshes
@@ -1185,11 +1194,36 @@ export default function App() {
     try {
       if (adminLoggedIn) {
         localStorage.setItem('orv_admin_auth', 'true');
+        refreshLiveCoupons(true);
       } else {
         localStorage.removeItem('orv_admin_auth');
       }
     } catch {}
   }, [adminLoggedIn]);
+
+  useEffect(() => {
+    if (adminLoggedIn && adminTab === 'coupons') {
+      refreshLiveCoupons(true);
+    }
+  }, [adminLoggedIn, adminTab]);
+
+  // Load persistent user addresses from PostgreSQL when user logs in
+  useEffect(() => {
+    if (currentUser && currentUser.mobile) {
+      fetch(`/api/users/addresses?mobile=${encodeURIComponent(currentUser.mobile)}`)
+        .then(r => r.json())
+        .then(res => {
+          if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+            setAddresses(prev => {
+              const prevIds = new Set(prev.map(a => a.id));
+              const newAddrs = res.data.filter(a => !prevIds.has(a.id));
+              return [...prev, ...newAddrs];
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     try {
@@ -1568,7 +1602,10 @@ export default function App() {
       const method = editingProduct.id ? 'PUT' : 'POST';
       await fetch(endpoint, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-role': adminRole
+        },
         body: JSON.stringify({
           title: cleanTitle,
           cat: formCat,
@@ -6758,7 +6795,7 @@ export default function App() {
                   {/* Add / Edit Category Form */}
                   {editingCategory && (
                     <form
-                      onSubmit={e => {
+                      onSubmit={async e => {
                         e.preventDefault();
                         const fd = new FormData(e.currentTarget);
                         const name = fd.get('name').trim();
@@ -6768,8 +6805,29 @@ export default function App() {
                         } else {
                           setCategories([...categories, { name, hsn }]);
                         }
+                        const isEdit = Boolean(editingCategory.old);
+                        const oldCatName = editingCategory.old;
                         setEditingCategory(null);
                         showToast('Category saved successfully');
+
+                        try {
+                          const endpoint = isEdit ? `/api/admin/categories/${encodeURIComponent(oldCatName)}` : '/api/admin/categories';
+                          const method = isEdit ? 'PUT' : 'POST';
+                          await fetch(endpoint, {
+                            method,
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'x-admin-role': adminRole
+                            },
+                            body: JSON.stringify({ name, hsn })
+                          });
+                          fetch('/api/catalog/categories')
+                            .then(r => r.json())
+                            .then(res => { if (res.success && res.data) setCategories(res.data); })
+                            .catch(() => {});
+                        } catch (err) {
+                          console.warn('Category sync error:', err);
+                        }
                       }}
                       className="bg-white p-6 rounded-2xl border-2 border-brass/50 shadow-lg space-y-4 animate-in fade-in duration-200"
                     >
@@ -6864,7 +6922,7 @@ export default function App() {
                               Edit / Rename
                             </button>
                             <button
-                              onClick={() => {
+                              onClick={async () => {
                                 if (adminRole === 'VIEWER_ADMIN') {
                                   return showToast('Action restricted: Read-only Viewer Admin cannot delete categories. Super Admin access required.', true);
                                 }
@@ -6874,6 +6932,18 @@ export default function App() {
                                 if (confirm(`Permanently delete category "${c.name}"?`)) {
                                   setCategories(categories.filter(x => x.name !== c.name));
                                   showToast(`Category "${c.name}" deleted.`);
+                                  try {
+                                    await fetch(`/api/admin/categories/${encodeURIComponent(c.name)}`, {
+                                      method: 'DELETE',
+                                      headers: { 'x-admin-role': adminRole }
+                                    });
+                                    fetch('/api/catalog/categories')
+                                      .then(r => r.json())
+                                      .then(res => { if (res.success && res.data) setCategories(res.data); })
+                                      .catch(() => {});
+                                  } catch (err) {
+                                    console.warn('Category delete error:', err);
+                                  }
                                 }
                               }}
                               className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 font-bold hover:bg-rose-50 transition text-[11px]"
@@ -7297,7 +7367,7 @@ export default function App() {
                   {/* Add / Edit Coupon Form */}
                   {editingCoupon && (
                     <form
-                      onSubmit={e => {
+                      onSubmit={async e => {
                         e.preventDefault();
                         const fd = new FormData(e.currentTarget);
                         const code = fd.get('code').trim().toUpperCase();
@@ -7311,13 +7381,32 @@ export default function App() {
                           on: !!fd.get('on')
                         };
 
-                        if (editingCoupon.old) {
-                          setCoupons(coupons.map(c => c.code === editingCoupon.old ? nc : c));
+                        const isEdit = Boolean(editingCoupon.old);
+                        const oldCouponCode = editingCoupon.old;
+
+                        if (isEdit) {
+                          setCoupons(coupons.map(c => c.code === oldCouponCode ? nc : c));
                         } else {
-                          setCoupons([...coupons, nc]);
+                          setCoupons([...coupons.filter(c => c.code !== code), nc]);
                         }
                         setEditingCoupon(null);
                         showToast(`Coupon ${code} saved successfully`);
+
+                        try {
+                          const endpoint = isEdit ? `/api/admin/coupons/${encodeURIComponent(oldCouponCode)}` : '/api/admin/coupons';
+                          const method = isEdit ? 'PUT' : 'POST';
+                          await fetch(endpoint, {
+                            method,
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'x-admin-role': adminRole
+                            },
+                            body: JSON.stringify(nc)
+                          });
+                          refreshLiveCoupons(true);
+                        } catch (err) {
+                          console.warn('Coupon sync error:', err);
+                        }
                       }}
                       className="bg-white p-6 rounded-2xl border-2 border-brass/50 shadow-lg space-y-4 animate-in fade-in duration-200"
                     >
@@ -7468,12 +7557,21 @@ export default function App() {
                           </div>
 
                           <button
-                            onClick={() => {
+                            onClick={async () => {
                               if (adminRole === 'VIEWER_ADMIN') {
                                 return showToast('Action restricted: Read-only Viewer Admin cannot toggle coupons. Super Admin access required.', true);
                               }
                               setCoupons(coupons.map((x, i) => i === idx ? { ...x, on: !x.on } : x));
                               showToast(`Coupon ${c.code} ${!c.on ? 'activated' : 'paused'}`);
+                              try {
+                                await fetch(`/api/admin/coupons/${encodeURIComponent(c.code)}/toggle`, {
+                                  method: 'PATCH',
+                                  headers: { 'x-admin-role': adminRole }
+                                });
+                                refreshLiveCoupons(true);
+                              } catch (err) {
+                                console.warn('Coupon toggle error:', err);
+                              }
                             }}
                             className={`px-3 py-1 rounded-full text-[10px] font-extrabold tracking-wider uppercase transition shadow-xs ${
                               c.on ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-gray-100 text-gray-600 border border-gray-300'
@@ -7497,13 +7595,22 @@ export default function App() {
                             Edit Voucher
                           </button>
                           <button
-                            onClick={() => {
+                            onClick={async () => {
                               if (adminRole === 'VIEWER_ADMIN') {
                                 return showToast('Action restricted: Read-only Viewer Admin cannot delete coupons. Super Admin access required.', true);
                               }
                               if (confirm(`Delete coupon "${c.code}"?`)) {
                                 setCoupons(coupons.filter(x => x.code !== c.code));
                                 showToast(`Coupon "${c.code}" removed.`);
+                                try {
+                                  await fetch(`/api/admin/coupons/${encodeURIComponent(c.code)}`, {
+                                    method: 'DELETE',
+                                    headers: { 'x-admin-role': adminRole }
+                                  });
+                                  refreshLiveCoupons(true);
+                                } catch (err) {
+                                  console.warn('Coupon delete error:', err);
+                                }
                               }
                             }}
                             className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 font-bold hover:bg-rose-50 transition text-[11px]"

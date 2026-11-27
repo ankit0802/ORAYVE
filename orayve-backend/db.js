@@ -235,6 +235,33 @@ export async function initDatabase() {
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS public.coupons (
+        coupon_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        code VARCHAR(50) UNIQUE NOT NULL,
+        type VARCHAR(10) NOT NULL DEFAULT 'P',
+        val DECIMAL(10, 2) NOT NULL,
+        max_discount DECIMAL(10, 2) DEFAULT 1000000,
+        min_order DECIMAL(10, 2) DEFAULT 0,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS public.categories (
+        category_id SERIAL PRIMARY KEY,
+        name VARCHAR(100) UNIQUE NOT NULL,
+        slug VARCHAR(120) UNIQUE NOT NULL,
+        hsn_code VARCHAR(20),
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      INSERT INTO public.coupons (code, type, val, max_discount, min_order, is_active)
+      VALUES 
+        ('WELCOME15', 'P', 15, 500, 500, TRUE),
+        ('ORAYVE200', 'F', 200, 200, 999, TRUE)
+      ON CONFLICT (code) DO NOTHING;
     `);
 
     client.release();

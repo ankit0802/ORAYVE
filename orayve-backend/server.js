@@ -211,7 +211,25 @@ app.get('/api/catalog/products/:id', (req, res) => {
 });
 
 // GET /api/coupons (Active coupons for Ticker & Offer Bar)
-app.get('/api/coupons', (req, res) => {
+app.get('/api/coupons', async (req, res) => {
+  if (pool) {
+    try {
+      const q = await pool.query('SELECT code, type, val, max_discount, min_order, is_active FROM public.coupons WHERE is_active = TRUE ORDER BY created_at DESC;');
+      if (q.rows.length > 0) {
+        const activeList = q.rows.map(r => ({
+          code: r.code,
+          type: r.type,
+          val: parseFloat(r.val),
+          max: r.max_discount ? parseFloat(r.max_discount) : (r.type === 'P' ? 1e9 : parseFloat(r.val)),
+          min: parseFloat(r.min_order || 0),
+          on: true
+        }));
+        return res.json({ success: true, data: activeList });
+      }
+    } catch (e) {
+      console.error('[DB] Error querying active coupons:', e.message);
+    }
+  }
   res.json({ success: true, data: COUPONS.filter(c => c.on) });
 });
 
@@ -664,8 +682,24 @@ app.post('/api/users/addresses', (req, res) => {
 });
 
 // GET /api/users/addresses
-app.get('/api/users/addresses', (req, res) => {
+app.get('/api/users/addresses', async (req, res) => {
   const { mobile } = req.query;
+  if (pool && mobile) {
+    try {
+      const last10 = mobile.replace(/[^0-9]/g, '').slice(-10);
+      const q = await pool.query(`
+        SELECT address_id as id, mobile as m, recipient_name as name, phone, street_line1 as street, city, state, pincode as pin
+        FROM public.user_addresses
+        WHERE mobile = $1 OR RIGHT(regexp_replace(mobile, '[^0-9]', '', 'g'), 10) = $2
+        ORDER BY created_at DESC;
+      `, [mobile, last10]);
+      if (q.rows.length > 0) {
+        return res.json({ success: true, data: q.rows });
+      }
+    } catch (e) {
+      console.error('[DB] Error querying addresses:', e.message);
+    }
+  }
   const list = mobile ? ADDRESSES.filter(a => a.m === mobile) : ADDRESSES;
   res.json({ success: true, data: list });
 });
@@ -2093,7 +2127,7 @@ app.post('/api/admin/products', guardSuperAdminWrite, (req, res) => {
 });
 
 // PUT /api/admin/products/:id
-app.put('/api/admin/products/:id', guardSuperAdminWrite, (req, res) => {
+app.put('/api/admin/products/:id', guardSuperAdminWrite, async (req, res) => {
   const index = PRODUCTS.findIndex(p => p.id === req.params.id);
   if (index === -1) return res.status(404).json({ success: false, message: 'Product not found' });
   
@@ -2120,14 +2154,53 @@ app.put('/api/admin/products/:id', guardSuperAdminWrite, (req, res) => {
     })) : existing.v
   };
 
+  if (pool) {
+    try {
+      await pool.query(`
+        UPDATE public.products 
+        SET title = $1, category_name = $2, design_style = $3, imgs = $4
+        WHERE product_id = $5;
+      `, [PRODUCTS[index].title, PRODUCTS[index].cat, PRODUCTS[index].design, JSON.stringify(PRODUCTS[index].imgs), req.params.id]);
+
+      if (variants && variants.length) {
+        for (const v of PRODUCTS[index].v) {
+          await pool.query(`
+            INSERT INTO public.product_variants (variant_id, product_id, sku, color_name, color_hex, photo_url, mrp_price, discount_percent, sale_price, stock_quantity)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (sku) DO UPDATE SET 
+              color_name = EXCLUDED.color_name,
+              color_hex = EXCLUDED.color_hex,
+              photo_url = EXCLUDED.photo_url,
+              mrp_price = EXCLUDED.mrp_price,
+              discount_percent = EXCLUDED.discount_percent,
+              sale_price = EXCLUDED.sale_price,
+              stock_quantity = EXCLUDED.stock_quantity;
+          `, [v.id, req.params.id, v.sku, v.color, v.hex, v.photo, v.mrp, v.d, v.price, v.stock]);
+        }
+      }
+    } catch (e) {
+      console.error('[DB] Error updating product in Neon:', e.message);
+    }
+  }
+
   res.json({ success: true, message: 'Product updated', data: PRODUCTS[index] });
 });
 
 // DELETE /api/admin/products/:id
-app.delete('/api/admin/products/:id', guardSuperAdminWrite, (req, res) => {
+app.delete('/api/admin/products/:id', guardSuperAdminWrite, async (req, res) => {
   const index = PRODUCTS.findIndex(p => p.id === req.params.id);
   if (index === -1) return res.status(404).json({ success: false, message: 'Product not found' });
   PRODUCTS.splice(index, 1);
+
+  if (pool) {
+    try {
+      await pool.query('DELETE FROM public.products WHERE product_id = $1;', [req.params.id]);
+      await pool.query('DELETE FROM public.product_variants WHERE product_id = $1;', [req.params.id]);
+    } catch (e) {
+      console.error('[DB] Error deleting product from Neon:', e.message);
+    }
+  }
+
   res.json({ success: true, message: 'Product deleted' });
 });
 
@@ -2277,41 +2350,99 @@ app.post('/api/catalog/products/:id/reviews', async (req, res) => {
 });
 
 // Categories CRUD
-app.post('/api/admin/categories', guardSuperAdminWrite, (req, res) => {
+app.post('/api/admin/categories', guardSuperAdminWrite, async (req, res) => {
   const { name, hsn } = req.body;
   if (!name) return res.status(400).json({ success: false, message: 'Category name required' });
-  if (CATEGORIES.some(c => c.name.toLowerCase() === name.trim().toLowerCase())) {
+  const trimName = name.trim();
+  const trimHsn = (hsn || '').trim();
+  if (CATEGORIES.some(c => c.name.toLowerCase() === trimName.toLowerCase())) {
     return res.status(409).json({ success: false, message: 'Category already exists' });
   }
-  CATEGORIES.push({ name: name.trim(), hsn: (hsn || '').trim() });
-  res.json({ success: true, message: 'Category created' });
+  const newCat = { name: trimName, hsn: trimHsn };
+  CATEGORIES.push(newCat);
+
+  if (pool) {
+    try {
+      const slug = trimName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      await pool.query(`
+        INSERT INTO public.categories (name, slug, hsn_code, is_active)
+        VALUES ($1, $2, $3, TRUE)
+        ON CONFLICT (name) DO NOTHING;
+      `, [trimName, slug, trimHsn]);
+      pool.query(`
+        INSERT INTO catalog_schema.categories (name, slug, hsn_code, is_active)
+        VALUES ($1, $2, $3, TRUE)
+        ON CONFLICT (name) DO NOTHING;
+      `, [trimName, slug, trimHsn]).catch(() => {});
+    } catch (e) {
+      console.error('[DB] Error inserting category in DB:', e.message);
+    }
+  }
+
+  res.json({ success: true, message: 'Category created', data: newCat });
 });
 
-app.put('/api/admin/categories/:name', guardSuperAdminWrite, (req, res) => {
+app.put('/api/admin/categories/:name', guardSuperAdminWrite, async (req, res) => {
   const oldName = req.params.name;
   const { name, hsn } = req.body;
   const cat = CATEGORIES.find(c => c.name === oldName);
   if (!cat) return res.status(404).json({ success: false, message: 'Category not found' });
 
-  cat.name = name.trim();
-  cat.hsn = (hsn || '').trim();
-  // Cascade update to products
+  const trimName = (name || oldName).trim();
+  const trimHsn = (hsn || cat.hsn || '').trim();
+  cat.name = trimName;
+  cat.hsn = trimHsn;
+
+  // Cascade update to in-memory products
   PRODUCTS.forEach(p => {
     if (p.cat === oldName) {
-      p.cat = cat.name;
-      p.hsn = cat.hsn;
+      p.cat = trimName;
+      p.hsn = trimHsn;
     }
   });
 
-  res.json({ success: true, message: 'Category updated and products cascaded' });
+  if (pool) {
+    try {
+      const newSlug = trimName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      await pool.query(`
+        UPDATE public.categories 
+        SET name = $1, slug = $2, hsn_code = $3
+        WHERE name = $4;
+      `, [trimName, newSlug, trimHsn, oldName]);
+      await pool.query(`
+        UPDATE public.products
+        SET category_name = $1, hsn_code = $2
+        WHERE category_name = $3;
+      `, [trimName, trimHsn, oldName]);
+      pool.query(`
+        UPDATE catalog_schema.categories 
+        SET name = $1, slug = $2, hsn_code = $3
+        WHERE name = $4;
+      `, [trimName, newSlug, trimHsn, oldName]).catch(() => {});
+    } catch (e) {
+      console.error('[DB] Error updating category in DB:', e.message);
+    }
+  }
+
+  res.json({ success: true, message: 'Category updated and products cascaded', data: cat });
 });
 
-app.delete('/api/admin/categories/:name', guardSuperAdminWrite, (req, res) => {
+app.delete('/api/admin/categories/:name', guardSuperAdminWrite, async (req, res) => {
   const name = req.params.name;
   if (PRODUCTS.some(p => p.cat === name)) {
     return res.status(400).json({ success: false, message: 'Cannot delete: Delete or move its products first' });
   }
   CATEGORIES = CATEGORIES.filter(c => c.name !== name);
+
+  if (pool) {
+    try {
+      await pool.query('DELETE FROM public.categories WHERE name = $1;', [name]);
+      pool.query('DELETE FROM catalog_schema.categories WHERE name = $1;', [name]).catch(() => {});
+    } catch (e) {
+      console.error('[DB] Error deleting category from DB:', e.message);
+    }
+  }
+
   res.json({ success: true, message: 'Category deleted' });
 });
 
@@ -2707,30 +2838,160 @@ app.delete('/api/admin/notifications', guardSuperAdminWrite, async (req, res) =>
   res.json({ success: true, message: 'All notifications cleared' });
 });
 
-// Coupons CRUD (Admin)
-app.get('/api/admin/coupons', (req, res) => {
+// Coupons CRUD (Admin) - Full PostgreSQL Persistence
+app.get('/api/admin/coupons', async (req, res) => {
+  if (pool) {
+    try {
+      const q = await pool.query('SELECT code, type, val, max_discount, min_order, is_active FROM public.coupons ORDER BY created_at DESC;');
+      if (q.rows.length > 0) {
+        const allList = q.rows.map(r => ({
+          code: r.code,
+          type: r.type,
+          val: parseFloat(r.val),
+          max: r.max_discount ? parseFloat(r.max_discount) : (r.type === 'P' ? 1e9 : parseFloat(r.val)),
+          min: parseFloat(r.min_order || 0),
+          on: Boolean(r.is_active)
+        }));
+        return res.json({ success: true, data: allList });
+      }
+    } catch (e) {
+      console.error('[DB] Error querying admin coupons:', e.message);
+    }
+  }
   res.json({ success: true, data: COUPONS });
 });
 
-app.post('/api/admin/coupons', guardSuperAdminWrite, (req, res) => {
+app.post('/api/admin/coupons', guardSuperAdminWrite, async (req, res) => {
   const { code, type, val, max, min, on } = req.body;
   const cd = (code || '').trim().toUpperCase();
-  if (COUPONS.some(c => c.code === cd)) return res.status(409).json({ success: false, message: 'Coupon already exists' });
-  const newC = { code: cd, type: type || 'P', val: Number(val), max: type === 'P' ? (Number(max) || 1e9) : Number(val), min: Number(min) || 0, on: Boolean(on) };
-  COUPONS.push(newC);
-  res.json({ success: true, message: 'Coupon created', data: newC });
+  if (!cd) return res.status(400).json({ success: false, message: 'Coupon code is required' });
+
+  const couponType = type === 'F' ? 'F' : 'P';
+  const valNum = Number(val) || 0;
+  const maxNum = couponType === 'P' ? (Number(max) || 1e9) : valNum;
+  const minNum = Number(min) || 0;
+  const isOn = on !== undefined ? Boolean(on) : true;
+
+  const newC = { code: cd, type: couponType, val: valNum, max: maxNum, min: minNum, on: isOn };
+
+  // In-memory update/upsert
+  const idx = COUPONS.findIndex(c => c.code === cd);
+  if (idx !== -1) {
+    COUPONS[idx] = newC;
+  } else {
+    COUPONS.push(newC);
+  }
+
+  // PostgreSQL persistence
+  if (pool) {
+    try {
+      await pool.query(`
+        INSERT INTO public.coupons (code, type, val, max_discount, min_order, is_active, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        ON CONFLICT (code) DO UPDATE SET
+          type = EXCLUDED.type,
+          val = EXCLUDED.val,
+          max_discount = EXCLUDED.max_discount,
+          min_order = EXCLUDED.min_order,
+          is_active = EXCLUDED.is_active,
+          updated_at = NOW();
+      `, [cd, couponType, valNum, maxNum, minNum, isOn]);
+
+      pool.query(`
+        INSERT INTO order_schema.coupons (code, discount_type, discount_value, min_order_amount, max_discount_cap, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (code) DO UPDATE SET
+          discount_type = EXCLUDED.discount_type,
+          discount_value = EXCLUDED.discount_value,
+          min_order_amount = EXCLUDED.min_order_amount,
+          max_discount_cap = EXCLUDED.max_discount_cap,
+          is_active = EXCLUDED.is_active;
+      `, [cd, couponType === 'P' ? 'PERCENT' : 'FLAT', valNum, minNum, maxNum, isOn]).catch(() => {});
+    } catch (e) {
+      console.error('[DB] Error saving coupon to database:', e.message);
+    }
+  }
+
+  res.json({ success: true, message: 'Coupon created & persisted successfully', data: newC });
 });
 
-app.patch('/api/admin/coupons/:code/toggle', guardSuperAdminWrite, (req, res) => {
-  const c = COUPONS.find(x => x.code === req.params.code.toUpperCase());
-  if (!c) return res.status(404).json({ success: false, message: 'Coupon not found' });
-  c.on = !c.on;
-  res.json({ success: true, message: `Coupon is now ${c.on ? 'Active' : 'Paused'}`, data: c });
+app.put('/api/admin/coupons/:code', guardSuperAdminWrite, async (req, res) => {
+  const oldCode = req.params.code.toUpperCase();
+  const { code, type, val, max, min, on } = req.body;
+  const newCode = (code || oldCode).trim().toUpperCase();
+
+  const couponType = type === 'F' ? 'F' : 'P';
+  const valNum = Number(val) || 0;
+  const maxNum = couponType === 'P' ? (Number(max) || 1e9) : valNum;
+  const minNum = Number(min) || 0;
+  const isOn = on !== undefined ? Boolean(on) : true;
+
+  const updatedC = { code: newCode, type: couponType, val: valNum, max: maxNum, min: minNum, on: isOn };
+
+  // In-memory update
+  const idx = COUPONS.findIndex(c => c.code === oldCode);
+  if (idx !== -1) {
+    COUPONS[idx] = updatedC;
+  } else {
+    COUPONS.push(updatedC);
+  }
+
+  if (pool) {
+    try {
+      if (oldCode !== newCode) {
+        await pool.query('DELETE FROM public.coupons WHERE code = $1;', [oldCode]);
+      }
+      await pool.query(`
+        INSERT INTO public.coupons (code, type, val, max_discount, min_order, is_active, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        ON CONFLICT (code) DO UPDATE SET
+          type = EXCLUDED.type,
+          val = EXCLUDED.val,
+          max_discount = EXCLUDED.max_discount,
+          min_order = EXCLUDED.min_order,
+          is_active = EXCLUDED.is_active,
+          updated_at = NOW();
+      `, [newCode, couponType, valNum, maxNum, minNum, isOn]);
+    } catch (e) {
+      console.error('[DB] Error updating coupon in DB:', e.message);
+    }
+  }
+
+  res.json({ success: true, message: 'Coupon updated & persisted successfully', data: updatedC });
 });
 
-app.delete('/api/admin/coupons/:code', guardSuperAdminWrite, (req, res) => {
-  COUPONS = COUPONS.filter(c => c.code !== req.params.code.toUpperCase());
-  res.json({ success: true, message: 'Coupon deleted' });
+app.patch('/api/admin/coupons/:code/toggle', guardSuperAdminWrite, async (req, res) => {
+  const cd = req.params.code.toUpperCase();
+  const c = COUPONS.find(x => x.code === cd);
+  const nextOn = c ? !c.on : true;
+  if (c) c.on = nextOn;
+
+  if (pool) {
+    try {
+      await pool.query('UPDATE public.coupons SET is_active = NOT is_active, updated_at = NOW() WHERE code = $1;', [cd]);
+      pool.query('UPDATE order_schema.coupons SET is_active = NOT is_active WHERE code = $1;', [cd]).catch(() => {});
+    } catch (e) {
+      console.error('[DB] Error toggling coupon in DB:', e.message);
+    }
+  }
+
+  res.json({ success: true, message: `Coupon is now ${nextOn ? 'Active' : 'Paused'}`, data: c || { code: cd, on: nextOn } });
+});
+
+app.delete('/api/admin/coupons/:code', guardSuperAdminWrite, async (req, res) => {
+  const cd = req.params.code.toUpperCase();
+  COUPONS = COUPONS.filter(c => c.code !== cd);
+
+  if (pool) {
+    try {
+      await pool.query('DELETE FROM public.coupons WHERE code = $1;', [cd]);
+      pool.query('DELETE FROM order_schema.coupons WHERE code = $1;', [cd]).catch(() => {});
+    } catch (e) {
+      console.error('[DB] Error deleting coupon in DB:', e.message);
+    }
+  }
+
+  res.json({ success: true, message: 'Coupon deleted from database successfully' });
 });
 
 // Health check
@@ -2765,6 +3026,11 @@ async function loadOrdersFromDatabase() {
         o.order_status as status,
         o.coupon_code as coupon,
         o.created_at as at,
+        o.cancel_info as "cancelInfo",
+        o.return_info as "returnInfo",
+        o.delivered_at as "deliveredAt",
+        o.completed_at as "completedAt",
+        o.aura_points_redeemed as "auraPoints",
         COALESCE(
           json_agg(
             json_build_object(
@@ -2789,6 +3055,14 @@ async function loadOrdersFromDatabase() {
         try {
           if (typeof r.addr === 'string') parsedAddr = JSON.parse(r.addr);
         } catch {}
+        let parsedCancel = r.cancelInfo;
+        try {
+          if (typeof r.cancelInfo === 'string') parsedCancel = JSON.parse(r.cancelInfo);
+        } catch {}
+        let parsedReturn = r.returnInfo;
+        try {
+          if (typeof r.returnInfo === 'string') parsedReturn = JSON.parse(r.returnInfo);
+        } catch {}
         return {
           id: r.id,
           inv: r.inv,
@@ -2802,6 +3076,10 @@ async function loadOrdersFromDatabase() {
           auraPoints: parseInt(r.auraPoints) || 0,
           total: parseFloat(r.total),
           addr: parsedAddr,
+          cancelInfo: parsedCancel || undefined,
+          returnInfo: parsedReturn || undefined,
+          deliveredAt: r.deliveredAt || undefined,
+          completedAt: r.completedAt || undefined,
           items: r.items || []
         };
       });
@@ -2812,10 +3090,193 @@ async function loadOrdersFromDatabase() {
   }
 }
 
-// Synchronize real-time product stock & total units sold from Neon PostgreSQL
+// Hydrate categories from PostgreSQL
+async function loadCategoriesFromDatabase() {
+  if (!pool) return;
+  try {
+    const q = await pool.query('SELECT name, hsn_code FROM public.categories ORDER BY category_id ASC;');
+    if (q.rows.length > 0) {
+      const dbCats = q.rows.map(r => ({ name: r.name, hsn: r.hsn_code || '' }));
+      const seen = new Set();
+      const merged = [];
+      for (const c of [...CATEGORIES, ...dbCats]) {
+        if (!seen.has(c.name.toLowerCase())) {
+          seen.add(c.name.toLowerCase());
+          merged.push(c);
+        }
+      }
+      CATEGORIES = merged;
+      console.log(`[DB] Successfully loaded ${CATEGORIES.length} categories from PostgreSQL.`);
+    } else {
+      for (const c of CATEGORIES) {
+        const slug = c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        await pool.query(`
+          INSERT INTO public.categories (name, slug, hsn_code, is_active)
+          VALUES ($1, $2, $3, TRUE)
+          ON CONFLICT (name) DO NOTHING;
+        `, [c.name, slug, c.hsn]);
+      }
+    }
+  } catch (e) {
+    console.error('[DB] Failed loading categories from database:', e.message);
+  }
+}
+
+// Hydrate coupons from PostgreSQL
+async function loadCouponsFromDatabase() {
+  if (!pool) return;
+  try {
+    const q = await pool.query('SELECT code, type, val, max_discount, min_order, is_active FROM public.coupons ORDER BY created_at ASC;');
+    if (q.rows.length > 0) {
+      COUPONS = q.rows.map(r => ({
+        code: r.code,
+        type: r.type,
+        val: parseFloat(r.val),
+        max: r.max_discount ? parseFloat(r.max_discount) : (r.type === 'P' ? 1e9 : parseFloat(r.val)),
+        min: parseFloat(r.min_order || 0),
+        on: Boolean(r.is_active)
+      }));
+      console.log(`[DB] Successfully loaded ${COUPONS.length} coupons from PostgreSQL.`);
+    } else {
+      for (const c of COUPONS) {
+        await pool.query(`
+          INSERT INTO public.coupons (code, type, val, max_discount, min_order, is_active)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (code) DO NOTHING;
+        `, [c.code, c.type, c.val, c.max, c.min, c.on]);
+      }
+    }
+  } catch (e) {
+    console.error('[DB] Failed loading coupons from database:', e.message);
+  }
+}
+
+// Hydrate users from PostgreSQL
+async function loadUsersFromDatabase() {
+  if (!pool) return;
+  try {
+    const q = await pool.query(`
+      SELECT full_name as name, age, email, mobile_number as mobile, password_hash,
+             is_banned as banned, to_char(created_at, 'DD/MM/YYYY') as at
+      FROM public.users
+      ORDER BY created_at ASC;
+    `);
+    if (q.rows.length > 0) {
+      const dbUsers = q.rows.map(r => ({
+        name: r.name,
+        age: r.age || 25,
+        email: r.email || '',
+        mobile: r.mobile,
+        password_hash: r.password_hash,
+        at: r.at || '23/11/2026',
+        banned: Boolean(r.banned)
+      }));
+      const mobMap = new Map();
+      USERS.forEach(u => mobMap.set(u.mobile, u));
+      dbUsers.forEach(u => mobMap.set(u.mobile, u));
+      USERS = Array.from(mobMap.values());
+      console.log(`[DB] Successfully loaded ${USERS.length} users from PostgreSQL.`);
+    }
+  } catch (e) {
+    console.error('[DB] Failed loading users from database:', e.message);
+  }
+}
+
+// Hydrate user addresses from PostgreSQL
+async function loadAddressesFromDatabase() {
+  if (!pool) return;
+  try {
+    const q = await pool.query(`
+      SELECT address_id as id, mobile as m, recipient_name as name, phone, street_line1 as street, city, state, pincode as pin
+      FROM public.user_addresses
+      ORDER BY created_at ASC;
+    `);
+    if (q.rows.length > 0) {
+      const dbAddrs = q.rows.map(r => ({
+        id: r.id,
+        m: r.m,
+        name: r.name,
+        phone: r.phone,
+        street: r.street,
+        city: r.city,
+        state: r.state,
+        pin: r.pin
+      }));
+      const idMap = new Map();
+      ADDRESSES.forEach(a => idMap.set(a.id, a));
+      dbAddrs.forEach(a => idMap.set(a.id, a));
+      ADDRESSES = Array.from(idMap.values());
+      console.log(`[DB] Successfully loaded ${ADDRESSES.length} addresses from PostgreSQL.`);
+    }
+  } catch (e) {
+    console.error('[DB] Failed loading addresses from database:', e.message);
+  }
+}
+
+// Synchronize product catalog (including custom admin products) from Neon PostgreSQL
 async function loadInventoryFromDatabase() {
   if (!pool) return;
   try {
+    // 1. Load any custom products created by admin in public.products
+    const qPAll = await pool.query(`
+      SELECT p.product_id, p.title, p.category_name, p.design_style, p.hsn_code, p.imgs, p.total_units_sold, p.rating_avg, p.review_count,
+             COALESCE(
+               json_agg(
+                 json_build_object(
+                   'id', pv.variant_id,
+                   'sku', pv.sku,
+                   'color', pv.color_name,
+                   'hex', pv.color_hex,
+                   'photo', pv.photo_url,
+                   'mrp', pv.mrp_price,
+                   'd', pv.discount_percent,
+                   'price', pv.sale_price,
+                   'stock', pv.stock_quantity
+                 )
+               ) FILTER (WHERE pv.variant_id IS NOT NULL), '[]'
+             ) as variants
+      FROM public.products p
+      LEFT JOIN public.product_variants pv ON pv.product_id = p.product_id
+      GROUP BY p.product_id;
+    `);
+
+    const existingIds = new Set(PRODUCTS.map(p => p.id));
+    for (const row of qPAll.rows) {
+      if (!existingIds.has(row.product_id)) {
+        let imgs = [];
+        try {
+          imgs = typeof row.imgs === 'string' ? JSON.parse(row.imgs) : (row.imgs || []);
+        } catch {}
+        const customProd = {
+          id: row.product_id,
+          title: row.title,
+          cat: row.category_name,
+          design: row.design_style || 'Classic Signature',
+          hsn: row.hsn_code || '71171990',
+          rate: parseFloat(row.rating_avg) || 4.8,
+          rev: parseInt(row.review_count) || 1,
+          views: 0,
+          sold: parseInt(row.total_units_sold) || 0,
+          coupon: true,
+          imgs: imgs,
+          v: (row.variants || []).map(v => ({
+            id: v.id,
+            sku: v.sku,
+            color: v.color,
+            hex: v.hex || '#1C1B29',
+            photo: v.photo || (imgs[0] || ''),
+            mrp: parseFloat(v.mrp || v.price),
+            d: parseFloat(v.d || 0),
+            price: parseFloat(v.price),
+            stock: parseInt(v.stock || 0)
+          }))
+        };
+        PRODUCTS.unshift(customProd);
+        existingIds.add(row.product_id);
+      }
+    }
+
+    // 2. Synchronize product stock and sales counters
     const qV = await pool.query('SELECT sku, stock_quantity FROM public.product_variants;');
     const stockMap = new Map();
     qV.rows.forEach(r => stockMap.set(r.sku, r.stock_quantity));
@@ -2834,7 +3295,7 @@ async function loadInventoryFromDatabase() {
         }
       }
     }
-    console.log('[DB] Synchronized product stock and sales counters from Neon PostgreSQL.');
+    console.log(`[DB] Synchronized product catalog (${PRODUCTS.length} total products) from Neon PostgreSQL.`);
   } catch (e) {
     console.error('[DB] Failed synchronizing inventory from Neon:', e.message);
   }
@@ -2864,6 +3325,11 @@ if (frontendDist) {
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`[ORAYVE] API Server listening on 0.0.0.0:${PORT}`);
   await initDatabase();
+  await loadAdminUsersFromDb();
+  await loadCategoriesFromDatabase();
+  await loadCouponsFromDatabase();
+  await loadUsersFromDatabase();
+  await loadAddressesFromDatabase();
   await loadOrdersFromDatabase();
   await loadInventoryFromDatabase();
 });
