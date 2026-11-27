@@ -189,9 +189,13 @@ export async function initDatabase() {
       ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cancel_info JSONB DEFAULT NULL;
       ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS return_info JSONB DEFAULT NULL;
       ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS aura_points_redeemed INT DEFAULT 0;
+      ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ DEFAULT NULL;
+      ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ DEFAULT NULL;
       ALTER TABLE order_schema.orders ADD COLUMN IF NOT EXISTS cancel_info JSONB DEFAULT NULL;
       ALTER TABLE order_schema.orders ADD COLUMN IF NOT EXISTS return_info JSONB DEFAULT NULL;
       ALTER TABLE order_schema.orders ADD COLUMN IF NOT EXISTS aura_points_redeemed INT DEFAULT 0;
+      ALTER TABLE order_schema.orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ DEFAULT NULL;
+      ALTER TABLE order_schema.orders ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ DEFAULT NULL;
 
       ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS product_id VARCHAR(64);
       ALTER TABLE order_schema.order_items ADD COLUMN IF NOT EXISTS product_id VARCHAR(64);

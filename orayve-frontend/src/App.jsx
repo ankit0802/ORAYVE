@@ -283,7 +283,8 @@ const STAT = [
   'RETURN REFUND INITIATED',     // 8
   'REPLACEMENT IN PROCESS',      // 9
   'REPLACEMENT PICKUP',          // 10
-  'REPLACEMENT DELIVERED'        // 11
+  'REPLACEMENT DELIVERED',       // 11
+  'COMPLETED'                    // 12
 ];
 
 const STAT_DETAILS = {
@@ -298,7 +299,8 @@ const STAT_DETAILS = {
   8: { label: 'REFUND INITIATED', badge: 'bg-purple-100 text-purple-800 border-purple-200', desc: 'Item received & verified. Refund initiated to payment source within 3 to 5 business days.' },
   9: { label: 'REPLACEMENT IN PROCESS', badge: 'bg-amber-100 text-amber-800 border-amber-300', desc: 'Replacement in process. New variant exchange is being processed.' },
   10: { label: 'REPLACEMENT PICKUP', badge: 'bg-cyan-100 text-cyan-800 border-cyan-200', desc: 'Replacement pickup scheduled. Item exchange will be carried out at doorstep.' },
-  11: { label: 'REPLACEMENT DELIVERED', badge: 'bg-emerald-100 text-emerald-800 border-emerald-200', desc: 'Replacement item delivered successfully.' }
+  11: { label: 'REPLACEMENT DELIVERED', badge: 'bg-emerald-100 text-emerald-800 border-emerald-200', desc: 'Replacement item delivered successfully.' },
+  12: { label: 'COMPLETED', badge: 'bg-emerald-100 text-emerald-950 border-emerald-300 font-bold', desc: 'Order completed. Item delivered and 7-day return/replacement window has ended.' }
 };
 
 const SUPER_ADMIN_PASS = 'Aura@2210';
@@ -1950,8 +1952,16 @@ export default function App() {
   };
 
   const openReturnModal = (order, type = 'RETURN') => {
+    if (order.status === 12) {
+      return showToast('This order has been completed. The 7-day return and replacement window is permanently closed.', true);
+    }
+    const orderDeliveredDate = new Date(order.deliveredAt || order.at).getTime();
+    const daysSinceDelivery = !isNaN(orderDeliveredDate) ? Math.floor((Date.now() - orderDeliveredDate) / (1000 * 60 * 60 * 24)) : 0;
+    if (daysSinceDelivery >= 7) {
+      return showToast('The 7-day return and replacement window for this order has expired.', true);
+    }
     if (order.status !== 3 && order.status !== 11) {
-      return showToast('Return or replacement is only available for delivered orders.', true);
+      return showToast('Return or replacement is only available for delivered orders within 7 days.', true);
     }
     setReturnModalOrder(order);
     setReturnModalType(type);
@@ -2118,6 +2128,8 @@ export default function App() {
         } else if (o.status === 10) {
           nextSt = 11;
           if (rInfo) rInfo.status = 'COMPLETED';
+        } else if ((o.status === 3 || o.status === 11) && Number(advanceHours) >= 24) {
+          nextSt = 12;
         }
         return { ...o, status: nextSt, cancelInfo: cInfo, returnInfo: rInfo };
       }));
@@ -4926,7 +4938,12 @@ export default function App() {
                         {myOrders.map(o => {
                           const currentStat = STAT_DETAILS[o.status] || { label: STAT[o.status] || 'PROCESSING', badge: 'bg-blue-100 text-blue-800 border-blue-200', desc: 'Order is under processing.' };
                           const canCancel = o.status < 3;
-                          const canReturnOrReplace = o.status === 3;
+                          const orderDeliveredDate = new Date(o.deliveredAt || o.at).getTime();
+                          const daysSinceDelivery = !isNaN(orderDeliveredDate) ? Math.floor((Date.now() - orderDeliveredDate) / (1000 * 60 * 60 * 24)) : 0;
+                          const isReturnExpired = daysSinceDelivery >= 7;
+                          const isOrderCompleted = o.status === 12 || ((o.status === 3 || o.status === 11) && isReturnExpired);
+                          const canReturnOrReplace = (o.status === 3 || o.status === 11) && !isOrderCompleted;
+                          const daysRemaining = Math.max(0, 7 - daysSinceDelivery);
                           const isCancelledFlow = o.status === 4 || o.status === 5;
                           const isReturnFlow = o.status === 6 || o.status === 7 || o.status === 8;
                           const isReplaceFlow = o.status === 9 || o.status === 10 || o.status === 11;
@@ -4942,7 +4959,7 @@ export default function App() {
                                       {o.inv || 'INV-TAX'}
                                     </span>
                                     <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${currentStat.badge}`}>
-                                      {currentStat.label}
+                                      {isOrderCompleted && o.status !== 12 ? 'COMPLETED (7D PASSED)' : currentStat.label}
                                     </span>
                                   </div>
                                   <span className="text-xs text-ink/50 mt-0.5 block">{o.at}</span>
@@ -4972,29 +4989,39 @@ export default function App() {
                                     </button>
                                   )}
 
-                                  {/* Return & Replace Buttons (Available when Delivered) */}
+                                  {/* Return & Replace Buttons (Available when Delivered within 7 days) */}
                                   {canReturnOrReplace && (
                                     <>
+                                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100/90 px-2 py-1 rounded-md border border-amber-300 flex items-center gap-1 shadow-2xs">
+                                        <span>⏱️</span> {daysRemaining}d return window
+                                      </span>
                                       <button
                                         onClick={() => openReturnModal(o, 'RETURN')}
-                                        className="px-3 py-1.5 rounded-lg border border-brass/50 bg-brass/10 text-ink text-xs font-bold hover:bg-brass hover:text-ink transition shadow-xs flex items-center gap-1.5"
+                                        className="px-3 py-1.5 rounded-lg border border-brass/50 bg-brass/10 text-ink text-xs font-bold hover:bg-brass hover:text-ink transition shadow-xs flex items-center gap-1.5 cursor-pointer"
                                       >
                                         <span>🔄</span> Return
                                       </button>
                                       <button
                                         onClick={() => openReturnModal(o, 'REPLACE')}
-                                        className="px-3 py-1.5 rounded-lg border border-ink/20 bg-white text-ink text-xs font-bold hover:bg-bone transition shadow-xs flex items-center gap-1.5"
+                                        className="px-3 py-1.5 rounded-lg border border-ink/20 bg-white text-ink text-xs font-bold hover:bg-bone transition shadow-xs flex items-center gap-1.5 cursor-pointer"
                                       >
                                         <span>🔁</span> Replace
                                       </button>
                                     </>
                                   )}
 
-                                  {/* Rate & Review Products Button (Available when Delivered) */}
-                                  {o.status === 3 && (
+                                  {/* Completed badge if status === 12 or return window expired */}
+                                  {(o.status === 12 || isOrderCompleted) && (
+                                    <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                                      <span>✓</span> Order Completed · Return Window Closed
+                                    </span>
+                                  )}
+
+                                  {/* Rate & Review Products Button (Available when Delivered or Completed) */}
+                                  {(o.status === 3 || o.status === 11 || o.status === 12 || isOrderCompleted) && (
                                     <button
                                       onClick={() => handleStartOrderReview(o)}
-                                      className="px-3 py-1.5 rounded-lg border border-gold/70 bg-gradient-to-r from-amber-500/15 to-yellow-500/20 text-ink text-xs font-bold hover:bg-gold hover:text-ink transition shadow-xs flex items-center gap-1.5"
+                                      className="px-3 py-1.5 rounded-lg border border-gold/70 bg-gradient-to-r from-amber-500/15 to-yellow-500/20 text-ink text-xs font-bold hover:bg-gold hover:text-ink transition shadow-xs flex items-center gap-1.5 cursor-pointer"
                                       title="Leave rating & review for products in this order"
                                     >
                                       <span>⭐</span> Review Products
@@ -5006,12 +5033,18 @@ export default function App() {
                               {/* Visual Tracking Progress Bars */}
                               {!isCancelledFlow && !isReturnFlow && !isReplaceFlow && (
                                 <div className="py-2 space-y-1.5">
-                                  <div className="grid grid-cols-4 gap-2">
-                                    {['ORDER PLACED', 'IN TRANSIT', 'OUT FOR DELIVERY', 'DELIVERED'].map((s, idx) => (
-                                      <div key={s} className="text-center">
-                                        <div className={`h-2 rounded-full mb-1.5 transition-all duration-300 ${idx <= o.status ? 'bg-brass shadow-xs' : 'bg-ink/10'}`} />
-                                        <p className={`text-[10px] font-bold ${idx <= o.status ? 'text-ink' : 'opacity-40'}`}>
-                                          {s}
+                                  <div className="grid grid-cols-5 gap-2">
+                                    {[
+                                      { label: 'ORDER PLACED', active: true },
+                                      { label: 'IN TRANSIT', active: o.status >= 1 },
+                                      { label: 'OUT FOR DELIVERY', active: o.status >= 2 },
+                                      { label: 'DELIVERED', active: o.status >= 3 },
+                                      { label: 'COMPLETED', active: o.status === 12 || isOrderCompleted }
+                                    ].map((step, idx) => (
+                                      <div key={step.label} className="text-center">
+                                        <div className={`h-2 rounded-full mb-1.5 transition-all duration-300 ${step.active ? (idx === 4 ? 'bg-emerald-600 shadow-xs' : 'bg-brass shadow-xs') : 'bg-ink/10'}`} />
+                                        <p className={`text-[9px] sm:text-[10px] font-bold ${step.active ? 'text-ink' : 'opacity-40'}`}>
+                                          {step.label}
                                         </p>
                                       </div>
                                     ))}
@@ -5896,13 +5929,40 @@ export default function App() {
                                   <p className="text-xs text-ink/60 mt-0.5">{o.at}</p>
                                 </div>
 
-                                <div className="flex items-center gap-3">
+                                <div className="flex flex-wrap items-center gap-2.5">
                                   <button
                                     onClick={() => setInvoiceModalOrder(o)}
-                                    className="px-3 py-1.5 rounded-lg bg-bone border border-brass/40 text-xs font-bold hover:bg-brass hover:text-ink transition"
+                                    className="px-3 py-1.5 rounded-lg bg-bone border border-brass/40 text-xs font-bold hover:bg-brass hover:text-ink transition shadow-xs"
                                   >
                                     🧾 Tax Invoice
                                   </button>
+
+                                  {(o.status === 3 || o.status === 11) && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAdminOrderStatus(o.id, 12)}
+                                        className="px-3 py-1.5 rounded-lg bg-emerald-700 text-white font-bold hover:bg-emerald-800 text-xs shadow-xs flex items-center gap-1 cursor-pointer"
+                                        title="Mark order as completed (closes 7-day return/replacement window)"
+                                      >
+                                        <span>✓</span> Mark Completed
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSimulateTime(o.id, 168)}
+                                        className="px-2.5 py-1.5 rounded-lg bg-brass text-ink font-bold hover:opacity-90 text-xs shadow-xs cursor-pointer"
+                                        title="Simulate 7 days passing to auto-complete"
+                                      >
+                                        ⏩ +7 Days (Auto-Complete)
+                                      </button>
+                                    </>
+                                  )}
+
+                                  {o.status === 12 && (
+                                    <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100/90 px-2.5 py-1 rounded-md border border-emerald-300 flex items-center gap-1">
+                                      <span>✓</span> Completed (Return Closed)
+                                    </span>
+                                  )}
 
                                   <select
                                     value={o.status}
@@ -9270,15 +9330,18 @@ export default function App() {
       {/* VERIFIED BUYER WRITE REVIEW MODAL                                    */}
       {/* ==================================================================== */}
       {reviewModalProduct && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl border border-brass/40 my-8">
-            {/* Modal Header */}
-            <div className="flex items-start justify-between pb-3 border-b border-ink/10">
+        <div 
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-hidden animate-in fade-in duration-200"
+          onClick={e => { if (e.target === e.currentTarget && !isSubmittingReview) setReviewModalProduct(null); }}
+        >
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[92vh] sm:max-h-[88vh] flex flex-col shadow-2xl border border-brass/40 overflow-hidden my-auto animate-in zoom-in-95 duration-150">
+            {/* Modal Header (Pinned) */}
+            <div className="shrink-0 p-4 sm:p-5 pb-3 border-b border-ink/10 bg-white z-10 flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <img
                   src={imgUrl(reviewModalProduct.v?.[0])}
                   alt={reviewModalProduct.title}
-                  className="w-12 h-12 rounded-lg object-cover border border-ink/10"
+                  className="w-12 h-12 rounded-lg object-cover border border-ink/10 shrink-0"
                   onError={e => { e.currentTarget.src = FB; }}
                 />
                 <div>
@@ -9293,132 +9356,135 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setReviewModalProduct(null)}
-                className="w-7 h-7 rounded-full border border-ink/20 flex items-center justify-center text-ink/60 hover:text-ink hover:bg-bone font-bold text-xs"
+                className="w-8 h-8 rounded-full border border-ink/20 flex items-center justify-center text-ink/60 hover:text-ink hover:bg-bone font-bold text-sm transition shrink-0 cursor-pointer"
+                title="Close"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleSubmitReview} className="space-y-4 text-xs">
-              {/* Star Rating Picker */}
-              <div className="space-y-1.5 text-center p-3 rounded-xl bg-bone/50 border border-ink/10">
-                <label className="block text-xs font-bold text-ink uppercase tracking-wider text-brass">
-                  Overall Rating
-                </label>
-                <div className="flex justify-center items-center gap-2">
-                  {[1, 2, 3, 4, 5].map(star => (
-                    <button
-                      type="button"
-                      key={star}
-                      onClick={() => setReviewRating(star)}
-                      className="text-3xl transition hover:scale-110 focus:outline-hidden"
-                    >
-                      <span className={star <= reviewRating ? 'text-brass' : 'text-ink/20'}>★</span>
-                    </button>
-                  ))}
-                </div>
-                <p className="text-[11px] font-bold text-ink/70">
-                  {reviewRating === 5 && '⭐ 5/5 - Loved it! Exceptional Luxury Quality'}
-                  {reviewRating === 4 && '⭐ 4/5 - Very Good, Met Expectations'}
-                  {reviewRating === 3 && '⭐ 3/5 - Average / Fair Quality'}
-                  {reviewRating === 2 && '⭐ 2/5 - Below Expectations'}
-                  {reviewRating === 1 && '⭐ 1/5 - Unsatisfied'}
-                </p>
-              </div>
-
-              {/* Headline */}
-              <div>
-                <label className="block text-[11px] font-semibold text-ink/70 mb-1">Review Headline *</label>
-                <input
-                  required
-                  value={reviewHeadline}
-                  onChange={e => setReviewHeadline(e.target.value)}
-                  placeholder="e.g. Luxurious leather aroma, pristine packaging!"
-                  className="w-full text-xs"
-                />
-              </div>
-
-              {/* Comment Text */}
-              <div>
-                <label className="block text-[11px] font-semibold text-ink/70 mb-1">Your Detailed Experience *</label>
-                <textarea
-                  required
-                  rows={4}
-                  value={reviewComment}
-                  onChange={e => setReviewComment(e.target.value)}
-                  placeholder="Tell us about the unboxing experience, leather texture, stitching, card capacity, color finish, and delivery speed..."
-                  className="w-full text-xs"
-                />
-              </div>
-
-              {/* Live Photos of Received Product */}
-              <div className="space-y-2 p-3 rounded-xl bg-bone/30 border border-ink/10">
-                <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-bold text-ink flex items-center gap-1.5">
-                    <span>📷</span> Attach Live Photos of Product Received ({reviewPhotos.length})
+            <form onSubmit={handleSubmitReview} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 text-xs overscroll-contain">
+                {/* Star Rating Picker */}
+                <div className="space-y-1.5 text-center p-3 rounded-xl bg-bone/50 border border-ink/10">
+                  <label className="block text-xs font-bold text-ink uppercase tracking-wider text-brass">
+                    Overall Rating
                   </label>
-                  <label className="px-2.5 py-1 rounded bg-ink text-bone font-bold text-[10px] hover:bg-ink/80 cursor-pointer shadow-xs">
-                    <span>+ Upload Photos</span>
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      onChange={handleReviewPhotoUpload}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-
-                {/* Photo URL option */}
-                <div className="flex gap-2">
-                  <input
-                    value={reviewPhotoUrlInput}
-                    onChange={e => setReviewPhotoUrlInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddReviewPhotoUrl(); } }}
-                    placeholder="Or paste photo link (https://...)"
-                    className="flex-1 text-[11px]"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddReviewPhotoUrl}
-                    className="px-2.5 py-1 rounded bg-brass text-ink font-bold text-[10px]"
-                  >
-                    Attach
-                  </button>
-                </div>
-
-                {/* Thumbnail strip */}
-                {reviewPhotos.length > 0 && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {reviewPhotos.map((ph, idx) => (
-                      <div key={idx} className="relative w-14 h-14 rounded-lg overflow-hidden border border-ink/20 group">
-                        <img src={ph} alt="Customer preview" className="w-full h-full object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveReviewPhoto(idx)}
-                          className="absolute inset-0 bg-ink/70 text-white font-bold text-xs opacity-0 group-hover:opacity-100 flex items-center justify-center transition"
-                        >
-                          ✕
-                        </button>
-                      </div>
+                  <div className="flex justify-center items-center gap-2">
+                    {[1, 2, 3, 4, 5].map(star => (
+                      <button
+                        type="button"
+                        key={star}
+                        onClick={() => setReviewRating(star)}
+                        className="text-3xl transition hover:scale-110 focus:outline-hidden cursor-pointer"
+                      >
+                        <span className={star <= reviewRating ? 'text-brass' : 'text-ink/20'}>★</span>
+                      </button>
                     ))}
                   </div>
-                )}
+                  <p className="text-[11px] font-bold text-ink/70">
+                    {reviewRating === 5 && '⭐ 5/5 - Loved it! Exceptional Luxury Quality'}
+                    {reviewRating === 4 && '⭐ 4/5 - Very Good, Met Expectations'}
+                    {reviewRating === 3 && '⭐ 3/5 - Average / Fair Quality'}
+                    {reviewRating === 2 && '⭐ 2/5 - Below Expectations'}
+                    {reviewRating === 1 && '⭐ 1/5 - Unsatisfied'}
+                  </p>
+                </div>
+
+                {/* Headline */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-ink/70 mb-1">Review Headline *</label>
+                  <input
+                    required
+                    value={reviewHeadline}
+                    onChange={e => setReviewHeadline(e.target.value)}
+                    placeholder="e.g. Luxurious leather aroma, pristine packaging!"
+                    className="w-full text-xs"
+                  />
+                </div>
+
+                {/* Comment Text */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-ink/70 mb-1">Your Detailed Experience *</label>
+                  <textarea
+                    required
+                    rows={4}
+                    value={reviewComment}
+                    onChange={e => setReviewComment(e.target.value)}
+                    placeholder="Tell us about the unboxing experience, leather texture, stitching, card capacity, color finish, and delivery speed..."
+                    className="w-full text-xs"
+                  />
+                </div>
+
+                {/* Live Photos of Received Product */}
+                <div className="space-y-2 p-3 rounded-xl bg-bone/30 border border-ink/10">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-ink flex items-center gap-1.5">
+                      <span>📷</span> Attach Live Photos of Product Received ({reviewPhotos.length})
+                    </label>
+                    <label className="px-2.5 py-1 rounded bg-ink text-bone font-bold text-[10px] hover:bg-ink/80 cursor-pointer shadow-xs">
+                      <span>+ Upload Photos</span>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={handleReviewPhotoUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  {/* Photo URL option */}
+                  <div className="flex gap-2">
+                    <input
+                      value={reviewPhotoUrlInput}
+                      onChange={e => setReviewPhotoUrlInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddReviewPhotoUrl(); } }}
+                      placeholder="Or paste photo link (https://...)"
+                      className="flex-1 text-[11px]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddReviewPhotoUrl}
+                      className="px-2.5 py-1 rounded bg-brass text-ink font-bold text-[10px]"
+                    >
+                      Attach
+                    </button>
+                  </div>
+
+                  {/* Thumbnail strip */}
+                  {reviewPhotos.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {reviewPhotos.map((ph, idx) => (
+                        <div key={idx} className="relative w-14 h-14 rounded-lg overflow-hidden border border-ink/20 group">
+                          <img src={ph} alt="Customer preview" className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveReviewPhoto(idx)}
+                            className="absolute inset-0 bg-ink/70 text-white font-bold text-xs opacity-0 group-hover:opacity-100 flex items-center justify-center transition cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* Submit Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-ink/10">
+              {/* Submit Buttons (Pinned) */}
+              <div className="shrink-0 p-3 sm:p-4 px-4 sm:px-5 border-t border-ink/10 bg-white/95 backdrop-blur-xs flex items-center justify-end gap-2.5 z-10">
                 <button
                   type="button"
                   onClick={() => setReviewModalProduct(null)}
-                  className="px-4 py-2 rounded-xl border border-ink/20 font-bold hover:bg-bone text-xs"
+                  className="px-4 py-2 rounded-xl border border-ink/20 font-bold hover:bg-bone text-xs text-ink transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingReview}
-                  className="px-5 py-2 rounded-xl bg-ink text-bone font-bold hover:bg-ink/90 shadow-md text-xs flex items-center gap-1.5"
+                  className="px-5 py-2 rounded-xl bg-ink text-bone font-bold hover:bg-brass hover:text-ink shadow-md text-xs flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
                 >
                   {isSubmittingReview ? (
                     <>
@@ -9659,177 +9725,184 @@ export default function App() {
       {/* ORDER CANCELLATION MODAL                                              */}
       {/* ==================================================================== */}
       {cancelModalOrder && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-brass/40 my-8">
-            {/* Header */}
-            <div className="flex items-start justify-between pb-3 border-b border-ink/10">
+        <div 
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-hidden animate-in fade-in duration-200"
+          onClick={e => { if (e.target === e.currentTarget && !isSubmittingCancel) setCancelModalOrder(null); }}
+        >
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[92vh] sm:max-h-[88vh] flex flex-col shadow-2xl border border-brass/40 overflow-hidden my-auto animate-in zoom-in-95 duration-150">
+            {/* Header (Pinned) */}
+            <div className="shrink-0 p-4 sm:p-5 pb-3 border-b border-ink/10 bg-white z-10 flex items-start justify-between gap-3">
               <div>
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 uppercase">
                   Order Cancellation
                 </span>
-                <h3 className="font-bold text-base text-ink mt-0.5">
+                <h3 className="font-bold text-base sm:text-lg text-ink mt-0.5">
                   Cancel Order #{cancelModalOrder.id}
                 </h3>
                 <p className="text-xs text-ink/60">
-                  Total Value: {inr(cancelModalOrder.total)} · Placed on {cancelModalOrder.at}
+                  Total Value: <b className="text-ink">{inr(cancelModalOrder.total)}</b> · Placed on {cancelModalOrder.at}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setCancelModalOrder(null)}
-                className="w-7 h-7 rounded-full border border-ink/20 flex items-center justify-center text-ink/60 hover:text-ink hover:bg-bone font-bold text-xs"
+                className="w-8 h-8 rounded-full border border-ink/20 flex items-center justify-center text-ink/60 hover:text-ink hover:bg-bone font-bold text-sm transition shrink-0 cursor-pointer"
+                title="Close"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleConfirmCancel} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-[11px] font-bold text-ink/80 mb-1">
-                  Reason for Cancellation *
-                </label>
-                <select
-                  value={cancelReason}
-                  onChange={e => setCancelReason(e.target.value)}
-                  className="w-full text-xs font-medium"
-                >
-                  <option value="Found a better price elsewhere">Found a better price elsewhere</option>
-                  <option value="Ordered by mistake / Duplicate order">Ordered by mistake / Duplicate order</option>
-                  <option value="Incorrect delivery address or contact number">Incorrect delivery address or contact number</option>
-                  <option value="Want to change colorway or size variant">Want to change colorway or size variant</option>
-                  <option value="Delivery timeframe too late">Delivery timeframe too late</option>
-                  <option value="Payment issue / changed payment method">Payment issue / changed payment method</option>
-                  <option value="Other">Other reason</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-ink/80 mb-1">
-                  Additional Comments / Feedback
-                </label>
-                <textarea
-                  rows={3}
-                  value={cancelComments}
-                  onChange={e => setCancelComments(e.target.value)}
-                  placeholder="Please let us know how we can improve..."
-                  className="w-full text-xs"
-                />
-              </div>
-
-              {/* Refund Method Selection */}
-              <div>
-                <label className="block text-[11px] font-bold text-ink/80 mb-1.5">
-                  Select Refund Destination *
-                </label>
-                <div className="grid sm:grid-cols-2 gap-2.5">
-                  <label
-                    className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition ${
-                      cancelRefundMethod === 'WALLET'
-                        ? 'border-brass bg-amber-50/60 ring-1 ring-brass/40 shadow-xs'
-                        : 'border-ink/15 hover:bg-bone'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="cancelRefundMethod"
-                      checked={cancelRefundMethod === 'WALLET'}
-                      onChange={() => setCancelRefundMethod('WALLET')}
-                      className="text-brass focus:ring-brass mt-0.5"
-                    />
-                    <div>
-                      <span className="text-xs font-bold text-ink flex items-center gap-1">
-                        <span className="text-amber-500 font-bold">✦</span> Orayve Aura Wallet
-                      </span>
-                      <span className="text-[10px] font-bold text-emerald-700 block mt-0.5">
-                        ⚡ Instant Credit ({inr(cancelModalOrder.total)})
-                      </span>
-                      <span className="text-[10px] text-ink/50 block">Reflected immediately in passbook (1 Pt = ₹1)</span>
-                    </div>
+            <form onSubmit={handleConfirmCancel} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 text-xs overscroll-contain">
+                <div>
+                  <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                    Reason for Cancellation *
                   </label>
-
-                  <label
-                    className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition ${
-                      cancelRefundMethod === 'ORIGINAL'
-                        ? 'border-brass bg-amber-50/60 ring-1 ring-brass/40 shadow-xs'
-                        : 'border-ink/15 hover:bg-bone'
-                    }`}
+                  <select
+                    value={cancelReason}
+                    onChange={e => setCancelReason(e.target.value)}
+                    className="w-full text-xs font-medium"
                   >
-                    <input
-                      type="radio"
-                      name="cancelRefundMethod"
-                      checked={cancelRefundMethod === 'ORIGINAL'}
-                      onChange={() => setCancelRefundMethod('ORIGINAL')}
-                      className="text-brass focus:ring-brass mt-0.5"
-                    />
-                    <div>
-                      <span className="text-xs font-bold text-ink flex items-center gap-1">
-                        <span>🏦</span> Original Payment Source
-                      </span>
-                      <span className="text-[10px] font-bold text-amber-700 block mt-0.5">
-                        3 to 5 business days
-                      </span>
-                      <span className="text-[10px] text-ink/50 block">Credited back to bank/UPI source</span>
-                    </div>
-                  </label>
+                    <option value="Found a better price elsewhere">Found a better price elsewhere</option>
+                    <option value="Ordered by mistake / Duplicate order">Ordered by mistake / Duplicate order</option>
+                    <option value="Incorrect delivery address or contact number">Incorrect delivery address or contact number</option>
+                    <option value="Want to change colorway or size variant">Want to change colorway or size variant</option>
+                    <option value="Delivery timeframe too late">Delivery timeframe too late</option>
+                    <option value="Payment issue / changed payment method">Payment issue / changed payment method</option>
+                    <option value="Other">Other reason</option>
+                  </select>
                 </div>
-              </div>
 
-              {/* Dynamic Notification Card */}
-              <div className={`p-3.5 rounded-xl border space-y-1 text-xs transition ${
-                cancelRefundMethod === 'WALLET'
-                  ? 'bg-amber-50/80 border-amber-300 text-amber-950'
-                  : 'bg-stone-50 border-ink/15 text-ink/80'
-              }`}>
-                <p className="font-bold flex items-center gap-1.5 text-xs">
-                  {cancelRefundMethod === 'WALLET' ? (
-                    <>
-                      <span className="text-amber-500 font-bold">✦</span>
-                      <span>Instant Aura Wallet Refund Selected</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>🏦</span>
-                      <span>Original Payment Source Refund Selected</span>
-                    </>
-                  )}
-                </p>
-                <p className="text-[11px] leading-relaxed">
-                  {cancelRefundMethod === 'WALLET' ? (
-                    <>
-                      Refund of <b>{inr(cancelModalOrder.total)}</b> will be credited <b>INSTANTLY</b> to your <b>Orayve Aura Wallet</b> as <b>{Math.round(cancelModalOrder.total)} Aura Points</b> upon confirmation (1 Pt = ₹1). You can use it immediately!
-                    </>
-                  ) : (
-                    <>
-                      Fulfillment stoppage check in process (approx. 1 hr). Refund of <b>{inr(cancelModalOrder.total)}</b> will be credited back to your original payment source (Bank/UPI/Card) within <b>3 to 5 business days</b>.
-                    </>
-                  )}
-                </p>
-              </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                    Additional Comments / Feedback
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={cancelComments}
+                    onChange={e => setCancelComments(e.target.value)}
+                    placeholder="Please let us know how we can improve..."
+                    className="w-full text-xs"
+                  />
+                </div>
 
-              {cancelModalOrder.auraPoints > 0 && (
-                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-300 text-[11px] text-emerald-950 space-y-1">
-                  <p className="font-bold flex items-center gap-1.5">
-                    <span>✦</span>
-                    <span>Aura Points Restoration:</span>
+                {/* Refund Method Selection */}
+                <div>
+                  <label className="block text-[11px] font-bold text-ink/80 mb-1.5">
+                    Select Refund Destination *
+                  </label>
+                  <div className="grid sm:grid-cols-2 gap-2.5">
+                    <label
+                      className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition ${
+                        cancelRefundMethod === 'WALLET'
+                          ? 'border-brass bg-amber-50/60 ring-1 ring-brass/40 shadow-xs'
+                          : 'border-ink/15 hover:bg-bone'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="cancelRefundMethod"
+                        checked={cancelRefundMethod === 'WALLET'}
+                        onChange={() => setCancelRefundMethod('WALLET')}
+                        className="text-brass focus:ring-brass mt-0.5"
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-ink flex items-center gap-1">
+                          <span className="text-amber-500 font-bold">✦</span> Orayve Aura Wallet
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-700 block mt-0.5">
+                          ⚡ Instant Credit ({inr(cancelModalOrder.total)})
+                        </span>
+                        <span className="text-[10px] text-ink/50 block">Reflected immediately in passbook (1 Pt = ₹1)</span>
+                      </div>
+                    </label>
+
+                    <label
+                      className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition ${
+                        cancelRefundMethod === 'ORIGINAL'
+                          ? 'border-brass bg-amber-50/60 ring-1 ring-brass/40 shadow-xs'
+                          : 'border-ink/15 hover:bg-bone'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="cancelRefundMethod"
+                        checked={cancelRefundMethod === 'ORIGINAL'}
+                        onChange={() => setCancelRefundMethod('ORIGINAL')}
+                        className="text-brass focus:ring-brass mt-0.5"
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-ink flex items-center gap-1">
+                          <span>🏦</span> Original Payment Source
+                        </span>
+                        <span className="text-[10px] font-bold text-amber-700 block mt-0.5">
+                          3 to 5 business days
+                        </span>
+                        <span className="text-[10px] text-ink/50 block">Credited back to bank/UPI source</span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Dynamic Notification Card */}
+                <div className={`p-3.5 rounded-xl border space-y-1 text-xs transition ${
+                  cancelRefundMethod === 'WALLET'
+                    ? 'bg-amber-50/80 border-amber-300 text-amber-950'
+                    : 'bg-stone-50 border-ink/15 text-ink/80'
+                }`}>
+                  <p className="font-bold flex items-center gap-1.5 text-xs">
+                    {cancelRefundMethod === 'WALLET' ? (
+                      <>
+                        <span className="text-amber-500 font-bold">✦</span>
+                        <span>Instant Aura Wallet Refund Selected</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>🏦</span>
+                        <span>Original Payment Source Refund Selected</span>
+                      </>
+                    )}
                   </p>
-                  <p>
-                    Your <b>{cancelModalOrder.auraPoints} spent Aura Points</b> will be restored <b>in full</b> back to your Aura Wallet passbook upon cancellation.
+                  <p className="text-[11px] leading-relaxed">
+                    {cancelRefundMethod === 'WALLET' ? (
+                      <>
+                        Refund of <b>{inr(cancelModalOrder.total)}</b> will be credited <b>INSTANTLY</b> to your <b>Orayve Aura Wallet</b> as <b>{Math.round(cancelModalOrder.total)} Aura Points</b> upon confirmation (1 Pt = ₹1). You can use it immediately!
+                      </>
+                    ) : (
+                      <>
+                        Fulfillment stoppage check in process (approx. 1 hr). Refund of <b>{inr(cancelModalOrder.total)}</b> will be credited back to your original payment source (Bank/UPI/Card) within <b>3 to 5 business days</b>.
+                      </>
+                    )}
                   </p>
                 </div>
-              )}
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-ink/10">
+                {cancelModalOrder.auraPoints > 0 && (
+                  <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-300 text-[11px] text-emerald-950 space-y-1">
+                    <p className="font-bold flex items-center gap-1.5">
+                      <span>✦</span>
+                      <span>Aura Points Restoration:</span>
+                    </p>
+                    <p>
+                      Your <b>{cancelModalOrder.auraPoints} spent Aura Points</b> will be restored <b>in full</b> back to your Aura Wallet passbook upon cancellation.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Submit Buttons (Pinned) */}
+              <div className="shrink-0 p-3 sm:p-4 px-4 sm:px-5 border-t border-ink/10 bg-white/95 backdrop-blur-xs flex items-center justify-end gap-2.5 z-10">
                 <button
                   type="button"
                   onClick={() => setCancelModalOrder(null)}
-                  className="px-4 py-2 rounded-xl border border-ink/20 font-bold hover:bg-bone text-xs"
+                  className="px-4 py-2 rounded-xl border border-ink/20 font-bold hover:bg-bone text-xs text-ink transition cursor-pointer"
                 >
                   Keep Order
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingCancel}
-                  className="px-5 py-2 rounded-xl bg-rose-700 text-white font-bold hover:bg-rose-800 shadow-md text-xs flex items-center gap-1.5"
+                  className="px-5 py-2 rounded-xl bg-rose-700 text-white font-bold hover:bg-rose-800 shadow-md text-xs flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
                 >
                   {isSubmittingCancel ? (
                     <>
@@ -9850,338 +9923,410 @@ export default function App() {
       {/* RETURN & REPLACEMENT MODAL                                           */}
       {/* ==================================================================== */}
       {returnModalOrder && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl border border-brass/40 my-8">
-            {/* Header */}
-            <div className="flex items-start justify-between pb-3 border-b border-ink/10">
+        <div 
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-hidden animate-in fade-in duration-200"
+          onClick={e => { if (e.target === e.currentTarget && !isSubmittingReturn) setReturnModalOrder(null); }}
+        >
+          <div className="bg-white rounded-2xl max-w-xl w-full max-h-[92vh] sm:max-h-[88vh] flex flex-col shadow-2xl border border-brass/40 overflow-hidden my-auto animate-in zoom-in-95 duration-150">
+            {/* Header (Pinned at Top) */}
+            <div className="shrink-0 p-4 sm:p-5 pb-3 border-b border-ink/10 bg-white z-10 flex items-start justify-between gap-3">
               <div>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-brass/20 text-brass uppercase">
-                  {returnModalType === 'REPLACE' ? '🔁 Doorstep Replacement' : '🔄 Easy Return & Refund'}
-                </span>
-                <h3 className="font-bold text-base text-ink mt-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-brass/20 text-brass uppercase">
+                    {returnModalType === 'REPLACE' ? '🔁 Doorstep Replacement' : '🔄 Easy Return & Refund'}
+                  </span>
+                  <span className="text-[10px] text-ink/60 bg-bone px-2 py-0.5 rounded border border-ink/10 font-mono">
+                    #{returnModalOrder.id}
+                  </span>
+                </div>
+                <h3 className="font-bold text-base sm:text-lg text-ink mt-1">
                   {returnModalType === 'REPLACE' ? 'Request Product Replacement' : 'Request Product Return'}
                 </h3>
                 <p className="text-xs text-ink/60">
-                  Order #{returnModalOrder.id} · Total Value: {inr(returnModalOrder.total)}
+                  Total Order Value: <b className="text-ink">{inr(returnModalOrder.total)}</b> · 7-day hassle-free guarantee
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setReturnModalOrder(null)}
-                className="w-7 h-7 rounded-full border border-ink/20 flex items-center justify-center text-ink/60 hover:text-ink hover:bg-bone font-bold text-xs"
+                className="w-8 h-8 rounded-full border border-ink/20 flex items-center justify-center text-ink/60 hover:text-ink hover:bg-bone font-bold text-sm transition shrink-0 cursor-pointer"
+                title="Close"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleConfirmReturn} className="space-y-4 text-xs">
-              {/* Toggle between Return and Replace */}
-              <div className="grid grid-cols-2 gap-2 p-1 bg-bone rounded-xl border border-ink/10">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReturnModalType('RETURN');
-                    setReturnReason('Size / Dimension not suitable');
-                  }}
-                  className={`py-2 rounded-lg font-bold text-xs transition ${
-                    returnModalType === 'RETURN'
-                      ? 'bg-ink text-bone shadow-xs'
-                      : 'text-ink/60 hover:text-ink'
-                  }`}
-                >
-                  🔄 Return &amp; Refund
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReturnModalType('REPLACE');
-                    setReturnReason('Exchange for another colorway / size');
-                  }}
-                  className={`py-2 rounded-lg font-bold text-xs transition ${
-                    returnModalType === 'REPLACE'
-                      ? 'bg-ink text-bone shadow-xs'
-                      : 'text-ink/60 hover:text-ink'
-                  }`}
-                >
-                  🔁 Doorstep Replacement
-                </button>
-              </div>
-
-              {/* Reason for Return / Replacement */}
-              <div>
-                <label className="block text-[11px] font-bold text-ink/80 mb-1">
-                  Reason for {returnModalType === 'REPLACE' ? 'Replacement' : 'Return'} *
-                </label>
-                <select
-                  value={returnReason}
-                  onChange={e => setReturnReason(e.target.value)}
-                  className="w-full text-xs font-medium"
-                >
-                  <option value="Size / Dimension not suitable">Size / Dimension not suitable</option>
-                  <option value="Defective, scratched, or damaged product">Defective, scratched, or damaged product</option>
-                  <option value="Color or finish differs from website photos">Color or finish differs from website photos</option>
-                  <option value="Wrong item or missing accessories">Wrong item or missing accessories</option>
-                  <option value="Quality / leather aroma not meeting expectations">Quality / leather aroma not meeting expectations</option>
-                  <option value="Exchange for another colorway / size">Exchange for another colorway / size</option>
-                  <option value="Delayed delivery / No longer needed">Delayed delivery / No longer needed</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-
-              {/* Condition of Item */}
-              <div>
-                <label className="block text-[11px] font-bold text-ink/80 mb-1">
-                  Item Condition *
-                </label>
-                <div className="grid sm:grid-cols-2 gap-2">
-                  {[
-                    'Unused, with all original tags & luxury box intact',
-                    'Opened and tried on once'
-                  ].map(cond => (
-                    <label
-                      key={cond}
-                      className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition ${
-                        returnCondition === cond ? 'border-brass bg-brass/10 font-bold' : 'border-ink/15 hover:bg-bone'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="condition"
-                        checked={returnCondition === cond}
-                        onChange={() => setReturnCondition(cond)}
-                        className="text-brass focus:ring-brass"
-                      />
-                      <span className="text-[11px] text-ink">{cond}</span>
-                    </label>
-                  ))}
+            <form onSubmit={handleConfirmReturn} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              {/* Pinned Mode Switcher (Always visible right below header!) */}
+              <div className="shrink-0 px-4 sm:px-5 pt-3 pb-2.5 bg-bone/40 border-b border-ink/10 z-10">
+                <div className="grid grid-cols-2 gap-2 p-1 bg-white rounded-xl border border-ink/10 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReturnModalType('RETURN');
+                      setReturnReason('Size / Dimension not suitable');
+                    }}
+                    className={`py-2 px-3 rounded-lg font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      returnModalType === 'RETURN'
+                        ? 'bg-ink text-bone shadow-xs'
+                        : 'text-ink/60 hover:text-ink hover:bg-bone'
+                    }`}
+                  >
+                    <span>🔄</span> Return &amp; Refund
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReturnModalType('REPLACE');
+                      setReturnReason('Exchange for another colorway / size');
+                    }}
+                    className={`py-2 px-3 rounded-lg font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      returnModalType === 'REPLACE'
+                        ? 'bg-ink text-bone shadow-xs'
+                        : 'text-ink/60 hover:text-ink hover:bg-bone'
+                    }`}
+                  >
+                    <span>🔁</span> Doorstep Replacement
+                  </button>
                 </div>
               </div>
 
-              {/* Detailed Comments / Feedback */}
-              <div>
-                <label className="block text-[11px] font-bold text-ink/80 mb-1">
-                  Detailed Issue Description &amp; Feedback *
-                </label>
-                <textarea
-                  required
-                  rows={3}
-                  value={returnComments}
-                  onChange={e => setReturnComments(e.target.value)}
-                  placeholder="Please explain the reason in detail to help our quality assurance inspection team..."
-                  className="w-full text-xs"
-                />
-              </div>
+              {/* Scrollable Form Body */}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 text-xs overscroll-contain">
+                {/* Product Items Checklist (if multiple items in order) */}
+                {returnModalOrder.items && returnModalOrder.items.length > 1 && (
+                  <div className="space-y-2 p-3 bg-bone/50 rounded-xl border border-ink/10">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-ink">
+                        Select Item(s) to {returnModalType === 'REPLACE' ? 'Replace' : 'Return'} ({returnSelectedItems.length} of {returnModalOrder.items.length}) *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (returnSelectedItems.length === returnModalOrder.items.length) {
+                            setReturnSelectedItems([returnModalOrder.items[0]]);
+                          } else {
+                            setReturnSelectedItems([...returnModalOrder.items]);
+                          }
+                        }}
+                        className="text-[10px] font-bold text-brass hover:underline cursor-pointer"
+                      >
+                        {returnSelectedItems.length === returnModalOrder.items.length ? 'Select Only 1' : 'Select All'}
+                      </button>
+                    </div>
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                      {returnModalOrder.items.map((item, idx) => {
+                        const isSelected = returnSelectedItems.some(it => (it.pid && item.pid && it.pid === item.pid) || it.title === item.title);
+                        return (
+                          <label
+                            key={idx}
+                            className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition ${
+                              isSelected ? 'bg-amber-50/80 border-brass/50 font-bold' : 'bg-white border-ink/10'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={e => {
+                                  if (e.target.checked) {
+                                    setReturnSelectedItems(prev => [...prev, item]);
+                                  } else {
+                                    if (returnSelectedItems.length === 1) {
+                                      return showToast('At least 1 product must be selected', true);
+                                    }
+                                    setReturnSelectedItems(prev => prev.filter(it => !((it.pid && item.pid && it.pid === item.pid) || it.title === item.title)));
+                                  }
+                                }}
+                                className="text-brass focus:ring-brass rounded"
+                              />
+                              <span className="text-xs text-ink">{item.title}</span>
+                              <span className="text-[10px] text-ink/50 font-mono">({item.color || 'Standard'})</span>
+                            </div>
+                            <span className="text-xs text-ink font-semibold">{inr(item.price)}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
-              {/* Replacement preference or Refund preference */}
-              {returnModalType === 'REPLACE' ? (
+                {/* Reason for Return / Replacement */}
                 <div>
                   <label className="block text-[11px] font-bold text-ink/80 mb-1">
-                    Replacement Preference *
+                    Reason for {returnModalType === 'REPLACE' ? 'Replacement' : 'Return'} *
                   </label>
-                  <input
-                    value={returnReplacementVariant}
-                    onChange={e => setReturnReplacementVariant(e.target.value)}
-                    placeholder="e.g. Same product in Pitch Black or Cognac Tan"
+                  <select
+                    value={returnReason}
+                    onChange={e => setReturnReason(e.target.value)}
+                    className="w-full text-xs font-medium"
+                  >
+                    <option value="Size / Dimension not suitable">Size / Dimension not suitable</option>
+                    <option value="Defective, scratched, or damaged product">Defective, scratched, or damaged product</option>
+                    <option value="Color or finish differs from website photos">Color or finish differs from website photos</option>
+                    <option value="Wrong item or missing accessories">Wrong item or missing accessories</option>
+                    <option value="Quality / leather aroma not meeting expectations">Quality / leather aroma not meeting expectations</option>
+                    <option value="Exchange for another colorway / size">Exchange for another colorway / size</option>
+                    <option value="Delayed delivery / No longer needed">Delayed delivery / No longer needed</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                {/* Condition of Item */}
+                <div>
+                  <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                    Item Condition *
+                  </label>
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    {[
+                      'Unused, with all original tags & luxury box intact',
+                      'Opened and tried on once'
+                    ].map(cond => (
+                      <label
+                        key={cond}
+                        className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition ${
+                          returnCondition === cond ? 'border-brass bg-brass/10 font-bold' : 'border-ink/15 hover:bg-bone'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="condition"
+                          checked={returnCondition === cond}
+                          onChange={() => setReturnCondition(cond)}
+                          className="text-brass focus:ring-brass"
+                        />
+                        <span className="text-[11px] text-ink">{cond}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Detailed Comments / Feedback */}
+                <div>
+                  <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                    Detailed Issue Description &amp; Feedback *
+                  </label>
+                  <textarea
+                    required
+                    rows={3}
+                    value={returnComments}
+                    onChange={e => setReturnComments(e.target.value)}
+                    placeholder="Please explain the reason in detail to help our quality assurance inspection team..."
                     className="w-full text-xs"
                   />
                 </div>
-              ) : (
-                <div className="space-y-3">
+
+                {/* Replacement preference or Refund preference */}
+                {returnModalType === 'REPLACE' ? (
                   <div>
-                    <label className="block text-[11px] font-bold text-ink/80 mb-1.5">
-                      Select Refund Destination *
+                    <label className="block text-[11px] font-bold text-ink/80 mb-1">
+                      Replacement Preference *
                     </label>
-                    <div className="grid sm:grid-cols-2 gap-2.5">
-                      <label
-                        className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition ${
-                          returnRefundPref === 'WALLET'
-                            ? 'border-brass bg-amber-50/60 ring-1 ring-brass/40 shadow-xs'
-                            : 'border-ink/15 hover:bg-bone'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="refundPref"
-                          checked={returnRefundPref === 'WALLET'}
-                          onChange={() => setReturnRefundPref('WALLET')}
-                          className="text-brass focus:ring-brass mt-0.5"
-                        />
-                        <div>
-                          <span className="text-xs font-bold text-ink flex items-center gap-1">
-                            <span className="text-amber-500 font-bold">✦</span> Orayve Aura Wallet
-                          </span>
-                          <span className="text-[10px] font-bold text-emerald-700 block mt-0.5">
-                            ⚡ Instant Credit on Pickup ({inr(returnModalOrder.total)})
-                          </span>
-                          <span className="text-[10px] text-ink/50 block">Reflected immediately as {Math.round(returnModalOrder.total)} Aura Pts</span>
-                        </div>
-                      </label>
-
-                      <label
-                        className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition ${
-                          returnRefundPref === 'ORIGINAL'
-                            ? 'border-brass bg-amber-50/60 ring-1 ring-brass/40 shadow-xs'
-                            : 'border-ink/15 hover:bg-bone'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="refundPref"
-                          checked={returnRefundPref === 'ORIGINAL'}
-                          onChange={() => setReturnRefundPref('ORIGINAL')}
-                          className="text-brass focus:ring-brass mt-0.5"
-                        />
-                        <div>
-                          <span className="text-xs font-bold text-ink flex items-center gap-1">
-                            <span>🏦</span> Original Payment Source
-                          </span>
-                          <span className="text-[10px] font-bold text-amber-700 block mt-0.5">
-                            3 to 5 business days
-                          </span>
-                          <span className="text-[10px] text-ink/50 block">Credited back to bank/UPI source</span>
-                        </div>
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* Dynamic Return Message */}
-                  <div className={`p-3.5 rounded-xl border space-y-1 text-xs transition ${
-                    returnRefundPref === 'WALLET'
-                      ? 'bg-amber-50/80 border-amber-300 text-amber-950'
-                      : 'bg-stone-50 border-ink/15 text-ink/80'
-                  }`}>
-                    <p className="font-bold flex items-center gap-1.5 text-xs">
-                      {returnRefundPref === 'WALLET' ? (
-                        <>
-                          <span className="text-amber-500 font-bold">✦</span>
-                          <span>Instant Aura Wallet Refund on Pickup</span>
-                        </>
-                      ) : (
-                        <>
-                          <span>🏦</span>
-                          <span>Original Payment Source Refund</span>
-                        </>
-                      )}
-                    </p>
-                    <p className="text-[11px] leading-relaxed">
-                      {returnRefundPref === 'WALLET' ? (
-                        <>
-                          Refund of <b>{inr(returnModalOrder.total)}</b> will be credited <b>INSTANTLY</b> into your <b>Orayve Aura Wallet</b> as <b>{Math.round(returnModalOrder.total)} Aura Points</b> as soon as the item is picked up by our courier partner!
-                        </>
-                      ) : (
-                        <>
-                          Once product pickup is completed and verified, refund of <b>{inr(returnModalOrder.total)}</b> will be credited back to your <b>original payment source</b> within <b>3 to 5 business days</b>.
-                        </>
-                      )}
-                    </p>
-                  </div>
-
-                  {/* Aura Points Refund Rule Notice (Full Return vs Partial Return) */}
-                  {returnModalOrder.auraPoints > 0 && returnModalType === 'RETURN' && (() => {
-                    const isAllItemsSelected = returnSelectedItems.length >= (returnModalOrder.items?.length || 1);
-                    return (
-                      <div className={`p-3 rounded-xl border text-[11px] leading-relaxed ${
-                        isAllItemsSelected
-                          ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                          : 'bg-amber-50 border-amber-300 text-amber-950'
-                      }`}>
-                        <p className="font-bold flex items-center gap-1.5">
-                          <span>{isAllItemsSelected ? '✦' : '⚠️'}</span>
-                          <span>{isAllItemsSelected ? 'Full Order Return: Aura Points Restored' : 'Partial Return Policy: Aura Points Forfeiture'}</span>
-                        </p>
-                        <p className="mt-0.5">
-                          {isAllItemsSelected ? (
-                            <>Since all products in this order are selected for return, your <b>{returnModalOrder.auraPoints} spent Aura Points</b> will be fully credited back to your Aura Wallet passbook upon return completion.</>
-                          ) : (
-                            <>You are returning only part of this order ({returnSelectedItems.length} of {returnModalOrder.items.length} items). Per Orayve policy, spent Aura Points (<b>{returnModalOrder.auraPoints} Pts</b>) are forfeited and <b>cannot be restored on partial returns</b>. To restore spent Aura Points, all items must be returned.</>
-                          )}
-                        </p>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {/* Optional Proof Photos */}
-              <div className="space-y-2 p-3 rounded-xl bg-bone/40 border border-ink/10">
-                <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-bold text-ink flex items-center gap-1.5">
-                    <span>📷</span> Attach Product Photos / Proof ({returnPhotos.length})
-                  </label>
-                  <label className="px-2.5 py-1 rounded bg-ink text-bone font-bold text-[10px] hover:bg-ink/80 cursor-pointer shadow-xs">
-                    <span>+ Upload Photos</span>
                     <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      onChange={handleReturnPhotosUpload}
-                      className="hidden"
+                      value={returnReplacementVariant}
+                      onChange={e => setReturnReplacementVariant(e.target.value)}
+                      placeholder="e.g. Same product in Pitch Black or Cognac Tan"
+                      className="w-full text-xs"
                     />
-                  </label>
-                </div>
-
-                <div className="flex gap-2">
-                  <input
-                    value={returnPhotoInput}
-                    onChange={e => setReturnPhotoInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddReturnPhotoUrl(); } }}
-                    placeholder="Or paste photo link (https://...)"
-                    className="flex-1 text-[11px]"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddReturnPhotoUrl}
-                    className="px-2.5 py-1 rounded bg-brass text-ink font-bold text-[10px]"
-                  >
-                    Attach
-                  </button>
-                </div>
-
-                {returnPhotos.length > 0 && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {returnPhotos.map((ph, idx) => (
-                      <div key={idx} className="relative w-12 h-12 rounded-lg overflow-hidden border border-ink/20 group">
-                        <img src={ph} alt="Proof preview" className="w-full h-full object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveReturnPhoto(idx)}
-                          className="absolute inset-0 bg-ink/70 text-white font-bold text-xs opacity-0 group-hover:opacity-100 flex items-center justify-center transition"
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-ink/80 mb-1.5">
+                        Select Refund Destination *
+                      </label>
+                      <div className="grid sm:grid-cols-2 gap-2.5">
+                        <label
+                          className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition ${
+                            returnRefundPref === 'WALLET'
+                              ? 'border-brass bg-amber-50/60 ring-1 ring-brass/40 shadow-xs'
+                              : 'border-ink/15 hover:bg-bone'
+                          }`}
                         >
-                          ✕
-                        </button>
+                          <input
+                            type="radio"
+                            name="refundPref"
+                            checked={returnRefundPref === 'WALLET'}
+                            onChange={() => setReturnRefundPref('WALLET')}
+                            className="text-brass focus:ring-brass mt-0.5"
+                          />
+                          <div>
+                            <span className="text-xs font-bold text-ink flex items-center gap-1">
+                              <span className="text-amber-500 font-bold">✦</span> Orayve Aura Wallet
+                            </span>
+                            <span className="text-[10px] font-bold text-emerald-700 block mt-0.5">
+                              ⚡ Instant Credit on Pickup ({inr(returnModalOrder.total)})
+                            </span>
+                            <span className="text-[10px] text-ink/50 block">Reflected immediately as {Math.round(returnModalOrder.total)} Aura Pts</span>
+                          </div>
+                        </label>
+
+                        <label
+                          className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition ${
+                            returnRefundPref === 'ORIGINAL'
+                              ? 'border-brass bg-amber-50/60 ring-1 ring-brass/40 shadow-xs'
+                              : 'border-ink/15 hover:bg-bone'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="refundPref"
+                            checked={returnRefundPref === 'ORIGINAL'}
+                            onChange={() => setReturnRefundPref('ORIGINAL')}
+                            className="text-brass focus:ring-brass mt-0.5"
+                          />
+                          <div>
+                            <span className="text-xs font-bold text-ink flex items-center gap-1">
+                              <span>🏦</span> Original Payment Source
+                            </span>
+                            <span className="text-[10px] font-bold text-amber-700 block mt-0.5">
+                              3 to 5 business days
+                            </span>
+                            <span className="text-[10px] text-ink/50 block">Credited back to bank/UPI source</span>
+                          </div>
+                        </label>
                       </div>
-                    ))}
+                    </div>
+
+                    {/* Dynamic Return Message */}
+                    <div className={`p-3.5 rounded-xl border space-y-1 text-xs transition ${
+                      returnRefundPref === 'WALLET'
+                        ? 'bg-amber-50/80 border-amber-300 text-amber-950'
+                        : 'bg-stone-50 border-ink/15 text-ink/80'
+                    }`}>
+                      <p className="font-bold flex items-center gap-1.5 text-xs">
+                        {returnRefundPref === 'WALLET' ? (
+                          <>
+                            <span className="text-amber-500 font-bold">✦</span>
+                            <span>Instant Aura Wallet Refund on Pickup</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>🏦</span>
+                            <span>Original Payment Source Refund</span>
+                          </>
+                        )}
+                      </p>
+                      <p className="text-[11px] leading-relaxed">
+                        {returnRefundPref === 'WALLET' ? (
+                          <>
+                            Refund of <b>{inr(returnModalOrder.total)}</b> will be credited <b>INSTANTLY</b> into your <b>Orayve Aura Wallet</b> as <b>{Math.round(returnModalOrder.total)} Aura Points</b> as soon as the item is picked up by our courier partner!
+                          </>
+                        ) : (
+                          <>
+                            Once product pickup is completed and verified, refund of <b>{inr(returnModalOrder.total)}</b> will be credited back to your <b>original payment source</b> within <b>3 to 5 business days</b>.
+                          </>
+                        )}
+                      </p>
+                    </div>
+
+                    {/* Aura Points Refund Rule Notice (Full Return vs Partial Return) */}
+                    {returnModalOrder.auraPoints > 0 && returnModalType === 'RETURN' && (() => {
+                      const isAllItemsSelected = returnSelectedItems.length >= (returnModalOrder.items?.length || 1);
+                      return (
+                        <div className={`p-3 rounded-xl border text-[11px] leading-relaxed ${
+                          isAllItemsSelected
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                            : 'bg-amber-50 border-amber-300 text-amber-950'
+                        }`}>
+                          <p className="font-bold flex items-center gap-1.5">
+                            <span>{isAllItemsSelected ? '✦' : '⚠️'}</span>
+                            <span>{isAllItemsSelected ? 'Full Order Return: Aura Points Restored' : 'Partial Return Policy: Aura Points Forfeiture'}</span>
+                          </p>
+                          <p className="mt-0.5">
+                            {isAllItemsSelected ? (
+                              <>Since all products in this order are selected for return, your <b>{returnModalOrder.auraPoints} spent Aura Points</b> will be fully credited back to your Aura Wallet passbook upon return completion.</>
+                            ) : (
+                              <>You are returning only part of this order ({returnSelectedItems.length} of {returnModalOrder.items.length} items). Per Orayve policy, spent Aura Points (<b>{returnModalOrder.auraPoints} Pts</b>) are forfeited and <b>cannot be restored on partial returns</b>. To restore spent Aura Points, all items must be returned.</>
+                            )}
+                          </p>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
+
+                {/* Optional Proof Photos */}
+                <div className="space-y-2 p-3 rounded-xl bg-bone/40 border border-ink/10">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-ink flex items-center gap-1.5">
+                      <span>📷</span> Attach Product Photos / Proof ({returnPhotos.length})
+                    </label>
+                    <label className="px-2.5 py-1 rounded bg-ink text-bone font-bold text-[10px] hover:bg-ink/80 cursor-pointer shadow-xs">
+                      <span>+ Upload Photos</span>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={handleReturnPhotosUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      value={returnPhotoInput}
+                      onChange={e => setReturnPhotoInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddReturnPhotoUrl(); } }}
+                      placeholder="Or paste photo link (https://...)"
+                      className="flex-1 text-[11px]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddReturnPhotoUrl}
+                      className="px-2.5 py-1 rounded bg-brass text-ink font-bold text-[10px]"
+                    >
+                      Attach
+                    </button>
+                  </div>
+
+                  {returnPhotos.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {returnPhotos.map((ph, idx) => (
+                        <div key={idx} className="relative w-12 h-12 rounded-lg overflow-hidden border border-ink/20 group">
+                          <img src={ph} alt="Proof preview" className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveReturnPhoto(idx)}
+                            className="absolute inset-0 bg-ink/70 text-white font-bold text-xs opacity-0 group-hover:opacity-100 flex items-center justify-center transition"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Pickup Address Confirmation */}
+                <div className="p-3 rounded-xl bg-bone/70 border border-ink/10 text-[11px] text-ink/70 space-y-0.5">
+                  <p className="font-bold text-ink">📍 Free Doorstep Pickup Address:</p>
+                  <p>
+                    {returnModalOrder.addr?.name || 'Customer'} · +91 {(returnModalOrder.addr?.phone || returnModalOrder.mobile || '').replace(/[^0-9]/g, '').slice(-10)}
+                  </p>
+                  <p>
+                    {[returnModalOrder.addr?.address || returnModalOrder.addr?.street, returnModalOrder.addr?.city, returnModalOrder.addr?.state, returnModalOrder.addr?.pin].filter(Boolean).join(', ')}
+                  </p>
+                  <p className="text-[10px] text-ink/50 pt-0.5">
+                    • Status transitions: <b>In Process</b> &rarr; After 2 hrs: <b>Pickup Scheduled</b> &rarr; Upon inspection: <b>Refund Initiated (3-5 business days)</b>.
+                  </p>
+                </div>
               </div>
 
-              {/* Pickup Address Confirmation */}
-              <div className="p-3 rounded-xl bg-bone/70 border border-ink/10 text-[11px] text-ink/70 space-y-0.5">
-                <p className="font-bold text-ink">📍 Free Doorstep Pickup Address:</p>
-                <p>
-                  {returnModalOrder.addr?.name || 'Customer'} · +91 {(returnModalOrder.addr?.phone || returnModalOrder.mobile || '').replace(/[^0-9]/g, '').slice(-10)}
-                </p>
-                <p>
-                  {[returnModalOrder.addr?.address || returnModalOrder.addr?.street, returnModalOrder.addr?.city, returnModalOrder.addr?.state, returnModalOrder.addr?.pin].filter(Boolean).join(', ')}
-                </p>
-                <p className="text-[10px] text-ink/50 pt-0.5">
-                  • Status transitions: <b>In Process</b> &rarr; After 2 hrs: <b>Pickup Scheduled</b> &rarr; Upon inspection: <b>Refund Initiated (3-5 business days)</b>.
-                </p>
-              </div>
-
-              {/* Submit Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-ink/10">
+              {/* Submit Buttons (Pinned at Bottom) */}
+              <div className="shrink-0 p-3 sm:p-4 px-4 sm:px-5 border-t border-ink/10 bg-white/95 backdrop-blur-xs flex items-center justify-end gap-2.5 z-10">
                 <button
                   type="button"
                   onClick={() => setReturnModalOrder(null)}
-                  className="px-4 py-2 rounded-xl border border-ink/20 font-bold hover:bg-bone text-xs"
+                  className="px-4 py-2 rounded-xl border border-ink/20 font-bold hover:bg-bone text-xs text-ink transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingReturn}
-                  className="px-5 py-2 rounded-xl bg-ink text-bone font-bold hover:bg-ink/90 shadow-md text-xs flex items-center gap-1.5"
+                  className="px-5 py-2 rounded-xl bg-ink text-bone font-bold hover:bg-brass hover:text-ink shadow-md text-xs flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
                 >
                   {isSubmittingReturn ? (
                     <>
@@ -10329,7 +10474,7 @@ export default function App() {
       {/* Admin Wallet Adjust Modal */}
       {adminWalletAdjustModal && (
         <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-brass/40 my-8 space-y-4 animate-in zoom-in-95 duration-150 relative">
+          <div className="bg-white rounded-3xl max-w-md w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl border border-brass/40 my-auto space-y-4 animate-in zoom-in-95 duration-150 relative">
             <div className="flex items-start justify-between border-b border-ink/10 pb-3">
               <div>
                 <span className="text-[10px] uppercase font-extrabold text-brass tracking-wider">Aura Wallet Adjustment</span>

@@ -1021,6 +1021,8 @@ app.get('/api/orders', async (req, res) => {
           o.order_status as status,
           o.coupon_code as coupon,
           o.created_at as at,
+          o.delivered_at as "deliveredAt",
+          o.completed_at as "completedAt",
           o.cancel_info as "cancelInfo",
           o.return_info as "returnInfo",
           COALESCE(
@@ -1072,6 +1074,8 @@ app.get('/api/orders', async (req, res) => {
 
         let currentStatus = parseInt(r.status) || 0;
         let needsDbSync = false;
+        let deliveredAt = r.deliveredAt;
+        let completedAt = r.completedAt;
 
         // Auto-progression: 1 hr after cancellation requested -> Refund Initiated
         if (currentStatus === 4 && cancelInfo && cancelInfo.requestedAt) {
@@ -1103,10 +1107,20 @@ app.get('/api/orders', async (req, res) => {
           }
         }
 
+        // Auto-progression: 7 days after delivery (status 3 or 11) -> Completed (12)
+        if (currentStatus === 3 || currentStatus === 11) {
+          const deliveryTime = deliveredAt ? new Date(deliveredAt).getTime() : new Date(r.at).getTime();
+          if (!isNaN(deliveryTime) && (nowMs - deliveryTime) >= 7 * 24 * 60 * 60 * 1000) {
+            currentStatus = 12; // COMPLETED
+            completedAt = new Date().toISOString();
+            needsDbSync = true;
+          }
+        }
+
         if (needsDbSync) {
           pool.query(
-            'UPDATE public.orders SET order_status = $1, cancel_info = $2, return_info = $3 WHERE order_number = $4',
-            [currentStatus, cancelInfo ? JSON.stringify(cancelInfo) : null, returnInfo ? JSON.stringify(returnInfo) : null, r.id]
+            'UPDATE public.orders SET order_status = $1, cancel_info = $2, return_info = $3, delivered_at = $4, completed_at = $5 WHERE order_number = $6',
+            [currentStatus, cancelInfo ? JSON.stringify(cancelInfo) : null, returnInfo ? JSON.stringify(returnInfo) : null, deliveredAt, completedAt, r.id]
           ).catch(e => console.error('[DB] Auto-progression update error:', e.message));
         }
 
@@ -1124,6 +1138,8 @@ app.get('/api/orders', async (req, res) => {
           total: parseFloat(r.total),
           addr: parsedAddr,
           items: r.items || [],
+          deliveredAt,
+          completedAt,
           cancelInfo,
           returnInfo
         };
@@ -1162,6 +1178,12 @@ app.get('/api/orders', async (req, res) => {
       if (elapsedMs >= 2 * 60 * 60 * 1000) {
         order.status = 10;
         order.returnInfo.status = 'PICKUP_SCHEDULED';
+      }
+    } else if (order.status === 3 || order.status === 11) {
+      const deliveryTime = order.deliveredAt ? new Date(order.deliveredAt).getTime() : new Date(order.at).getTime();
+      if (!isNaN(deliveryTime) && (nowMs - deliveryTime) >= 7 * 24 * 60 * 60 * 1000) {
+        order.status = 12;
+        order.completedAt = new Date().toISOString();
       }
     }
   });
@@ -1745,8 +1767,11 @@ app.post('/api/orders/:id/cancel', async (req, res) => {
     return res.status(404).json({ success: false, message: 'Order not found' });
   }
 
-  if (order.status >= 3) {
-    return res.status(400).json({ success: false, message: 'Delivered orders cannot be cancelled directly. Please submit a Return or Replacement request.' });
+  if (parseInt(order.status) >= 3) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Delivered or completed orders cannot be cancelled. Please use Return or Replacement within the eligible window.' 
+    });
   }
 
   const isWalletRefund = String(refundMethod || '').toUpperCase().includes('WALLET');
@@ -1819,6 +1844,21 @@ app.post('/api/orders/:id/return', async (req, res) => {
 
   if (!order) {
     return res.status(404).json({ success: false, message: 'Order not found' });
+  }
+
+  if (parseInt(order.status) === 12) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'This order is marked as Completed. Returns and replacements cannot be requested after order completion.' 
+    });
+  }
+
+  const orderDeliveredDate = new Date(order.deliveredAt || order.at).getTime();
+  if (!isNaN(orderDeliveredDate) && (Date.now() - orderDeliveredDate) > (7 * 24 * 60 * 60 * 1000)) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'The 7-day return and replacement window for this order has expired.' 
+    });
   }
 
   const isReplace = (type || '').toUpperCase() === 'REPLACE';
@@ -1905,13 +1945,17 @@ app.post('/api/orders/:id/simulate-time', async (req, res) => {
     order.status = 11; // REPLACE_DELIVERED
     order.returnInfo.status = 'COMPLETED';
     order.returnInfo.deliveredAt = new Date().toISOString();
+    order.deliveredAt = new Date().toISOString();
+  } else if ((order.status === 3 || order.status === 11) && Number(advanceHours) >= 24) {
+    order.status = 12; // COMPLETED
+    order.completedAt = new Date().toISOString();
   }
 
   if (pool) {
     try {
       await pool.query(
-        'UPDATE public.orders SET order_status = $1, cancel_info = $2, return_info = $3 WHERE order_number = $4;',
-        [order.status, order.cancelInfo ? JSON.stringify(order.cancelInfo) : null, order.returnInfo ? JSON.stringify(order.returnInfo) : null, orderId]
+        'UPDATE public.orders SET order_status = $1, cancel_info = $2, return_info = $3, completed_at = COALESCE(completed_at, $4) WHERE order_number = $5;',
+        [order.status, order.cancelInfo ? JSON.stringify(order.cancelInfo) : null, order.returnInfo ? JSON.stringify(order.returnInfo) : null, order.completedAt || null, orderId]
       );
     } catch (e) {
       console.error('[DB] Time simulation update error:', e.message);
@@ -1930,6 +1974,12 @@ app.put('/api/admin/orders/:id/status', guardSuperAdminWrite, async (req, res) =
     order.status = nextStatus;
     if (cancelInfo !== undefined) order.cancelInfo = cancelInfo;
     if (returnInfo !== undefined) order.returnInfo = returnInfo;
+    if (nextStatus === 3 || nextStatus === 11) {
+      if (!order.deliveredAt) order.deliveredAt = new Date().toISOString();
+    }
+    if (nextStatus === 12) {
+      order.completedAt = new Date().toISOString();
+    }
   }
 
   if (pool) {
@@ -1945,6 +1995,12 @@ app.put('/api/admin/orders/:id/status', guardSuperAdminWrite, async (req, res) =
       if (returnInfo !== undefined) {
         updateSql += `, return_info = $${pIdx++}`;
         params.push(returnInfo ? JSON.stringify(returnInfo) : null);
+      }
+      if (nextStatus === 3 || nextStatus === 11) {
+        updateSql += `, delivered_at = COALESCE(delivered_at, NOW())`;
+      }
+      if (nextStatus === 12) {
+        updateSql += `, completed_at = NOW()`;
       }
 
       updateSql += ` WHERE order_number = $${pIdx};`;
