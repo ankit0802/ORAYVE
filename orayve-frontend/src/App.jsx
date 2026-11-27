@@ -8457,7 +8457,7 @@ export default function App() {
                         {authModal === 'login' ? 'Connecting to Orayve Security Vault' : 'Creating New Member Record'}
                       </p>
                       <p className="text-[10px] text-ink/70 truncate">
-                        {authModal === 'login' ? 'Verifying bcrypt credentials...' : 'Assigning 250 Aura points & registering phone...'}
+                        {authModal === 'login' ? 'Verifying bcrypt credentials...' : 'Assigning 500 Aura points & registering phone...'}
                       </p>
                     </div>
                     <span className="text-[10px] uppercase tracking-wider font-extrabold text-brass px-2 py-0.5 rounded-full bg-brass/10 border border-brass/30 shrink-0">
@@ -8620,7 +8620,7 @@ export default function App() {
               {/* Welcome Bonus Perk Pill */}
               <div className="inline-flex items-center gap-2 px-4 py-2 mt-3 rounded-full bg-brass/15 border border-brass/40 text-amber-200 text-xs font-bold shadow-md">
                 <span>✨</span>
-                <span>250 Aura Welcome Points Credited to Your Passbook</span>
+                <span>500 Aura Welcome Points Credited to Your Passbook</span>
                 <span>✨</span>
               </div>
 
@@ -8645,7 +8645,7 @@ export default function App() {
                           ? 'animate-drop-sky-3' 
                           : 'animate-drop-sky-4';
                     const price = p.v && p.v[0] ? p.v[0].price : 999;
-                    const imgUrl = (p.images && p.images[0]) || (p.v && p.v[0] && p.v[0].img) || 'https://images.unsplash.com/photo-1605100804763-247f67b3557e?auto=format&fit=crop&w=600&q=80';
+                    const prodPhoto = (p.imgs && p.imgs[0]) || (p.v && p.v[0] ? imgUrl(p.v[0]) : null) || (p.images && p.images[0]) || FB;
 
                     return (
                       <div
@@ -8664,7 +8664,7 @@ export default function App() {
                         {/* Image with hover zoom */}
                         <div className="relative aspect-square rounded-xl overflow-hidden bg-ink/50 mb-2 border border-white/5">
                           <img
-                            src={imgUrl}
+                            src={prodPhoto}
                             alt={p.title}
                             className="w-full h-full object-cover group-hover:scale-108 transition duration-500"
                           />
