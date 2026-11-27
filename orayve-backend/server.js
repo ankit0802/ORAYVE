@@ -911,8 +911,8 @@ app.post('/api/checkout/place-order', async (req, res) => {
   const finalTotal = Math.max(0, netBeforeAura - actualAuraPoints);
   const year = new Date().getFullYear();
   const randNum = Math.floor(100000 + Math.random() * 900000);
-  const orderId = `ORD-${year}-${randNum}`;
-  const invNumber = `INV-${year}-${randNum}`;
+  const orderId = req.body.id || `ORD-${year}-${randNum}`;
+  const invNumber = req.body.inv || `INV-${year}-${randNum}`;
 
   // Decrement stock and increment sold counter in memory AND Neon PostgreSQL
   for (const item of processedItems) {
